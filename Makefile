@@ -20,6 +20,8 @@ help:
 .env:
 	cp .env.example .env
 	key=$$(openssl rand -hex 32); perl -pi -e "s/^APP_SECRET_KEY=\$$/APP_SECRET_KEY=$$key/" .env
+	password=$$(openssl rand -hex 16); perl -pi -e "s/^OWNER_PASSWORD=\$$/OWNER_PASSWORD=$$password/" .env
+	perl -pi -e "s/^OWNER_EMAIL=\$$/OWNER_EMAIL=owner\@local.test/" .env
 
 bootstrap: .env
 	git config core.hooksPath .githooks

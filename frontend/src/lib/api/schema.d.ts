@@ -4,6 +4,74 @@
  */
 
 export interface paths {
+    "/api/v1/auth/login": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Login */
+        post: operations["login_api_v1_auth_login_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/auth/logout": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Logout */
+        post: operations["logout_api_v1_auth_logout_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/auth/me": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Me */
+        get: operations["me_api_v1_auth_me_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/auth/ws-ticket": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Ws Ticket */
+        post: operations["ws_ticket_api_v1_auth_ws_ticket_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/health": {
         parameters: {
             query?: never;
@@ -21,10 +89,140 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/instruments": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Instruments */
+        get: operations["instruments_api_v1_instruments_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/market/candles": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Candles */
+        get: operations["candles_api_v1_market_candles_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/market/gaps": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Gaps */
+        get: operations["gaps_api_v1_market_gaps_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/market/price": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Price */
+        get: operations["price_api_v1_market_price_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/market/status": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Status */
+        get: operations["status_api_v1_market_status_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
     schemas: {
+        /** CandlePage */
+        CandlePage: {
+            /** Instrument Id */
+            instrument_id: number;
+            /** Items */
+            items: components["schemas"]["CandleView"][];
+            /** Next Before */
+            next_before: string | null;
+            /** Provider */
+            provider: string;
+            timeframe: components["schemas"]["Timeframe"];
+        };
+        /** CandleView */
+        CandleView: {
+            /** Close */
+            close: string;
+            /**
+             * Close Time
+             * Format: date-time
+             */
+            close_time: string;
+            data_origin: components["schemas"]["DataOrigin"];
+            /** High */
+            high: string;
+            /** Low */
+            low: string;
+            /** Open */
+            open: string;
+            /**
+             * Open Time
+             * Format: date-time
+             */
+            open_time: string;
+            /** Quote Volume */
+            quote_volume: string;
+            /** Trade Count */
+            trade_count: number;
+            /** Volume */
+            volume: string;
+        };
+        /**
+         * DataOrigin
+         * @enum {string}
+         */
+        DataOrigin: "live" | "backfill" | "synthetic";
         /** DependencyHealth */
         DependencyHealth: {
             /** Detail */
@@ -47,6 +245,60 @@ export interface components {
         ErrorResponse: {
             error: components["schemas"]["ErrorBody"];
         };
+        /** FeedStatusView */
+        FeedStatusView: {
+            /** Clock Skew Ms */
+            clock_skew_ms: number | null;
+            /** Lag Seconds */
+            lag_seconds: number | null;
+            /** Last Event At */
+            last_event_at: string | null;
+            /** Open Gaps */
+            open_gaps: number;
+            /** Provider */
+            provider: string;
+            /** Reasons */
+            reasons: string[];
+            /**
+             * State
+             * @enum {string}
+             */
+            state: "HEALTHY" | "DEGRADED" | "STALE" | "DISCONNECTED" | "RECOVERING";
+        };
+        /** GapList */
+        GapList: {
+            /** Items */
+            items: components["schemas"]["GapView"][];
+        };
+        /** GapView */
+        GapView: {
+            /** Cause */
+            cause: string | null;
+            /**
+             * Detected At
+             * Format: date-time
+             */
+            detected_at: string;
+            /**
+             * Gap End
+             * Format: date-time
+             */
+            gap_end: string;
+            /**
+             * Gap Start
+             * Format: date-time
+             */
+            gap_start: string;
+            /** Instrument Id */
+            instrument_id: number;
+            /** Provider Id */
+            provider_id: number;
+            /** Resolved At */
+            resolved_at: string | null;
+            /** State */
+            state: string;
+            timeframe: components["schemas"]["Timeframe"];
+        };
         /** HealthResponse */
         HealthResponse: {
             /**
@@ -67,6 +319,82 @@ export interface components {
             trading_mode: components["schemas"]["TradingMode"];
         };
         /**
+         * InstrumentType
+         * @enum {string}
+         */
+        InstrumentType: "spot" | "linear_perpetual";
+        /** InstrumentView */
+        InstrumentView: {
+            /** Base Asset */
+            base_asset: string;
+            /** Id */
+            id: number;
+            instrument_type: components["schemas"]["InstrumentType"];
+            /** Is Synthetic */
+            is_synthetic: boolean;
+            /** Provider */
+            provider: string;
+            /** Provider Symbol */
+            provider_symbol: string;
+            /** Quote Asset */
+            quote_asset: string;
+            /** Symbol */
+            symbol: string;
+            /** Tick Size */
+            tick_size: string | null;
+        };
+        /** LoginRequest */
+        LoginRequest: {
+            /** Email */
+            email: string;
+            /** Password */
+            password: string;
+        };
+        /** MarketStatusView */
+        MarketStatusView: {
+            /** Feeds */
+            feeds: components["schemas"]["FeedStatusView"][];
+            /** Usable */
+            usable: boolean;
+        };
+        /** OwnerView */
+        OwnerView: {
+            /** Email */
+            email: string;
+            /** Role */
+            role: string;
+        };
+        /** PriceView */
+        PriceView: {
+            /** Age Seconds */
+            age_seconds: number | null;
+            /** Ask */
+            ask: string | null;
+            /** Bid */
+            bid: string | null;
+            data_origin: components["schemas"]["DataOrigin"] | null;
+            /** Instrument Id */
+            instrument_id: number;
+            /** Provider */
+            provider: string;
+            /** Received At */
+            received_at: string | null;
+            /** Stale */
+            stale: boolean;
+        };
+        /** TicketView */
+        TicketView: {
+            /** Expires In Seconds */
+            expires_in_seconds: number;
+            /** Ticket */
+            ticket: string;
+        };
+        /**
+         * Timeframe
+         * @enum {string}
+         */
+        Timeframe: "1m" | "5m" | "15m" | "30m" | "1h" | "4h" | "1d";
+        /**
          * TradingMode
          * @description Paper is the only member, so no code path can represent live trading (D016).
          * @enum {string}
@@ -81,6 +409,124 @@ export interface components {
 }
 export type $defs = Record<string, never>;
 export interface operations {
+    login_api_v1_auth_login_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["LoginRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["OwnerView"];
+                };
+            };
+            /** @description Default Response */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    logout_api_v1_auth_logout_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Default Response */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    me_api_v1_auth_me_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["OwnerView"];
+                };
+            };
+            /** @description Default Response */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    ws_ticket_api_v1_auth_ws_ticket_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TicketView"];
+                };
+            };
+            /** @description Default Response */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
     health_api_v1_health_get: {
         parameters: {
             query?: never;
@@ -97,6 +543,164 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["HealthResponse"];
+                };
+            };
+            /** @description Default Response */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    instruments_api_v1_instruments_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["InstrumentView"][];
+                };
+            };
+            /** @description Default Response */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    candles_api_v1_market_candles_get: {
+        parameters: {
+            query: {
+                provider: string;
+                instrument_id: number;
+                timeframe: components["schemas"]["Timeframe"];
+                limit?: number;
+                before?: string | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CandlePage"];
+                };
+            };
+            /** @description Default Response */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    gaps_api_v1_market_gaps_get: {
+        parameters: {
+            query?: {
+                provider?: string | null;
+                instrument_id?: number | null;
+                limit?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["GapList"];
+                };
+            };
+            /** @description Default Response */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    price_api_v1_market_price_get: {
+        parameters: {
+            query: {
+                provider: string;
+                instrument_id: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PriceView"];
+                };
+            };
+            /** @description Default Response */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    status_api_v1_market_status_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MarketStatusView"];
                 };
             };
             /** @description Default Response */

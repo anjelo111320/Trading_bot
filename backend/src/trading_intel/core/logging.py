@@ -43,6 +43,7 @@ class SecretFilter:
 
 def configure_logging(level: str, secrets: Iterable[str]) -> None:
     logging.basicConfig(format="%(message)s", stream=sys.stdout, level=level)
+    logging.getLogger("httpx").setLevel(logging.WARNING)  # One line per request is noise.
     structlog.configure(
         processors=[
             structlog.contextvars.merge_contextvars,

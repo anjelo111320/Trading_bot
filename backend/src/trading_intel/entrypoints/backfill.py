@@ -70,7 +70,7 @@ async def run(profile: BackfillProfile, codes: list[str]) -> None:
         await RuleSnapshotService(provider, provider_id, RuleRepository(engine), clock).refresh(
             [item.instrument for item in listed]
         )
-        if isinstance(provider, DerivativesCapable):
+        if provider.capabilities.funding and isinstance(provider, DerivativesCapable):
             for instrument, earliest in instruments:
                 start = earliest if profile.window is None else max(earliest, now - profile.window)
                 rows = [row async for row in provider.get_funding_history(instrument, start)]
