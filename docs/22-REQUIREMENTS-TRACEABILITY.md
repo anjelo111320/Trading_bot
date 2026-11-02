@@ -2,7 +2,7 @@
 
 Date: 2026-11-02
 
-This maps every section of [21-PROJECT-BRIEF.md](21-PROJECT-BRIEF.md) to the design that covers it and the phase that builds it. "Designed" means specified, not implemented. **Nothing here is implemented yet.**
+This maps every section of [21-PROJECT-BRIEF.md](21-PROJECT-BRIEF.md) to the design that covers it and the phase that builds it. Current build status is in [16-DEVELOPMENT-ROADMAP.md](16-DEVELOPMENT-ROADMAP.md) and the phase reports in [reports/](reports/).
 
 Phase numbers follow the proposed roadmap in [16-DEVELOPMENT-ROADMAP.md](16-DEVELOPMENT-ROADMAP.md).
 

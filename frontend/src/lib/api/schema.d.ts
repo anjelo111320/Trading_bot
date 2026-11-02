@@ -191,6 +191,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/news": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** News */
+        get: operations["news_api_v1_news_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/paper-trading/positions": {
         parameters: {
             query?: never;
@@ -479,6 +496,45 @@ export interface components {
             feeds: components["schemas"]["FeedStatusView"][];
             /** Usable */
             usable: boolean;
+        };
+        /** NewsView */
+        NewsView: {
+            /** Ai Summary */
+            ai_summary: string | null;
+            /** Certainty */
+            certainty: string | null;
+            /** Classified */
+            classified: boolean;
+            /** Credibility Tier */
+            credibility_tier: string | null;
+            /** Event Type */
+            event_type: string | null;
+            /** Headline */
+            headline: string;
+            /** Id */
+            id: string;
+            /** Possibly Misleading */
+            possibly_misleading: boolean | null;
+            /** Potential Impact */
+            potential_impact: string | null;
+            /**
+             * Published At
+             * Format: date-time
+             */
+            published_at: string;
+            /** Relevance */
+            relevance: string | null;
+            /**
+             * Retrieved At
+             * Format: date-time
+             */
+            retrieved_at: string;
+            /** Sentiment */
+            sentiment: string | null;
+            /** Source */
+            source: string | null;
+            /** Url */
+            url: string;
         };
         /** OwnerView */
         OwnerView: {
@@ -999,6 +1055,37 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["MarketStatusView"];
+                };
+            };
+            /** @description Default Response */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    news_api_v1_news_get: {
+        parameters: {
+            query?: {
+                limit?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["NewsView"][];
                 };
             };
             /** @description Default Response */

@@ -9,7 +9,8 @@ Updated 2026-11-02.
 - Phases 1A and 1B are code complete, and their long tests are running: [phase-1.md](reports/phase-1.md).
 - Phase 2 is complete: [phase-2.md](reports/phase-2.md).
 - Phases 3, 4 and 5 are code complete: [phase-3.md](reports/phase-3.md), [phase-4.md](reports/phase-4.md), [phase-5.md](reports/phase-5.md). The strategy has shown no edge, and its evidence gate needs full history.
-- Phase 6 is in progress.
+- Phase 6 is built, and Claude classification waits for an API key: [phase-6.md](reports/phase-6.md).
+- Phase 7 has not started. It needs the owner's Claude API key and, under the cost strategy, a baseline that passes its evidence gate.
 
 - Done: repository inspection, provider research, the ten first deliverables and decisions D006 to D028. See [22-REQUIREMENTS-TRACEABILITY.md](22-REQUIREMENTS-TRACEABILITY.md) and [17-DECISIONS.md](17-DECISIONS.md).
 - Working method: phases are built in order without waiting for review, and long tests run alongside later work (D028).

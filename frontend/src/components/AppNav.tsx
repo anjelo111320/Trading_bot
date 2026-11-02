@@ -4,6 +4,7 @@ const LINKS = [
   { href: "/", label: "Market" },
   { href: "/signals", label: "Signals" },
   { href: "/paper", label: "Paper trading" },
+  { href: "/news", label: "News" },
 ];
 
 export function AppNav({ current }: { current: string }) {

@@ -61,9 +61,7 @@ async def run(symbol: str, start: datetime, end: datetime) -> str:
             f"- At {level}x costs: net P/L {stressed.net_pnl:.2f}, trades {stressed.trades}, "
             f"profit factor {stressed.profit_factor}\n"
         )
-    print(text)
-    if output is not None:
-        output.write_text(text)
+    return text
 
 
 def main() -> None:
@@ -76,7 +74,7 @@ def main() -> None:
     start = datetime.fromisoformat(arguments.start).replace(tzinfo=UTC)
     end = datetime.fromisoformat(arguments.end).replace(tzinfo=UTC)
     text = asyncio.run(run(arguments.symbol, start, end))
-    print(text)  # noqa: T201
+    print(text)
     if arguments.output:
         (REPOSITORY_ROOT / arguments.output).write_text(text)
 

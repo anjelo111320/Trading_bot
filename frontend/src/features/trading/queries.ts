@@ -1,6 +1,12 @@
 import { useQuery } from "@tanstack/react-query";
 
-import { apiGet, type PaperSummary, type Position, type Signal } from "@/lib/api/client";
+import {
+  apiGet,
+  type NewsItem,
+  type PaperSummary,
+  type Position,
+  type Signal,
+} from "@/lib/api/client";
 
 export function useSignals() {
   return useQuery({
@@ -23,5 +29,13 @@ export function usePositions() {
     queryKey: ["paper-positions"],
     queryFn: () => apiGet<Position[]>("/api/v1/paper-trading/positions?limit=50"),
     refetchInterval: 15_000,
+  });
+}
+
+export function useNews() {
+  return useQuery({
+    queryKey: ["news"],
+    queryFn: () => apiGet<NewsItem[]>("/api/v1/news?limit=50"),
+    refetchInterval: 60_000,
   });
 }

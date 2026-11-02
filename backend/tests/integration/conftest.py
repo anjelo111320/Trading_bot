@@ -25,6 +25,7 @@ CLEANED = (
     "news_articles",
     "technical_indicators",
     "detected_patterns",
+    "api_usage",
 )
 
 

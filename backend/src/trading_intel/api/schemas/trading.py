@@ -78,3 +78,21 @@ class PaperSummary(BaseModel):
     costs: str
     win_rate: float | None
     expectancy_r: float | None
+
+
+class NewsView(BaseModel):
+    id: str
+    headline: str
+    source: str | None
+    credibility_tier: str | None
+    url: str
+    published_at: UtcDatetime
+    retrieved_at: UtcDatetime
+    relevance: str | None
+    event_type: str | None
+    sentiment: str | None
+    potential_impact: str | None
+    certainty: str | None
+    possibly_misleading: bool | None
+    ai_summary: str | None
+    classified: bool

@@ -15,6 +15,7 @@ export type Timeframe = Schemas["Timeframe"];
 export type Signal = Schemas["SignalView"];
 export type Position = Schemas["PositionView"];
 export type PaperSummary = Schemas["PaperSummary"];
+export type NewsItem = Schemas["NewsView"];
 
 export class ApiError extends Error {
   constructor(

@@ -2,8 +2,9 @@
 import { cleanup, render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it } from "vitest";
 
-import type { PaperSummary, Position, Signal } from "@/lib/api/client";
+import type { NewsItem, PaperSummary, Position, Signal } from "@/lib/api/client";
 
+import { NewsCard } from "./NewsCard";
 import { PaperAccount, PositionsTable } from "./PaperPanels";
 import { SignalCard } from "./SignalCard";
 
@@ -125,5 +126,47 @@ describe("paper trading", () => {
     };
     render(<PositionsTable positions={[position]} />);
     expect(screen.getByText(/reconstructed/)).toBeTruthy();
+  });
+});
+
+describe("NewsCard", () => {
+  const item: NewsItem = {
+    id: "1",
+    headline: "<img src=x onerror=alert(1)> Fed holds rates",
+    source: "Federal Reserve Board",
+    credibility_tier: "official",
+    url: "javascript:alert(1)",
+    published_at: "2026-10-28T18:00:00Z",
+    retrieved_at: "2026-11-02T10:00:00Z",
+    relevance: "0.4",
+    event_type: null,
+    sentiment: null,
+    potential_impact: null,
+    certainty: null,
+    possibly_misleading: null,
+    ai_summary: null,
+    classified: false,
+  };
+
+  it("shows hostile text as text, not markup", () => {
+    const { container } = render(<NewsCard item={item} />);
+    expect(container.querySelector("img")).toBeNull();
+    expect(screen.getByRole("heading").textContent).toContain("onerror");
+  });
+
+  it("refuses to link to anything but https", () => {
+    const { container } = render(<NewsCard item={item} />);
+    expect(container.querySelector("a")).toBeNull();
+  });
+
+  it("keeps publication and retrieval times separate", () => {
+    const { container } = render(<NewsCard item={{ ...item, url: "https://example.test" }} />);
+    expect(container.textContent).toContain("Published 2026-10-28 18:00:00 UTC");
+    expect(container.textContent).toContain("Retrieved 2026-11-02 10:00:00 UTC");
+  });
+
+  it("says when an item has not been classified", () => {
+    render(<NewsCard item={item} />);
+    expect(screen.getByText("Not classified.")).toBeTruthy();
   });
 });

@@ -8,6 +8,7 @@ from fastapi import APIRouter, Depends, Query
 from trading_intel.api.auth import Owner
 from trading_intel.api.container import Container, get_container
 from trading_intel.api.schemas.trading import (
+    NewsView,
     PaperSummary,
     PositionView,
     SignalView,
@@ -67,6 +68,32 @@ async def signals(
     _: Owner, services: Services, limit: Annotated[int, Query(ge=1, le=200)] = 50
 ) -> list[SignalView]:
     return [_signal(row) for row in await services.signals.recent(limit)]
+
+
+@router.get("/news", response_model=list[NewsView])
+async def news(
+    _: Owner, services: Services, limit: Annotated[int, Query(ge=1, le=200)] = 50
+) -> list[NewsView]:
+    return [
+        NewsView(
+            id=str(row["id"]),
+            headline=row["headline"],
+            source=row["source"],
+            credibility_tier=row["credibility_tier"],
+            url=row["url"],
+            published_at=row["published_at"],
+            retrieved_at=row["retrieved_at"],
+            relevance=_money(row["relevance"]),
+            event_type=row["event_type"],
+            sentiment=row["sentiment"],
+            potential_impact=row["potential_impact"],
+            certainty=row["certainty"],
+            possibly_misleading=row["possibly_misleading"],
+            ai_summary=row["ai_summary"],
+            classified=row["ai_summary"] is not None,
+        )
+        for row in await services.news.visible_at(services.clock.now(), limit)
+    ]
 
 
 @router.get("/paper-trading/positions", response_model=list[PositionView])

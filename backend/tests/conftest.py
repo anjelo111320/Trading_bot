@@ -1,5 +1,9 @@
 """Shared fixtures. Secrets here are test-only values."""
 
+import socket
+from collections.abc import Iterator
+from typing import Any
+
 import pytest
 
 from trading_intel.core.settings import Settings
@@ -28,6 +32,24 @@ def make_settings(**overrides: object) -> Settings:
 @pytest.fixture
 def settings() -> Settings:
     return make_settings()
+
+
+@pytest.fixture(autouse=True)
+def no_outside_network(
+    request: pytest.FixtureRequest, monkeypatch: pytest.MonkeyPatch
+) -> Iterator[None]:
+    """Regression: an SDK call once slipped past its mock and reached the real API."""
+    if request.node.get_closest_marker("live") is None:
+        real = socket.getaddrinfo
+
+        def local_only(host: Any, *args: Any, **kwargs: Any) -> Any:
+            name = host.decode() if isinstance(host, bytes) else str(host)
+            if name not in ("127.0.0.1", "localhost", "::1", "0.0.0.0"):  # noqa: S104
+                raise AssertionError(f"a test tried to reach {name}")
+            return real(host, *args, **kwargs)
+
+        monkeypatch.setattr(socket, "getaddrinfo", local_only)
+    yield
 
 
 def pytest_addoption(parser: pytest.Parser) -> None:

@@ -610,6 +610,154 @@
         "title": "MarketStatusView",
         "type": "object"
       },
+      "NewsView": {
+        "properties": {
+          "ai_summary": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Ai Summary"
+          },
+          "certainty": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Certainty"
+          },
+          "classified": {
+            "title": "Classified",
+            "type": "boolean"
+          },
+          "credibility_tier": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Credibility Tier"
+          },
+          "event_type": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Event Type"
+          },
+          "headline": {
+            "title": "Headline",
+            "type": "string"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "possibly_misleading": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Possibly Misleading"
+          },
+          "potential_impact": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Potential Impact"
+          },
+          "published_at": {
+            "format": "date-time",
+            "title": "Published At",
+            "type": "string"
+          },
+          "relevance": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Relevance"
+          },
+          "retrieved_at": {
+            "format": "date-time",
+            "title": "Retrieved At",
+            "type": "string"
+          },
+          "sentiment": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Sentiment"
+          },
+          "source": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Source"
+          },
+          "url": {
+            "title": "Url",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "headline",
+          "source",
+          "credibility_tier",
+          "url",
+          "published_at",
+          "retrieved_at",
+          "relevance",
+          "event_type",
+          "sentiment",
+          "potential_impact",
+          "certainty",
+          "possibly_misleading",
+          "ai_summary",
+          "classified"
+        ],
+        "title": "NewsView",
+        "type": "object"
+      },
       "OwnerView": {
         "properties": {
           "email": {
@@ -1713,6 +1861,55 @@
         "summary": "Status",
         "tags": [
           "market"
+        ]
+      }
+    },
+    "/api/v1/news": {
+      "get": {
+        "operationId": "news_api_v1_news_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 50,
+              "maximum": 200,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/NewsView"
+                  },
+                  "title": "Response News Api V1 News Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Default Response"
+          }
+        },
+        "summary": "News",
+        "tags": [
+          "trading"
         ]
       }
     },

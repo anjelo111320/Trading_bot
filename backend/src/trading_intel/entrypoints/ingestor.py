@@ -6,6 +6,7 @@ import signal
 from typing import Final
 
 import structlog
+from anthropic import AsyncAnthropic
 from redis.asyncio import Redis
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncEngine
@@ -16,6 +17,7 @@ from trading_intel.core.settings import Settings, load_settings
 from trading_intel.data_providers.base import CandleSubscription
 from trading_intel.database.engine import create_engine
 from trading_intel.database.repositories.candles import CandleRepository
+from trading_intel.database.repositories.news import NewsRepository
 from trading_intel.database.repositories.operations import (
     EventRepository,
     GapRepository,
@@ -39,10 +41,13 @@ from trading_intel.market_data.ingest import (
 )
 from trading_intel.market_data.instrument_rules import RuleSnapshotService
 from trading_intel.market_data.reconcile import ReconcileService
+from trading_intel.news_intelligence.classifier import ClaudeClassifier
 from trading_intel.news_intelligence.official_sources import NewsArchive, OfficialSourceCollector
+from trading_intel.news_intelligence.pipeline import NewsPipeline
 
 log = structlog.get_logger(__name__)
 
+NEWS_SECONDS: Final = 900
 LOCK_KEYS: Final = {BINANCE_SPOT: 7101, BINANCE_USDM: 7102, SYNTHETIC: 7103}
 ROUTES: Final = {
     BINANCE_SPOT: ("spot",),
@@ -109,6 +114,27 @@ async def build_collector(engine: AsyncEngine) -> OfficialSourceCollector:
     return OfficialSourceCollector(NewsArchive(engine, row.provider, row.source), SystemClock())
 
 
+async def run_news(settings: Settings, engine: AsyncEngine) -> None:
+    """Classification stays off until a key is configured. Everything else still runs."""
+    key = settings.anthropic_api_key.get_secret_value()
+    classifier = ClaudeClassifier(AsyncAnthropic(api_key=key)) if key else None
+    listed = await ReferenceRepository(engine).provider_instruments("binance_usdm")
+    pipeline = NewsPipeline(
+        NewsRepository(engine),
+        [item.instrument for item in listed],
+        SystemClock(),
+        classifier,
+    )
+    while True:
+        try:
+            result = await pipeline.run_once()
+            if result.clustered or result.classified:
+                log.info("news_processed", clustered=result.clustered, classified=result.classified)
+        except Exception as error:
+            log.warning("news_pipeline_failed", error=type(error).__name__)
+        await asyncio.sleep(NEWS_SECONDS)
+
+
 async def run_one(code: str, settings: Settings, engine: AsyncEngine, redis: Redis) -> None:
     async with single_instance_lock(engine, LOCK_KEYS[code]):
         ingestor = await build_ingestor(code, settings, engine, redis)
@@ -123,6 +149,7 @@ async def run(codes: list[str]) -> None:
     redis: Redis = Redis.from_url(settings.redis_url.get_secret_value())
     tasks = [asyncio.create_task(run_one(code, settings, engine, redis)) for code in codes]
     tasks.append(asyncio.create_task((await build_collector(engine)).run()))
+    tasks.append(asyncio.create_task(run_news(settings, create_engine(settings.database_url))))
 
     stop = asyncio.Event()
     loop = asyncio.get_running_loop()

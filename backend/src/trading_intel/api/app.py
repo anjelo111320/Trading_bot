@@ -20,6 +20,7 @@ from trading_intel.core.settings import Settings
 from trading_intel.database.engine import create_engine, ping
 from trading_intel.database.repositories.accounts import AuditRepository, UserRepository
 from trading_intel.database.repositories.candles import CandleRepository
+from trading_intel.database.repositories.news import NewsRepository
 from trading_intel.database.repositories.operations import (
     EventRepository,
     GapRepository,
@@ -76,6 +77,7 @@ def build_services(
         coverage=CoverageService(reference, candles, gaps, snapshots, EventRepository(engine)),
         signals=SignalRepository(engine),
         paper=PaperRepository(engine),
+        news=NewsRepository(engine),
     )
     return container, close
 

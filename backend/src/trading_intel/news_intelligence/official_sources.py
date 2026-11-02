@@ -21,6 +21,7 @@ from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncEngine
 
 from trading_intel.core.clock import Clock, ensure_utc
+from trading_intel.news_intelligence.normalize import clean_text
 
 log = structlog.get_logger(__name__)
 
@@ -59,7 +60,7 @@ def parse_feed(document: bytes | str) -> list[FeedItem]:
         raise FeedError(type(error).__name__) from error
     items: list[FeedItem] = []
     for node in root.iter("item"):
-        title = (node.findtext("title") or "").strip()
+        title = clean_text(node.findtext("title") or "")
         link = (node.findtext("link") or "").strip()
         published = (node.findtext("pubDate") or "").strip()
         if not title or not link.startswith("https://") or not published:
@@ -68,7 +69,7 @@ def parse_feed(document: bytes | str) -> list[FeedItem]:
             at = ensure_utc(parsedate_to_datetime(published))
         except TypeError, ValueError:
             continue
-        description = (node.findtext("description") or "").strip()
+        description = clean_text(node.findtext("description") or "")
         items.append(FeedItem(title[:MAX_HEADLINE], link, description[:MAX_SNIPPET] or None, at))
     return items
 
