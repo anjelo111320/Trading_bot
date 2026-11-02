@@ -32,6 +32,8 @@ Plan: [20-API-INTEGRATION-PLAN.md](../20-API-INTEGRATION-PLAN.md). Evidence: [18
 | Futures `bookTicker` arrives on `/public/stream` | Fixture `public_stream_frames.json` |
 | The legacy `/stream` path silently drops klines | Probe |
 | Funding times can sit a few milliseconds past the hour, such as `...600005` | Fixture `funding_rate.json` |
+| USD-M REST klines are not final for a few seconds after close, so the live closing frame is more complete at that moment. Never read them within 30 seconds of close | Observed 2026-11-02: 9 candles differed |
+| `openInterestHist` without `endTime` returns only the newest rows, so each page must name its end | Probe |
 | `openInterestHist` returns about the last month only | Probe |
 | Spot limit 6,000 weight per minute; klines weight 2 | Probe and [spot limits](https://developers.binance.com/docs/binance-spot-api-docs/rest-api/limits) |
 | Futures limit 2,400 weight per minute; klines weight 5 at 1,000 rows | Probe |

@@ -41,6 +41,8 @@ log = structlog.get_logger(__name__)
 PAGE_SIZE = 1000
 FUNDING_PAGE_SIZE = 1000
 EXCHANGE_INFO_WEIGHT = 20
+OPEN_INTEREST_PAGE = 500
+OPEN_INTEREST_STEP = timedelta(minutes=5)
 
 
 @dataclass(frozen=True)
@@ -314,23 +316,24 @@ class BinanceProvider:
     async def get_open_interest_history(
         self, instrument: Instrument, start: datetime
     ) -> AsyncIterator[OpenInterest]:
-        """Binance keeps about one month, at 5-minute resolution."""
+        """Binance keeps about one month, at 5-minute resolution.
+
+        Without endTime it returns only the newest rows, so each page names its own end.
+        """
         cursor = start
         end = self._clock.now()
         while cursor < end:
+            page_end = min(cursor + OPEN_INTEREST_STEP * OPEN_INTEREST_PAGE, end)
             params = {
                 "symbol": self._symbols[instrument.id],
                 "period": "5m",
                 "startTime": to_epoch_ms(cursor),
-                "limit": 500,
+                "endTime": to_epoch_ms(page_end),
+                "limit": OPEN_INTEREST_PAGE,
             }
             rows = await self._rest.get("/futures/data/openInterestHist", params, 0)
-            if not rows:
-                return
             for row in rows:
                 yield parse.parse_open_interest_history(
                     row, self._provider_id, instrument.id, self._clock.now()
                 )
-            cursor = parse.timestamp(rows[-1]["timestamp"]) + timedelta(minutes=5)
-            if len(rows) < 500:
-                return
+            cursor = page_end

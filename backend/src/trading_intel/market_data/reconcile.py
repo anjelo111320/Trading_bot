@@ -18,7 +18,7 @@ log = structlog.get_logger(__name__)
 
 SWEEP_SECONDS = 300
 SWEEP_CANDLES = 5
-SETTLE_MARGIN = timedelta(seconds=10)
+SETTLE_MARGIN = timedelta(seconds=30)
 
 
 @dataclass(frozen=True)
@@ -71,8 +71,8 @@ class ReconcileService:
 
     async def sweep(self, instrument: Instrument, timeframe: Timeframe) -> SweepResult:
         """Check the latest closed candles, recovering any whose closing frame was lost."""
-        # A candle that has only just closed belongs to the live stream. Taking it here would
-        # turn its real closing frame into a duplicate, and its event would never be sent.
+        # Futures REST values are not final for a few seconds after a candle closes, so a sweep
+        # any sooner replaced correct live candles with partial ones, as seen on 2026-11-02.
         end = timeframe.floor(self._clock.now() - SETTLE_MARGIN)
         start = end - timeframe.delta * SWEEP_CANDLES
         stored = {

@@ -64,7 +64,7 @@ FORMING_PUBLISH_SECONDS = 1.0
 SKEW_SECONDS = 60
 OPEN_INTEREST_SECONDS = 60
 FUNDING_SECONDS = 600
-SETTLE_SECONDS = 3  # A candle that has just closed may still be in flight.
+SETTLE_SECONDS = 10  # A candle that has just closed may still be in flight, or not yet final.
 FIRST_RUN_LOOKBACK = 10
 LATENCY_SAMPLES = 5000
 OPEN_INTEREST_HISTORY = timedelta(days=29)

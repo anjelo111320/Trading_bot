@@ -224,6 +224,32 @@ async def test_rules_come_from_the_recorded_format() -> None:
     assert rules.tick_size == Decimal("0.01")
 
 
+@respx.mock
+async def test_open_interest_history_pages_through_the_whole_window() -> None:
+    """Regression: without endTime Binance returns only the newest 500 rows."""
+    now = START + timedelta(days=4)
+
+    def answer(request: httpx.Request) -> httpx.Response:
+        params = request.url.params
+        assert "endTime" in params
+        first, last = int(params["startTime"]), int(params["endTime"])
+        step = 300_000
+        rows = [
+            {"sumOpenInterest": "100.5", "timestamp": moment} for moment in range(first, last, step)
+        ]
+        return httpx.Response(200, json=rows)
+
+    route = respx.get(f"{BASE}/futures/data/openInterestHist").mock(side_effect=answer)
+    clock = FixedClock(now)
+    rest = BinanceRestClient(BASE, USDM.allowed_paths, 600, clock, sleep=Sleeps(clock))
+    live = BinanceProvider(USDM, 1, {1: "BTCUSDT"}, rest, "wss://binance.test", clock)
+    rows = [row async for row in live.get_open_interest_history(BTC, START)]
+    assert len(rows) == 4 * 24 * 12
+    assert route.call_count == 3
+    assert rows[0].event_time == START
+    assert rows[-1].event_time == now - timedelta(minutes=5)
+
+
 @pytest.mark.live
 async def test_live_binance_still_behaves_as_documented() -> None:
     """Opt-in smoke test: uv run pytest --live -m live"""
