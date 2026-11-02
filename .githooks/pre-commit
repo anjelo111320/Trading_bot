@@ -1,0 +1,3 @@
+#!/bin/sh
+# Blocks a commit that contains a secret. Enabled by make bootstrap.
+exec gitleaks protect --staged --redact --no-banner
