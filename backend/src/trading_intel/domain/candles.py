@@ -11,6 +11,12 @@ from trading_intel.core.clock import UtcDatetime, ensure_utc, to_epoch_ms
 from trading_intel.domain.base import DataOrigin, DomainModel
 
 _EPOCH = datetime(1970, 1, 1, tzinfo=UTC)
+
+# Before any provider's history, and far in the future. A microsecond value read as
+# milliseconds falls outside this range, which is the point of the check.
+EARLIEST_PLAUSIBLE_MS = 1_230_768_000_000  # 2009-01-01
+LATEST_PLAUSIBLE_MS = 4_102_444_800_000  # 2100-01-01
+
 _SECONDS = {"1m": 60, "5m": 300, "15m": 900, "30m": 1800, "1h": 3600, "4h": 14400, "1d": 86400}
 
 
@@ -72,6 +78,8 @@ def candle_violations(
         problems.append("open_time_misaligned")
     if close_time != timeframe.close_time(open_time):
         problems.append("close_time_mismatch")
+    if not EARLIEST_PLAUSIBLE_MS <= to_epoch_ms(open_time) <= LATEST_PLAUSIBLE_MS:
+        problems.append("implausible_timestamp")
     return tuple(problems)
 
 
