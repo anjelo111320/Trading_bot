@@ -1,5 +1,5 @@
 .DEFAULT_GOAL := help
-.PHONY: help bootstrap check check-backend check-frontend test up down reset migrate api ingestor web openapi types secrets audit bundle-scan
+.PHONY: backfill help bootstrap check check-backend check-frontend test up down reset migrate api ingestor web openapi types secrets audit bundle-scan
 
 COMPOSE := docker compose -f infra/docker-compose.yml
 
@@ -13,6 +13,7 @@ help:
 	@echo "reset      stop services and DELETE local data"
 	@echo "migrate    apply database migrations"
 	@echo "api        run the API"
+	@echo "backfill   load the 90-day test window of history"
 	@echo "ingestor   run the market-data ingestor"
 	@echo "web        run the dashboard"
 
@@ -70,6 +71,9 @@ api:
 
 ingestor:
 	cd backend && uv run python -m trading_intel.entrypoints.ingestor
+
+backfill:
+	cd backend && uv run python -m trading_intel.entrypoints.backfill
 
 web:
 	cd frontend && pnpm dev

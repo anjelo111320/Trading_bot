@@ -131,12 +131,22 @@ class BackfillService:
         report = BackfillReport(tasks=len(tasks))
         try:
             for task in tasks:
+                self._check_floor(floor_bytes)
                 await self._load(task, report)
         except Exception:
             await self._runs.finish(run_id, "failed", _stats(report))
             raise
         await self._runs.finish(run_id, "succeeded", _stats(report))
         return report
+
+    def _check_floor(self, floor_bytes: int) -> None:
+        """Free space moves with swap and other apps, so check before every task."""
+        free = self._free_bytes()
+        if free < floor_bytes:
+            raise BackfillRefusedError(
+                f"stopped with {free / GIB:.1f} GiB free, below the "
+                f"{floor_bytes / GIB:.1f} GiB floor"
+            )
 
     async def _refuse_if_disk_would_run_out(
         self, tasks: Sequence[BackfillTask], floor_bytes: int

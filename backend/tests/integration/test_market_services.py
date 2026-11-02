@@ -127,6 +127,25 @@ async def test_backfill_refuses_to_fill_the_disk(ingest_engine: AsyncEngine) -> 
     assert provider.history_calls == 0
 
 
+async def test_backfill_stops_if_free_space_falls_during_the_run(
+    ingest_engine: AsyncEngine,
+) -> None:
+    provider_id, instrument = await setup(ingest_engine)
+    readings = iter([PLENTY, PLENTY, GIB])
+    backfill = BackfillService(
+        FakeProvider(provider_id),
+        provider_id,
+        CandleRepository(ingest_engine),
+        GapRepository(ingest_engine),
+        RunRepository(ingest_engine),
+        FixedClock(START),
+        free_bytes=lambda: next(readings),
+    )
+    tasks = [minutes(instrument, 5), minutes(instrument, 5)]
+    with pytest.raises(BackfillRefusedError, match="stopped with"):
+        await backfill.run(tasks, 2 * GIB)
+
+
 def test_profiles_match_the_decisions() -> None:
     assert TEST_PROFILE.window == timedelta(days=90)
     assert TEST_PROFILE.floor_bytes == 2 * GIB

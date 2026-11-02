@@ -20,6 +20,10 @@ services:
       - -c
       - wal_compression=on
       - -c
+      - max_wal_size=128MB
+      - -c
+      - min_wal_size=32MB
+      - -c
       - timezone=UTC
     ports:
       - "127.0.0.1:55432:5432"
