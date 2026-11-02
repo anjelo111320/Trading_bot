@@ -156,7 +156,7 @@ Binance split futures streams into routes. The legacy paths were scheduled for s
 
 So the adapter needs **two connections**, and a subscription that silently delivers nothing must be treated as a failure. Heartbeat monitoring works per stream, not per connection.
 
-`@forceOrder` needs route confirmation at implementation time, because no liquidation occurred during the 15-second test.
+`@forceOrder` arrives on `/market/stream`, confirmed by real events on 2026-11-02.
 
 Liquidation data has limits: since 2021 the stream sends at most one order per symbol per second, and no history is available. Reports must describe it as a sample.
 
@@ -272,7 +272,6 @@ Test approach: recorded or synthetic frames for adapters, a fake WebSocket serve
 
 - Binance's "separate API terms" and the current prohibited-country list. The owner should check that list for their location, which has not been stated.
 - Whether derivatives data use has different eligibility terms in the owner's jurisdiction.
-- The route for `@forceOrder`.
 - FMP and Finnhub plan coverage, read from their own pricing pages by the owner or from support.
 - Bybit's market-data terms.
 - OANDA's API licence, visible only with an account.

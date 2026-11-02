@@ -1,5 +1,5 @@
 .DEFAULT_GOAL := help
-.PHONY: backfill help bootstrap check check-backend check-frontend test up down reset migrate api ingestor web openapi types secrets audit bundle-scan
+.PHONY: backfill drill soak soak-report help bootstrap check check-backend check-frontend test up down reset migrate api ingestor web openapi types secrets audit bundle-scan
 
 COMPOSE := docker compose -f infra/docker-compose.yml
 
@@ -85,3 +85,12 @@ openapi:
 
 types: openapi
 	cd frontend && pnpm generate:api
+
+soak:
+	./scripts/soak.sh
+
+soak-report:
+	cd backend && uv run python scripts/soak_report.py --since $(SINCE)
+
+drill:
+	./scripts/failure_drill.sh

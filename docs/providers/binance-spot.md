@@ -44,5 +44,4 @@ Stored under `backend/tests/fixtures/binance_spot/` and `binance_usdm/`, recorde
 ## Open Questions
 
 - Where Binance publishes its separate API terms.
-- Which route carries `@forceOrder`. T1.22 confirms it by observing a real event.
 - Whether any Railway region is accepted (D026).

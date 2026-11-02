@@ -1,3 +1,4 @@
+import asyncio
 import json
 from collections.abc import AsyncIterator
 from datetime import UTC, datetime, timedelta
@@ -552,3 +553,54 @@ async def test_a_refusal_by_the_provider_stops_recovery_for_good(
     ingestor = build(Refused(provider_id), provider_id, instrument, ingest_engine, redis, clock)
     with pytest.raises(ProviderHaltError):
         await ingestor._recover_safely("startup")
+
+
+async def test_a_stream_outage_is_recorded_as_downtime(
+    ingest_engine: AsyncEngine, redis: Redis
+) -> None:
+    provider_id, instrument = await spot_btc(ingest_engine)
+    clock = FixedClock(START)
+    ingestor = build(
+        FakeProvider(provider_id), provider_id, instrument, ingest_engine, redis, clock
+    )
+    await ingestor.handle(LinkDown(route="spot", reason="drop", at=START))
+    clock.advance(90)
+    await ingestor.handle(LinkUp(route="spot", at=clock.now()))
+    assert ingestor._down_since == START
+    maintaining = asyncio.create_task(ingestor.maintain())
+    await asyncio.sleep(0.2)
+    maintaining.cancel()
+    await asyncio.gather(maintaining, return_exceptions=True)
+    periods = await EventRepository(ingest_engine).downtime(
+        datetime(2000, 1, 1, tzinfo=UTC), datetime(2100, 1, 1, tzinfo=UTC)
+    )
+    assert [p["reason"] for p in periods] == ["stream reconnected"]
+    assert periods[0]["start"] == START.isoformat()
+
+
+async def test_restart_after_a_crash_reports_the_time_away(
+    ingest_engine: AsyncEngine, redis: Redis
+) -> None:
+    provider_id, instrument = await spot_btc(ingest_engine)
+    await CandleRepository(ingest_engine).insert(
+        [make_candle(provider_id, instrument.id, Timeframe.M1, START)]
+    )
+    clock = FixedClock(START + timedelta(minutes=30))
+    ingestor = build(
+        FakeProvider(provider_id), provider_id, instrument, ingest_engine, redis, clock
+    )
+    downtime = await ingestor._time_since_last_run()
+    assert downtime is not None
+    assert downtime.start == START + timedelta(minutes=1)
+
+
+async def test_a_quick_restart_is_not_downtime(ingest_engine: AsyncEngine, redis: Redis) -> None:
+    provider_id, instrument = await spot_btc(ingest_engine)
+    await CandleRepository(ingest_engine).insert(
+        [make_candle(provider_id, instrument.id, Timeframe.M1, START)]
+    )
+    clock = FixedClock(START + timedelta(minutes=2))
+    ingestor = build(
+        FakeProvider(provider_id), provider_id, instrument, ingest_engine, redis, clock
+    )
+    assert await ingestor._time_since_last_run() is None

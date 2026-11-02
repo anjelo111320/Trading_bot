@@ -69,6 +69,7 @@ FIRST_RUN_LOOKBACK = 10
 LATENCY_SAMPLES = 5000
 OPEN_INTEREST_HISTORY = timedelta(days=29)
 WRITE_RETRY_SECONDS = 60.0
+RESTART_GRACE_SECONDS = 120  # A quick restart with nothing lost is not downtime.
 TRANSIENT_DATABASE_ERRORS = (DBAPIError, OSError, asyncpg.PostgresError, asyncpg.InterfaceError)
 
 
@@ -161,7 +162,7 @@ class Ingestor:
         self._sleep_detector = SleepDetector(clock)
         self._last_price: dict[int, float] = {}
         self._last_forming: dict[str, float] = {}
-        self._was_down = False
+        self._down_since: datetime | None = None
         self._needs_repair = asyncio.Event()
         self._replay_from: datetime | None = None
         self.counters = Counters()
@@ -184,12 +185,11 @@ class Ingestor:
                 await self._with_retry(lambda: self._market.insert_liquidation(event))
             case LinkUp():
                 self.health.link_up(event.route)
-                if self._was_down:
-                    self._was_down = False
+                if self._down_since is not None:
                     self._needs_repair.set()
             case LinkDown():
                 self.health.link_down(event.route, event.reason)
-                self._was_down = True
+                self._down_since = self._down_since or event.at
             case MarketEventRejected():
                 self.counters.rejected += 1
                 log.warning("frame_rejected", route=event.route, reason=event.reason)
@@ -401,6 +401,22 @@ class Ingestor:
         rows = self._aggregator.flush(self._clock.now())
         await self._with_retry(lambda: self._snapshots.upsert_many(rows))
 
+    async def _time_since_last_run(self) -> Downtime | None:
+        """A crash or a stop leaves a period with no live data, which reports must show."""
+        one_minute = [s for s in self._plan.subscriptions if s.timeframe is Timeframe.M1]
+        if not one_minute:
+            return None
+        latest = await self._candles.latest_open_time(
+            self._plan.provider_id, one_minute[0].instrument.id, Timeframe.M1
+        )
+        if latest is None:
+            return None
+        ended = Timeframe.M1.next_open(latest)
+        now = self._clock.now()
+        if (now - ended).total_seconds() < RESTART_GRACE_SECONDS:
+            return None
+        return Downtime(ended, now)
+
     async def _replay_missed(self) -> None:
         """Send closed candles that Redis missed, once it is back."""
         if self._replay_from is None or not await self._bus.is_available():
@@ -464,7 +480,9 @@ class Ingestor:
                 await self._recover_safely("computer slept", downtime)
             if self._needs_repair.is_set():
                 self._needs_repair.clear()
-                await self._recover_safely("stream reconnected")
+                since, self._down_since = self._down_since, None
+                outage = Downtime(since, self._clock.now()) if since else None
+                await self._recover_safely("stream reconnected", outage)
             await every("snapshots", TICK_SECONDS, self._flush_snapshots)
             await every("status", TICK_SECONDS, self._publish_status)
             await every("replay", 30, self._replay_missed)
@@ -493,7 +511,7 @@ class Ingestor:
         consumer = asyncio.create_task(self.consume())
         maintainer: asyncio.Task[None] | None = None
         try:
-            await self._recover_safely("startup")
+            await self._recover_safely("startup", await self._time_since_last_run())
             maintainer = asyncio.create_task(self.maintain())
             done, _ = await asyncio.wait(
                 {consumer, maintainer}, return_when=asyncio.FIRST_COMPLETED

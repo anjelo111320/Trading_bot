@@ -10,6 +10,7 @@ dependencies = [
     "defusedxml==0.7.1",
     "fastapi==0.162.0",
     "httpx==0.28.1",
+    "numpy==2.5.4",
     "pydantic==2.14.2",
     "pydantic-settings==2.16.2",
     "redis==8.1.0",
@@ -29,6 +30,7 @@ dev = [
     "pytest-asyncio==1.4.1",
     "respx==0.23.1",
     "ruff==0.17.3",
+    "ta-lib==0.8.3",
     "types-defusedxml==0.7.0.20250822",
 ]
 
@@ -59,6 +61,10 @@ strict = true
 mypy_path = "src"
 packages = ["trading_intel"]
 plugins = ["pydantic.mypy"]
+
+[[tool.mypy.overrides]]
+module = ["asyncpg.*"]
+ignore_missing_imports = true
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
