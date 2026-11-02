@@ -22,7 +22,7 @@ bootstrap: .env
 	cd backend && uv sync
 	@if [ -d frontend ]; then cd frontend && pnpm install --frozen-lockfile; fi
 
-check: check-backend check-frontend secrets
+check: up check-backend check-frontend secrets
 
 check-backend:
 	cd backend && uv run ruff format --check .
