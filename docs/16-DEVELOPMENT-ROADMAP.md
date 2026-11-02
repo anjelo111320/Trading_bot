@@ -5,7 +5,7 @@ Order accepted by the owner under D010 on 2026-11-02.
 ## Current Status
 Updated 2026-11-02.
 
-Phase 0 is in progress.
+Phase 0 is complete: [phase-0.md](reports/phase-0.md). Phase 1A is in progress.
 
 - Done: repository inspection, provider research, the ten first deliverables and decisions D006 to D028. See [22-REQUIREMENTS-TRACEABILITY.md](22-REQUIREMENTS-TRACEABILITY.md) and [17-DECISIONS.md](17-DECISIONS.md).
 - Working method: phases are built in order without waiting for review, and long tests run alongside later work (D028).

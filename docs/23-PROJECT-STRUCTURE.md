@@ -1,7 +1,7 @@
 # Project Structure
 
 Date: 2026-11-02
-Status: Proposed under D011 and D018. This is the target layout. Folders are created in the phase that needs them, and empty placeholders are not added.
+Status: Adopted under D011 and D018. This is the target layout. Folders are created in the phase that needs them, and empty placeholders are not added.
 
 The backend module names come from [brief section 16](21-PROJECT-BRIEF.md). `core`, `domain`, `events`, `api` and `entrypoints` are added because shared contracts, transport, HTTP and process startup need a home that no brief module owns.
 
@@ -56,8 +56,7 @@ backend/
 │   ├── database/                tables, sessions, repositories
 │   ├── data_providers/          external market-data adapters
 │   │   ├── base.py              protocols and capabilities
-│   │   ├── binance_spot/
-│   │   ├── binance_usdm/
+│   │   ├── binance/             shared client, parsing, streams, spot and USD-M
 │   │   └── synthetic/           labelled synthetic data for development
 │   ├── market_data/             normalise, validate, ingest, backfill, gaps,
 │   │                            reconcile, health, snapshots, instrument rules
@@ -176,8 +175,8 @@ The frontend renders values from the backend. Indicators, risk and P/L are never
 | Phase | Backend folders created |
 |---|---|
 | 0 | `core`, `domain`, `database`, `api`, `entrypoints` |
-| 1A | `data_providers/binance_spot`, `data_providers/synthetic`, `market_data`, `events`, `monitoring` |
-| 1B | `data_providers/binance_usdm` |
+| 1A | `data_providers/binance`, `data_providers/synthetic`, `market_data`, `events`, `monitoring` |
+| 1B | USD-M support in `data_providers/binance` |
 | 2 | `technical_analysis`, `market_structure`, `pattern_detection` |
 | 3 | `risk_management`, `trade_signals`, `notifications` |
 | 4 | `backtesting` |
