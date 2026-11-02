@@ -68,6 +68,7 @@ SETTLE_SECONDS = 3  # A candle that has just closed may still be in flight.
 FIRST_RUN_LOOKBACK = 10
 LATENCY_SAMPLES = 5000
 OPEN_INTEREST_HISTORY = timedelta(days=29)
+OPEN_INTEREST_STEP = timedelta(minutes=5)
 WRITE_RETRY_SECONDS = 60.0
 RESTART_GRACE_SECONDS = 120  # A quick restart with nothing lost is not downtime.
 TRANSIENT_DATABASE_ERRORS = (DBAPIError, OSError, asyncpg.PostgresError, asyncpg.InterfaceError)
@@ -345,12 +346,11 @@ class Ingestor:
         self, provider: DerivativesCapable, instrument: Instrument
     ) -> None:
         """Binance keeps about a month, so anything older cannot be refilled."""
-        now = self._clock.now()
-        latest = await self._snapshots.latest_open_interest_minute(
-            self._plan.provider_id, instrument.id
-        )
-        oldest_available = now - OPEN_INTEREST_HISTORY
-        start = max(latest + timedelta(minutes=5), oldest_available) if latest else oldest_available
+        oldest_available = self._clock.now() - OPEN_INTEREST_HISTORY
+        span = await self._snapshots.open_interest_span(self._plan.provider_id, instrument.id)
+        start = oldest_available
+        if span is not None and span[0] <= oldest_available + OPEN_INTEREST_STEP:
+            start = max(span[1] + OPEN_INTEREST_STEP, oldest_available)
         rows = [
             SnapshotRow(
                 provider_id=self._plan.provider_id,

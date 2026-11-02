@@ -295,20 +295,23 @@ class SnapshotRepository:
             ).one_or_none()
         return (row.minute_start, row.best_bid, row.best_ask) if row else None
 
-    async def latest_open_interest_minute(
+    async def open_interest_span(
         self, provider_id: int, instrument_id: int
-    ) -> datetime | None:
+    ) -> tuple[datetime, datetime] | None:
+        """The earliest and latest minutes that hold open interest."""
         async with self._engine.connect() as connection:
-            result = await connection.execute(
-                text(
-                    """SELECT max(minute_start) FROM market_snapshots
-                       WHERE provider_id = :provider AND instrument_id = :instrument
-                         AND open_interest IS NOT NULL"""
-                ),
-                {"provider": provider_id, "instrument": instrument_id},
-            )
-            value: datetime | None = result.scalar_one()
-        return value
+            row = (
+                await connection.execute(
+                    text(
+                        """SELECT min(minute_start) AS first, max(minute_start) AS last
+                           FROM market_snapshots
+                           WHERE provider_id = :provider AND instrument_id = :instrument
+                             AND open_interest IS NOT NULL"""
+                    ),
+                    {"provider": provider_id, "instrument": instrument_id},
+                )
+            ).one()
+        return (row.first, row.last) if row.first else None
 
     async def spread_minutes(
         self, provider_id: int, instrument_id: int, start: datetime, end: datetime

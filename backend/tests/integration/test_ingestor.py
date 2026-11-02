@@ -421,6 +421,46 @@ async def test_open_interest_history_fills_snapshots_without_erasing_spread(
     assert rows[1].sample_count == 10
 
 
+async def test_open_interest_refills_the_month_even_when_recent_rows_exist(
+    ingest_engine: AsyncEngine, redis: Redis
+) -> None:
+    """Regression: live rows hid the empty month before them."""
+    provider_id, instrument = await spot_btc(ingest_engine)
+    now = START + timedelta(days=40)
+    snapshots = SnapshotRepository(ingest_engine)
+    await snapshots.upsert(
+        SnapshotRow(
+            provider_id=provider_id,
+            instrument_id=instrument.id,
+            minute_start=now - timedelta(minutes=5),
+            best_bid=None,
+            best_ask=None,
+            spread_min=None,
+            spread_mean=None,
+            spread_max=None,
+            spread_last=None,
+            sample_count=0,
+            crossed_book_count=0,
+            open_interest=Decimal(1),
+            data_origin=DataOrigin.LIVE,
+            received_at=now,
+        )
+    )
+    requested: list[datetime] = []
+
+    class Derivatives(FakeProvider):
+        async def get_open_interest_history(self, target: Instrument, start: datetime) -> Any:
+            requested.append(start)
+            return
+            yield
+
+    ingestor = build(
+        Derivatives(provider_id), provider_id, instrument, ingest_engine, redis, FixedClock(now)
+    )
+    await ingestor._repair_open_interest(Derivatives(provider_id), instrument)
+    assert requested == [now - timedelta(days=29)]
+
+
 async def test_coverage_reports_downtime_repairs_and_lost_spread(
     ingest_engine: AsyncEngine, redis: Redis
 ) -> None:

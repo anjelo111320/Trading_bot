@@ -232,7 +232,7 @@ async def test_sweep_recovers_a_candle_whose_closing_frame_was_lost(
 ) -> None:
     provider_id, instrument = await setup(ingest_engine)
     candles = CandleRepository(ingest_engine)
-    now = START + timedelta(minutes=10, seconds=5)
+    now = START + timedelta(minutes=10, seconds=15)
     await candles.insert(
         [
             make_candle(provider_id, instrument.id, Timeframe.M1, START + timedelta(minutes=m))
@@ -246,6 +246,20 @@ async def test_sweep_recovers_a_candle_whose_closing_frame_was_lost(
     assert await candles.count(provider_id, instrument.id, Timeframe.M1) == 5
 
 
+async def test_sweep_leaves_a_candle_that_has_only_just_closed_to_the_stream(
+    ingest_engine: AsyncEngine,
+) -> None:
+    """Regression: the sweep raced the closing frame, which then counted as a duplicate."""
+    provider_id, instrument = await setup(ingest_engine)
+    candles = CandleRepository(ingest_engine)
+    just_closed = START + timedelta(minutes=9)
+    moment = just_closed + timedelta(minutes=1, seconds=1)
+    sweep = ReconcileService(FakeProvider(provider_id), provider_id, candles, FixedClock(moment))
+    await sweep.sweep(instrument, Timeframe.M1)
+    stored = await candles.open_times(provider_id, instrument.id, Timeframe.M1, just_closed, moment)
+    assert stored == []
+
+
 async def test_value_mismatch_leaves_an_auditable_record(ingest_engine: AsyncEngine) -> None:
     provider_id, instrument = await setup(ingest_engine)
     candles = CandleRepository(ingest_engine)
@@ -256,7 +270,7 @@ async def test_value_mismatch_leaves_an_auditable_record(ingest_engine: AsyncEng
         provider_id, instrument.id, Timeframe.M1, open_time, close=Decimal(106)
     )
     sweep = ReconcileService(
-        provider, provider_id, candles, FixedClock(START + timedelta(minutes=10))
+        provider, provider_id, candles, FixedClock(START + timedelta(minutes=10, seconds=15))
     )
     result = await sweep.sweep(instrument, Timeframe.M1)
     assert result.mismatched == 1
