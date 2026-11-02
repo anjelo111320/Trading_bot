@@ -164,3 +164,11 @@ Spend alerts on the Anthropic account act as an independent backstop to the appl
 | End of each phase | Run the `security-audit` skill on what was built |
 | Before any always-on host | Firewall, HTTPS, no public database or Redis ports, backups |
 | Before any third-party access | Full audit, licence review and legal review |
+
+## WebSocket Protection
+
+Status: Specified in [13-API-CONTRACTS.md](13-API-CONTRACTS.md).
+
+- A browser sends cookies on cross-site WebSocket connections, so a cookie alone is not enough.
+- The client requests a single-use ticket that lasts 30 seconds, and passes it when connecting.
+- The server also checks the `Origin` header against the configured origins.

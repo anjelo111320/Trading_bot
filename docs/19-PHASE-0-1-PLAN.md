@@ -266,7 +266,7 @@ Creates: `frontend/` app, `frontend/src/lib/api/`, generated API types.
 Acceptance:
 - A status page shows backend health through TanStack Query.
 - API types are generated from the OpenAPI file with `openapi-typescript`, and CI fails if they drift.
-- Confirm TypeScript 7 works with Next.js 16; otherwise pin a compatible version and record why.
+- TypeScript is pinned to 5.9.3. Version 7 was not adopted, because the Next.js and ESLint tooling depends on the JavaScript compiler API and there was no reason to take that risk at this stage.
 - The built bundle contains no secret and no server-only variable.
 - UI components hold no business logic.
 
