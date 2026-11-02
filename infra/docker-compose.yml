@@ -1,0 +1,61 @@
+# Local services. Ports are bound to 127.0.0.1 only and avoid the Homebrew
+# PostgreSQL on 5432. Memory caps suit a computer with 8 GB.
+name: trading-intel
+
+services:
+  postgres:
+    image: postgres:18.0-alpine3.22
+    environment:
+      POSTGRES_DB: trading
+      POSTGRES_USER: ati_superuser
+      POSTGRES_PASSWORD: local_dev_only
+    command:
+      - postgres
+      - -c
+      - shared_buffers=256MB
+      - -c
+      - effective_cache_size=768MB
+      - -c
+      - max_connections=40
+      - -c
+      - wal_compression=on
+      - -c
+      - timezone=UTC
+    ports:
+      - "127.0.0.1:55432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/18/docker
+      - ./postgres/init:/docker-entrypoint-initdb.d:ro
+    mem_limit: 1g
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ati_superuser -d trading"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+  redis:
+    image: redis:8.2-alpine3.22
+    command:
+      - redis-server
+      - --appendonly
+      - "yes"
+      - --maxmemory
+      - 128mb
+      - --maxmemory-policy
+      - noeviction
+    ports:
+      - "127.0.0.1:56379:6379"
+    volumes:
+      - redisdata:/data
+    mem_limit: 256m
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+volumes:
+  pgdata:
+  redisdata:
