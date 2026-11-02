@@ -9,6 +9,7 @@ from trading_intel.domain.base import DataOrigin
 from trading_intel.domain.candles import ClosedCandle, Timeframe
 from trading_intel.domain.events import plain
 from trading_intel.domain.instruments import InstrumentType
+from trading_intel.monitoring.coverage import CoverageReport
 
 FeedStateName = Literal["HEALTHY", "DEGRADED", "STALE", "DISCONNECTED", "RECOVERING"]
 
@@ -101,3 +102,38 @@ class GapView(BaseModel):
 
 class GapList(BaseModel):
     items: list[GapView]
+
+
+class InstrumentCoverageView(BaseModel):
+    provider: str
+    instrument_id: int
+    symbol: str
+    candles_expected: int
+    candles_stored: int
+    gaps_repaired: int
+    gaps_provider_missing: int
+    spread_minutes_recorded: int
+    spread_minutes_lost: int
+
+
+class DowntimeView(BaseModel):
+    reason: str
+    provider: str | None
+    start: UtcDatetime
+    end: UtcDatetime
+
+
+class CoverageView(BaseModel):
+    window_start: UtcDatetime
+    window_end: UtcDatetime
+    instruments: list[InstrumentCoverageView]
+    downtime: list[DowntimeView]
+
+    @classmethod
+    def of(cls, report: CoverageReport) -> CoverageView:
+        return cls(
+            window_start=report.window_start,
+            window_end=report.window_end,
+            instruments=[InstrumentCoverageView(**vars(item)) for item in report.instruments],
+            downtime=[DowntimeView(**vars(item)) for item in report.downtime],
+        )

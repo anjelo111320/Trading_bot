@@ -244,7 +244,12 @@ class SnapshotRepository:
         self._engine = engine
 
     async def upsert(self, row: SnapshotRow) -> None:
+        await self.upsert_many([row])
+
+    async def upsert_many(self, rows: Sequence[SnapshotRow]) -> None:
         """Keep one row per minute. A later writer may fill columns the first left empty."""
+        if not rows:
+            return
         query = text(
             """INSERT INTO market_snapshots (provider_id, instrument_id, minute_start, best_bid,
                  best_ask, spread_min, spread_mean, spread_max, spread_last, sample_count,
@@ -268,9 +273,24 @@ class SnapshotRepository:
                  index_price = COALESCE(EXCLUDED.index_price, market_snapshots.index_price),
                  open_interest = COALESCE(EXCLUDED.open_interest, market_snapshots.open_interest)"""
         )
-        values = {**row.__dict__, "data_origin": row.data_origin.value}
+        values = [{**row.__dict__, "data_origin": row.data_origin.value} for row in rows]
         async with self._engine.begin() as connection:
             await connection.execute(query, values)
+
+    async def latest_open_interest_minute(
+        self, provider_id: int, instrument_id: int
+    ) -> datetime | None:
+        async with self._engine.connect() as connection:
+            result = await connection.execute(
+                text(
+                    """SELECT max(minute_start) FROM market_snapshots
+                       WHERE provider_id = :provider AND instrument_id = :instrument
+                         AND open_interest IS NOT NULL"""
+                ),
+                {"provider": provider_id, "instrument": instrument_id},
+            )
+            value: datetime | None = result.scalar_one()
+        return value
 
     async def spread_minutes(
         self, provider_id: int, instrument_id: int, start: datetime, end: datetime
@@ -341,6 +361,20 @@ class MarketRepository:
 class EventRepository:
     def __init__(self, engine: AsyncEngine) -> None:
         self._engine = engine
+
+    async def downtime(self, start: datetime, end: datetime) -> list[dict[str, Any]]:
+        """Downtime periods recorded inside [start, end), oldest first."""
+        async with self._engine.connect() as connection:
+            result = await connection.execute(
+                text(
+                    """SELECT message, data FROM system_events
+                       WHERE event_type = 'downtime' AND occurred_at >= :start
+                         AND occurred_at < :end
+                       ORDER BY occurred_at"""
+                ),
+                {"start": start, "end": end},
+            )
+            return [{"reason": row.message, **row.data} for row in result]
 
     async def record(
         self,

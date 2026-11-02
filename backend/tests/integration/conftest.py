@@ -22,6 +22,7 @@ CLEANED = (
     "system_events",
     "audit_log",
     "users",
+    "news_articles",
 )
 
 

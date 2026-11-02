@@ -21,12 +21,14 @@ from trading_intel.database.engine import create_engine, ping
 from trading_intel.database.repositories.accounts import AuditRepository, UserRepository
 from trading_intel.database.repositories.candles import CandleRepository
 from trading_intel.database.repositories.operations import (
+    EventRepository,
     GapRepository,
     RuleRepository,
     SnapshotRepository,
 )
 from trading_intel.database.repositories.reference import ReferenceRepository
 from trading_intel.events.redis_transport import RedisEventBus
+from trading_intel.monitoring.coverage import CoverageService
 
 REQUEST_ID_HEADER = "X-Request-ID"
 
@@ -50,6 +52,10 @@ def build_services(
         await redis.aclose()
         await engine.dispose()
 
+    reference = ReferenceRepository(engine)
+    candles = CandleRepository(engine)
+    gaps = GapRepository(engine)
+    snapshots = SnapshotRepository(engine)
     container = Container(
         settings=settings,
         clock=clock,
@@ -59,12 +65,13 @@ def build_services(
         tickets=TicketLedger(clock),
         users=UserRepository(engine),
         audit=AuditRepository(engine),
-        reference=ReferenceRepository(engine),
-        candles=CandleRepository(engine),
-        gaps=GapRepository(engine),
+        reference=reference,
+        candles=candles,
+        gaps=gaps,
         rules=RuleRepository(engine),
-        snapshots=SnapshotRepository(engine),
+        snapshots=snapshots,
         bus=RedisEventBus(redis, clock),
+        coverage=CoverageService(reference, candles, gaps, snapshots, EventRepository(engine)),
     )
     return container, close
 

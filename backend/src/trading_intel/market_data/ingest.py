@@ -1,6 +1,7 @@
 """The live path. Closed candles reach PostgreSQL before anything is published."""
 
 import asyncio
+import contextlib
 import statistics
 from collections import deque
 from collections.abc import AsyncIterator, Awaitable, Callable, Sequence
@@ -8,8 +9,10 @@ from contextlib import asynccontextmanager
 from dataclasses import dataclass
 from datetime import datetime, timedelta
 
+import asyncpg
 import structlog
 from sqlalchemy import text
+from sqlalchemy.exc import DBAPIError, IntegrityError
 from sqlalchemy.ext.asyncio import AsyncEngine
 
 from trading_intel.core.clock import Clock
@@ -29,9 +32,10 @@ from trading_intel.database.repositories.operations import (
     GapRepository,
     MarketRepository,
     SnapshotRepository,
+    SnapshotRow,
 )
 from trading_intel.domain.base import DataOrigin
-from trading_intel.domain.candles import ClosedCandle, FormingCandle
+from trading_intel.domain.candles import ClosedCandle, FormingCandle, Timeframe
 from trading_intel.domain.events import (
     MARKET_CANDLE,
     MARKET_PRICE,
@@ -63,6 +67,9 @@ FUNDING_SECONDS = 600
 SETTLE_SECONDS = 3  # A candle that has just closed may still be in flight.
 FIRST_RUN_LOOKBACK = 10
 LATENCY_SAMPLES = 5000
+OPEN_INTEREST_HISTORY = timedelta(days=29)
+WRITE_RETRY_SECONDS = 60.0
+TRANSIENT_DATABASE_ERRORS = (DBAPIError, OSError, asyncpg.PostgresError, asyncpg.InterfaceError)
 
 
 class IngestorAlreadyRunningError(AppError):
@@ -101,6 +108,7 @@ class Counters:
     book: int = 0
     rejected: int = 0
     publish_failures: int = 0
+    store_failures: int = 0
 
 
 @dataclass(frozen=True)
@@ -173,7 +181,7 @@ class Ingestor:
                 self.health.saw(mark_stream(event.instrument_id))
                 self._aggregator.add_mark(event)
             case LiquidationSample():
-                await self._market.insert_liquidation(event)
+                await self._with_retry(lambda: self._market.insert_liquidation(event))
             case LinkUp():
                 self.health.link_up(event.route)
                 if self._was_down:
@@ -199,7 +207,15 @@ class Ingestor:
                 {"open_time": candle.open_time.isoformat(), "timeframe": candle.timeframe.value},
             )
             return
-        if await self._candles.insert([candle]) == 0:
+        try:
+            added = await self._with_retry(lambda: self._candles.insert([candle]))
+        except TRANSIENT_DATABASE_ERRORS as error:
+            # The candle is still at the provider, so repair recovers it once the database is back.
+            log.error("candle_store_failed", error=type(error).__name__)
+            self.counters.store_failures += 1
+            self._needs_repair.set()
+            return
+        if added == 0:
             self.counters.duplicates += 1
             return
         # The commit above has finished, so a consumer can always read what it is told about.
@@ -247,6 +263,22 @@ class Ingestor:
             ),
         )
 
+    async def _with_retry[T](self, operation: Callable[[], Awaitable[T]]) -> T:
+        """Ride out a short database outage, such as a restart. Bad data is not retried."""
+        delay = 0.5
+        deadline = self._clock.monotonic() + WRITE_RETRY_SECONDS
+        while True:
+            try:
+                return await operation()
+            except IntegrityError:
+                raise
+            except TRANSIENT_DATABASE_ERRORS as error:
+                if self._clock.monotonic() >= deadline:
+                    raise
+                log.warning("database_retry", error=type(error).__name__, delay=delay)
+                await asyncio.sleep(delay)
+                delay = min(delay * 2, 5.0)
+
     # Repair ---------------------------------------------------------------------------------
 
     async def repair_to_now(self, cause: str = "ingest_failure") -> None:
@@ -270,25 +302,33 @@ class Ingestor:
         """Repair in a fixed order, and report healthy only when repaired."""
         self.health.begin_recovery(reason)
         await self._publish_status()
-        try:
-            if downtime is not None:
-                await self._events.record(
-                    "warning",
-                    "ingestor",
-                    "downtime",
-                    reason,
-                    {
-                        "provider": self._plan.provider_code,
-                        "start": downtime.start.isoformat(),
-                        "end": downtime.end.isoformat(),
-                    },
-                )
-            await self.repair_to_now()
-            await self._repair_derivatives()
-            await self._refresh_open_gaps()
-        finally:
-            self.health.end_recovery()
+        if downtime is not None:
+            await self._events.record(
+                "warning",
+                "ingestor",
+                "downtime",
+                reason,
+                {
+                    "provider": self._plan.provider_code,
+                    "start": downtime.start.isoformat(),
+                    "end": downtime.end.isoformat(),
+                },
+            )
+        await self.repair_to_now()
+        await self._repair_derivatives()
+        await self._refresh_open_gaps()
+        self.health.end_recovery()
         await self._publish_status()
+
+    async def _recover_safely(self, reason: str, downtime: Downtime | None = None) -> None:
+        """A failed repair leaves the feed RECOVERING and is tried again on a later tick."""
+        try:
+            await self.recover(reason, downtime)
+        except ProviderHaltError:
+            raise
+        except Exception as error:
+            log.warning("recovery_failed", reason=reason, error=type(error).__name__)
+            self._needs_repair.set()
 
     async def _repair_derivatives(self) -> None:
         provider = self._provider
@@ -299,6 +339,38 @@ class Ingestor:
             start = (latest or self._clock.now() - timedelta(days=30)) + timedelta(milliseconds=1)
             rows = [row async for row in provider.get_funding_history(instrument, start)]
             await self._market.insert_funding(rows)
+            await self._repair_open_interest(provider, instrument)
+
+    async def _repair_open_interest(
+        self, provider: DerivativesCapable, instrument: Instrument
+    ) -> None:
+        """Binance keeps about a month, so anything older cannot be refilled."""
+        now = self._clock.now()
+        latest = await self._snapshots.latest_open_interest_minute(
+            self._plan.provider_id, instrument.id
+        )
+        oldest_available = now - OPEN_INTEREST_HISTORY
+        start = max(latest + timedelta(minutes=5), oldest_available) if latest else oldest_available
+        rows = [
+            SnapshotRow(
+                provider_id=self._plan.provider_id,
+                instrument_id=instrument.id,
+                minute_start=Timeframe.M1.floor(item.event_time),
+                best_bid=None,
+                best_ask=None,
+                spread_min=None,
+                spread_mean=None,
+                spread_max=None,
+                spread_last=None,
+                sample_count=0,
+                crossed_book_count=0,
+                open_interest=item.open_interest,
+                data_origin=DataOrigin.BACKFILL,
+                received_at=item.received_at,
+            )
+            async for item in provider.get_open_interest_history(instrument, start)
+        ]
+        await self._snapshots.upsert_many(rows)
 
     async def _refresh_open_gaps(self) -> None:
         unresolved = await self._gaps.list(
@@ -326,8 +398,8 @@ class Ingestor:
         )
 
     async def _flush_snapshots(self) -> None:
-        for row in self._aggregator.flush(self._clock.now()):
-            await self._snapshots.upsert(row)
+        rows = self._aggregator.flush(self._clock.now())
+        await self._with_retry(lambda: self._snapshots.upsert_many(rows))
 
     async def _replay_missed(self) -> None:
         """Send closed candles that Redis missed, once it is back."""
@@ -389,11 +461,11 @@ class Ingestor:
         while True:
             downtime = self._sleep_detector.check()
             if downtime is not None:
-                await self.recover("computer slept", downtime)
+                await self._recover_safely("computer slept", downtime)
             if self._needs_repair.is_set():
                 self._needs_repair.clear()
-                await self.recover("stream reconnected")
-            await self._flush_snapshots()
+                await self._recover_safely("stream reconnected")
+            await every("snapshots", TICK_SECONDS, self._flush_snapshots)
             await every("status", TICK_SECONDS, self._publish_status)
             await every("replay", 30, self._replay_missed)
             await every("sweep", SWEEP_SECONDS, self._sweep)
@@ -421,7 +493,7 @@ class Ingestor:
         consumer = asyncio.create_task(self.consume())
         maintainer: asyncio.Task[None] | None = None
         try:
-            await self.recover("startup")
+            await self._recover_safely("startup")
             maintainer = asyncio.create_task(self.maintain())
             done, _ = await asyncio.wait(
                 {consumer, maintainer}, return_when=asyncio.FIRST_COMPLETED
@@ -455,5 +527,7 @@ async def single_instance_lock(engine: AsyncEngine, key: int) -> AsyncIterator[N
         try:
             yield
         finally:
-            await connection.execute(text("SELECT pg_advisory_unlock(:key)"), {"key": key})
-            await connection.commit()
+            # If PostgreSQL restarted, the lock went with the old connection.
+            with contextlib.suppress(*TRANSIENT_DATABASE_ERRORS):
+                await connection.execute(text("SELECT pg_advisory_unlock(:key)"), {"key": key})
+                await connection.commit()

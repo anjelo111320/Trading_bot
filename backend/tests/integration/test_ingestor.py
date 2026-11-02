@@ -4,6 +4,7 @@ from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 from pathlib import Path
 from typing import Any
+from uuid import uuid7
 
 import pytest
 from pydantic import BaseModel
@@ -16,6 +17,7 @@ from tests.conftest import make_settings
 from tests.failure.fake_exchange import running, send_json, stay_open
 from tests.fakes import FakeProvider, make_candle
 from trading_intel.core.clock import Clock, FixedClock, SystemClock
+from trading_intel.core.errors import ProviderError, ProviderHaltError
 from trading_intel.data_providers.base import CandleSubscription, LinkDown, LinkUp
 from trading_intel.data_providers.binance.provider import SPOT, BinanceProvider
 from trading_intel.data_providers.binance.rest import BinanceRestClient
@@ -26,12 +28,13 @@ from trading_intel.database.repositories.operations import (
     MarketRepository,
     RuleRepository,
     SnapshotRepository,
+    SnapshotRow,
 )
 from trading_intel.database.repositories.reference import ReferenceRepository
 from trading_intel.domain.base import DataOrigin
 from trading_intel.domain.candles import ClosedCandle, FormingCandle, Timeframe
 from trading_intel.domain.instruments import Instrument
-from trading_intel.domain.market import TopOfBook
+from trading_intel.domain.market import OpenInterest, TopOfBook
 from trading_intel.events.redis_transport import RedisEventBus
 from trading_intel.market_data.gaps import GapRepairService
 from trading_intel.market_data.health import FeedHealth, FeedState
@@ -46,6 +49,8 @@ from trading_intel.market_data.ingest import (
 from trading_intel.market_data.instrument_rules import RuleSnapshotService
 from trading_intel.market_data.reconcile import ReconcileService
 from trading_intel.market_data.recovery import Downtime
+from trading_intel.monitoring.coverage import CoverageService
+from trading_intel.news_intelligence.official_sources import FeedItem, NewsArchive
 
 pytestmark = pytest.mark.integration
 
@@ -363,3 +368,187 @@ async def test_end_to_end_from_a_websocket_frame_to_postgres_and_redis(
     assert stored[0].data_origin is DataOrigin.LIVE
     assert ingestor.counters.duplicates == 1
     assert await redis.xlen("events:market.candle.closed") == 1
+
+
+async def test_open_interest_history_fills_snapshots_without_erasing_spread(
+    ingest_engine: AsyncEngine, redis: Redis
+) -> None:
+    provider_id, instrument = await spot_btc(ingest_engine)
+    now = START + timedelta(hours=1)
+    clock = FixedClock(now)
+    snapshots = SnapshotRepository(ingest_engine)
+    base = SnapshotRow(
+        provider_id=provider_id,
+        instrument_id=instrument.id,
+        minute_start=START + timedelta(minutes=5),
+        best_bid=Decimal(100),
+        best_ask=Decimal(101),
+        spread_min=Decimal(1),
+        spread_mean=Decimal(1),
+        spread_max=Decimal(1),
+        spread_last=Decimal(1),
+        sample_count=10,
+        crossed_book_count=0,
+        data_origin=DataOrigin.LIVE,
+        received_at=START,
+    )
+    await snapshots.upsert(base)
+
+    class Derivatives(FakeProvider):
+        async def get_open_interest_history(self, target: Instrument, start: datetime) -> Any:
+            for minutes in (0, 5, 10):
+                at = START + timedelta(minutes=minutes)
+                yield OpenInterest(
+                    provider_id=provider_id,
+                    instrument_id=target.id,
+                    open_interest=Decimal(500 + minutes),
+                    event_time=at,
+                    received_at=now,
+                )
+
+    ingestor = build(Derivatives(provider_id), provider_id, instrument, ingest_engine, redis, clock)
+    await ingestor._repair_open_interest(Derivatives(provider_id), instrument)
+    async with ingest_engine.connect() as connection:
+        rows = (
+            await connection.execute(
+                text(
+                    "SELECT open_interest, sample_count FROM market_snapshots ORDER BY minute_start"
+                )
+            )
+        ).all()
+    assert [row.open_interest for row in rows] == [Decimal(500), Decimal(505), Decimal(510)]
+    assert rows[1].sample_count == 10
+
+
+async def test_coverage_reports_downtime_repairs_and_lost_spread(
+    ingest_engine: AsyncEngine, redis: Redis
+) -> None:
+    provider_id, instrument = await spot_btc(ingest_engine)
+    candles = CandleRepository(ingest_engine)
+    await candles.insert([make_candle(provider_id, instrument.id, Timeframe.M1, START)])
+    clock = FixedClock(START + timedelta(minutes=1))
+    ingestor = build(
+        FakeProvider(provider_id), provider_id, instrument, ingest_engine, redis, clock
+    )
+    clock.jump_wall_clock(1810)
+    await ingestor.recover("computer slept", Downtime(START + timedelta(minutes=1), clock.now()))
+    events = EventRepository(ingest_engine)
+    coverage = CoverageService(
+        ReferenceRepository(ingest_engine),
+        candles,
+        GapRepository(ingest_engine),
+        SnapshotRepository(ingest_engine),
+        events,
+    )
+    report = await coverage.report(
+        START - timedelta(minutes=1), datetime.now(UTC) + timedelta(minutes=1)
+    )
+    entry = next(i for i in report.instruments if i.instrument_id == instrument.id)
+    assert entry.provider == "binance_spot"
+    assert entry.gaps_repaired == 1
+    assert entry.spread_minutes_recorded == 0
+    assert entry.spread_minutes_lost == entry.candles_expected
+    assert [d.reason for d in report.downtime] == ["computer slept"]
+
+
+async def test_archive_keeps_the_first_sighting_of_each_url(ingest_engine: AsyncEngine) -> None:
+    async with ingest_engine.connect() as connection:
+        row = (
+            await connection.execute(
+                text(
+                    "SELECT p.id AS provider, s.id AS source FROM providers p "
+                    "JOIN news_sources s ON s.provider_id = p.id"
+                )
+            )
+        ).one()
+    archive = NewsArchive(ingest_engine, row.provider, row.source)
+    item = FeedItem("Headline", f"https://example.test/{uuid7()}", None, START)
+    assert await archive.store([item], START) == 1
+    assert await archive.store([item], START + timedelta(days=1)) == 0
+
+
+class FlakyCandles(CandleRepository):
+    """Fails like a restarting database, then recovers."""
+
+    failures = 0
+
+    async def insert(self, candles: Any, run_id: Any = None) -> int:
+        if self.failures > 0:
+            self.failures -= 1
+            raise ConnectionRefusedError("database restarting")
+        return await super().insert(candles, run_id)
+
+
+async def test_a_short_database_outage_is_ridden_out(
+    ingest_engine: AsyncEngine, redis: Redis, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    provider_id, instrument = await spot_btc(ingest_engine)
+    clock = FixedClock(START + timedelta(minutes=1))
+    ingestor = build(
+        FakeProvider(provider_id), provider_id, instrument, ingest_engine, redis, clock
+    )
+    flaky = FlakyCandles(ingest_engine)
+    flaky.failures = 2
+    ingestor._candles = flaky
+
+    async def no_wait(_: float) -> None:
+        return None
+
+    monkeypatch.setattr("trading_intel.market_data.ingest.asyncio.sleep", no_wait)
+    await ingestor.handle(make_candle(provider_id, instrument.id, Timeframe.M1, START))
+    assert ingestor.counters.closed == 1
+    assert await flaky.count(provider_id, instrument.id, Timeframe.M1) == 1
+
+
+async def test_a_long_database_outage_requests_repair_instead_of_crashing(
+    ingest_engine: AsyncEngine, redis: Redis, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    provider_id, instrument = await spot_btc(ingest_engine)
+    clock = FixedClock(START + timedelta(minutes=1))
+    ingestor = build(
+        FakeProvider(provider_id), provider_id, instrument, ingest_engine, redis, clock
+    )
+    flaky = FlakyCandles(ingest_engine)
+    flaky.failures = 10_000
+    ingestor._candles = flaky
+
+    async def time_passes(seconds: float) -> None:
+        clock.advance(30)
+
+    monkeypatch.setattr("trading_intel.market_data.ingest.asyncio.sleep", time_passes)
+    await ingestor.handle(make_candle(provider_id, instrument.id, Timeframe.M1, START))
+    assert ingestor.counters.store_failures == 1
+    assert ingestor._needs_repair.is_set()
+
+
+async def test_a_failed_recovery_stays_unusable_and_retries(
+    ingest_engine: AsyncEngine, redis: Redis
+) -> None:
+    provider_id, instrument = await spot_btc(ingest_engine)
+    clock = FixedClock(START + timedelta(minutes=1))
+
+    class Failing(FakeProvider):
+        async def get_historical_candles(self, *args: Any, **kwargs: Any) -> AsyncIterator[Any]:
+            raise ProviderError("network down")
+            yield
+
+    ingestor = build(Failing(provider_id), provider_id, instrument, ingest_engine, redis, clock)
+    await ingestor._recover_safely("startup")
+    assert ingestor.health.status().state is FeedState.RECOVERING
+    assert ingestor._needs_repair.is_set()
+
+
+async def test_a_refusal_by_the_provider_stops_recovery_for_good(
+    ingest_engine: AsyncEngine, redis: Redis
+) -> None:
+    provider_id, instrument = await spot_btc(ingest_engine)
+    clock = FixedClock(START + timedelta(minutes=1))
+
+    class Refused(FakeProvider):
+        async def get_historical_candles(self, *args: Any, **kwargs: Any) -> AsyncIterator[Any]:
+            raise ProviderHaltError("Binance refuses this location")
+            yield
+
+    ingestor = build(Refused(provider_id), provider_id, instrument, ingest_engine, redis, clock)
+    with pytest.raises(ProviderHaltError):
+        await ingestor._recover_safely("startup")

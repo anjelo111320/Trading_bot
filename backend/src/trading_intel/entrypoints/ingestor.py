@@ -7,6 +7,7 @@ from typing import Final
 
 import structlog
 from redis.asyncio import Redis
+from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncEngine
 
 from trading_intel.core.clock import SystemClock
@@ -38,6 +39,7 @@ from trading_intel.market_data.ingest import (
 )
 from trading_intel.market_data.instrument_rules import RuleSnapshotService
 from trading_intel.market_data.reconcile import ReconcileService
+from trading_intel.news_intelligence.official_sources import NewsArchive, OfficialSourceCollector
 
 log = structlog.get_logger(__name__)
 
@@ -93,6 +95,20 @@ async def build_ingestor(
     )
 
 
+async def build_collector(engine: AsyncEngine) -> OfficialSourceCollector:
+    async with engine.connect() as connection:
+        row = (
+            await connection.execute(
+                text(
+                    """SELECT p.id AS provider, s.id AS source FROM providers p
+                       JOIN news_sources s ON s.provider_id = p.id
+                       WHERE p.code = 'federal_reserve'"""
+                )
+            )
+        ).one()
+    return OfficialSourceCollector(NewsArchive(engine, row.provider, row.source), SystemClock())
+
+
 async def run_one(code: str, settings: Settings, engine: AsyncEngine, redis: Redis) -> None:
     async with single_instance_lock(engine, LOCK_KEYS[code]):
         ingestor = await build_ingestor(code, settings, engine, redis)
@@ -106,6 +122,7 @@ async def run(codes: list[str]) -> None:
     engine = create_engine(settings.ingest_database_url, pool_size=8)
     redis: Redis = Redis.from_url(settings.redis_url.get_secret_value())
     tasks = [asyncio.create_task(run_one(code, settings, engine, redis)) for code in codes]
+    tasks.append(asyncio.create_task((await build_collector(engine)).run()))
 
     stop = asyncio.Event()
     loop = asyncio.get_running_loop()

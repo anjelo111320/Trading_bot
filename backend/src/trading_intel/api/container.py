@@ -21,6 +21,7 @@ if TYPE_CHECKING:
     )
     from trading_intel.database.repositories.reference import ReferenceRepository
     from trading_intel.events.redis_transport import RedisEventBus
+    from trading_intel.monitoring.coverage import CoverageService
 
 Probe = Callable[[], Awaitable[None]]
 
@@ -41,6 +42,7 @@ class Container:
     rules: RuleRepository = field(default=None)  # type: ignore[assignment]
     snapshots: SnapshotRepository = field(default=None)  # type: ignore[assignment]
     bus: RedisEventBus = field(default=None)  # type: ignore[assignment]
+    coverage: CoverageService = field(default=None)  # type: ignore[assignment]
 
 
 def get_container(request: HTTPConnection) -> Container:

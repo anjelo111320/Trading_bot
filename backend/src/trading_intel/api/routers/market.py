@@ -1,6 +1,6 @@
 """Market data for the dashboard. Closed candles only, and every value states its age."""
 
-from datetime import datetime
+from datetime import datetime, timedelta
 from typing import Annotated, Final
 
 from fastapi import APIRouter, Depends, Query
@@ -10,6 +10,7 @@ from trading_intel.api.container import Container, get_container
 from trading_intel.api.schemas.market import (
     CandlePage,
     CandleView,
+    CoverageView,
     FeedStatusView,
     GapList,
     GapView,
@@ -141,6 +142,17 @@ async def status(_: Owner, services: Services) -> MarketStatusView:
         payload = MarketStatusPayload.model_validate(envelope.payload)
         feeds.append(FeedStatusView(**payload.model_dump()))
     return MarketStatusView(usable=all(f.state == "HEALTHY" for f in feeds), feeds=feeds)
+
+
+@router.get("/market/coverage", response_model=CoverageView)
+async def coverage(
+    _: Owner,
+    services: Services,
+    hours: Annotated[int, Query(ge=1, le=168)] = 24,
+) -> CoverageView:
+    end = services.clock.now()
+    report = await services.coverage.report(end - timedelta(hours=hours), end)
+    return CoverageView.of(report)
 
 
 @router.get("/market/gaps", response_model=GapList)

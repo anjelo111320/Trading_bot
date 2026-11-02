@@ -103,6 +103,42 @@
         "title": "CandleView",
         "type": "object"
       },
+      "CoverageView": {
+        "properties": {
+          "downtime": {
+            "items": {
+              "$ref": "#/components/schemas/DowntimeView"
+            },
+            "title": "Downtime",
+            "type": "array"
+          },
+          "instruments": {
+            "items": {
+              "$ref": "#/components/schemas/InstrumentCoverageView"
+            },
+            "title": "Instruments",
+            "type": "array"
+          },
+          "window_end": {
+            "format": "date-time",
+            "title": "Window End",
+            "type": "string"
+          },
+          "window_start": {
+            "format": "date-time",
+            "title": "Window Start",
+            "type": "string"
+          }
+        },
+        "required": [
+          "window_start",
+          "window_end",
+          "instruments",
+          "downtime"
+        ],
+        "title": "CoverageView",
+        "type": "object"
+      },
       "DataOrigin": {
         "enum": [
           "live",
@@ -139,6 +175,43 @@
           "ok"
         ],
         "title": "DependencyHealth",
+        "type": "object"
+      },
+      "DowntimeView": {
+        "properties": {
+          "end": {
+            "format": "date-time",
+            "title": "End",
+            "type": "string"
+          },
+          "provider": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Provider"
+          },
+          "reason": {
+            "title": "Reason",
+            "type": "string"
+          },
+          "start": {
+            "format": "date-time",
+            "title": "Start",
+            "type": "string"
+          }
+        },
+        "required": [
+          "reason",
+          "provider",
+          "start",
+          "end"
+        ],
+        "title": "DowntimeView",
         "type": "object"
       },
       "ErrorBody": {
@@ -372,6 +445,59 @@
           "dependencies"
         ],
         "title": "HealthResponse",
+        "type": "object"
+      },
+      "InstrumentCoverageView": {
+        "properties": {
+          "candles_expected": {
+            "title": "Candles Expected",
+            "type": "integer"
+          },
+          "candles_stored": {
+            "title": "Candles Stored",
+            "type": "integer"
+          },
+          "gaps_provider_missing": {
+            "title": "Gaps Provider Missing",
+            "type": "integer"
+          },
+          "gaps_repaired": {
+            "title": "Gaps Repaired",
+            "type": "integer"
+          },
+          "instrument_id": {
+            "title": "Instrument Id",
+            "type": "integer"
+          },
+          "provider": {
+            "title": "Provider",
+            "type": "string"
+          },
+          "spread_minutes_lost": {
+            "title": "Spread Minutes Lost",
+            "type": "integer"
+          },
+          "spread_minutes_recorded": {
+            "title": "Spread Minutes Recorded",
+            "type": "integer"
+          },
+          "symbol": {
+            "title": "Symbol",
+            "type": "string"
+          }
+        },
+        "required": [
+          "provider",
+          "instrument_id",
+          "symbol",
+          "candles_expected",
+          "candles_stored",
+          "gaps_repaired",
+          "gaps_provider_missing",
+          "spread_minutes_recorded",
+          "spread_minutes_lost"
+        ],
+        "title": "InstrumentCoverageView",
         "type": "object"
       },
       "InstrumentType": {
@@ -911,6 +1037,51 @@
           }
         },
         "summary": "Candles",
+        "tags": [
+          "market"
+        ]
+      }
+    },
+    "/api/v1/market/coverage": {
+      "get": {
+        "operationId": "coverage_api_v1_market_coverage_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "hours",
+            "required": false,
+            "schema": {
+              "default": 24,
+              "maximum": 168,
+              "minimum": 1,
+              "title": "Hours",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CoverageView"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Default Response"
+          }
+        },
+        "summary": "Coverage",
         "tags": [
           "market"
         ]
