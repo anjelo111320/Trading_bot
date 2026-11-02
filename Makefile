@@ -1,5 +1,5 @@
 .DEFAULT_GOAL := help
-.PHONY: backfill drill soak soak-report help bootstrap check check-backend check-frontend test up down reset migrate api ingestor web openapi types secrets audit bundle-scan
+.PHONY: quant backfill drill soak soak-report help bootstrap check check-backend check-frontend test up down reset migrate api ingestor web openapi types secrets audit bundle-scan
 
 COMPOSE := docker compose -f infra/docker-compose.yml
 
@@ -73,6 +73,9 @@ api:
 
 ingestor:
 	cd backend && uv run python -m trading_intel.entrypoints.ingestor
+
+quant:
+	cd backend && uv run python -m trading_intel.entrypoints.quant_worker
 
 backfill:
 	cd backend && uv run python -m trading_intel.entrypoints.backfill

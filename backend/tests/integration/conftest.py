@@ -23,6 +23,8 @@ CLEANED = (
     "audit_log",
     "users",
     "news_articles",
+    "technical_indicators",
+    "detected_patterns",
 )
 
 

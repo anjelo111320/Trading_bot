@@ -7,7 +7,8 @@ Updated 2026-11-02.
 
 - Phase 0 is complete: [phase-0.md](reports/phase-0.md).
 - Phases 1A and 1B are code complete, and their long tests are running: [phase-1.md](reports/phase-1.md).
-- Phase 2 is in progress.
+- Phase 2 is complete: [phase-2.md](reports/phase-2.md).
+- Phase 3 is in progress.
 
 - Done: repository inspection, provider research, the ten first deliverables and decisions D006 to D028. See [22-REQUIREMENTS-TRACEABILITY.md](22-REQUIREMENTS-TRACEABILITY.md) and [17-DECISIONS.md](17-DECISIONS.md).
 - Working method: phases are built in order without waiting for review, and long tests run alongside later work (D028).

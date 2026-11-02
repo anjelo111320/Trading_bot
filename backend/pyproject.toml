@@ -83,10 +83,52 @@ root_package = "trading_intel"
 name = "core depends on no project module"
 type = "forbidden"
 source_modules = ["trading_intel.core"]
-forbidden_modules = ["trading_intel.domain", "trading_intel.database", "trading_intel.api"]
+forbidden_modules = [
+    "trading_intel.domain",
+    "trading_intel.database",
+    "trading_intel.events",
+    "trading_intel.data_providers",
+    "trading_intel.market_data",
+    "trading_intel.api",
+]
 
 [[tool.importlinter.contracts]]
 name = "domain depends only on core"
 type = "forbidden"
 source_modules = ["trading_intel.domain"]
-forbidden_modules = ["trading_intel.database", "trading_intel.api", "trading_intel.data_providers"]
+forbidden_modules = [
+    "trading_intel.database",
+    "trading_intel.events",
+    "trading_intel.data_providers",
+    "trading_intel.market_data",
+    "trading_intel.technical_analysis",
+    "trading_intel.market_structure",
+    "trading_intel.pattern_detection",
+    "trading_intel.api",
+]
+
+[[tool.importlinter.contracts]]
+name = "providers never reach storage or analysis"
+type = "forbidden"
+source_modules = ["trading_intel.data_providers"]
+forbidden_modules = [
+    "trading_intel.database",
+    "trading_intel.market_data",
+    "trading_intel.technical_analysis",
+]
+
+[[tool.importlinter.contracts]]
+name = "numeric modules stay pure"
+type = "forbidden"
+source_modules = [
+    "trading_intel.technical_analysis",
+    "trading_intel.market_structure",
+    "trading_intel.pattern_detection",
+]
+forbidden_modules = [
+    "trading_intel.database",
+    "trading_intel.events",
+    "trading_intel.data_providers",
+    "trading_intel.market_data",
+    "trading_intel.api",
+]
