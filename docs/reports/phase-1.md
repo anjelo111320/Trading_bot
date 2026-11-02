@@ -8,8 +8,8 @@ Status: Code complete. The 72-hour soak and full history remain open, so this ph
 | Gate | Result | Evidence |
 |---|---|---|
 | Full history stored, with counts reconciled to gaps | **Open.** 90-day test window only (D027) | 685,080 rows, exactly the expected count, 0 gaps. Full history needs 20 GB free |
-| Live path meets its latency target | Met so far | p95 0.51 s against a 5 s target, on a small sample. The one exception is below |
-| 72-hour soak | **Running** | Started 2026-11-02 09:46:58 UTC |
+| Live path meets its latency target | Met so far | p95 0.51 s against a 5 s target, on a small sample, excluding the deliberate 80-second freeze |
+| 72-hour soak | **Running** | Started 2026-11-02 10:52:19 UTC, on the final code. Restarted twice today to apply fixes |
 | Dashboard: live candles, forming distinct, stale warning | Passed | Checked in a real browser against live data |
 | Rule snapshots and spread capture running since ingestion began | Passed | 4 rule rows; spread rows every minute while running |
 | TimescaleDB decision recorded | Passed, with limits | [timescaledb.md](../benchmarks/timescaledb.md). Comparison not run |
@@ -67,6 +67,9 @@ This drill is not the soak. It covers about 12 minutes, and T1.18 still needs tw
 | Failed repair could report healthy | Same review | Stays RECOVERING until it succeeds |
 | Crashes and stream drops missing from downtime | Soak report | Now recorded |
 | PostgreSQL write-ahead log could use 1 GB | Disk review | Capped at 128 MB |
+| Sweep raced the closing frame, losing that candle's event | Reading the live log | Recent candles are left to the stream |
+| Open interest month not refilled when recent rows existed | Live row count | Checks the earliest stored minute |
+| Backfill resume skipped older ranges and would record false gaps | Preparing research data | Fills actual holes |
 
 ## Incomplete
 
