@@ -24,7 +24,7 @@ from trading_intel.technical_analysis.volatility import atr
 from trading_intel.trade_signals.catalogue import LevelCatalogue, build_catalogue
 
 STRATEGY_NAME: Final = "trend_break_baseline"
-STRATEGY_VERSION: Final = 1
+STRATEGY_VERSION: Final = 2  # Version 1 picked targets that could not pass the 2:1 rule.
 SETUP_TIMEFRAME: Final = Timeframe.M15
 SWING_BUFFER_ATR: Final = "0.25"
 
@@ -35,7 +35,7 @@ class BaselineParameters:
 
     min_adx: float = 20.0  # Below this, ADX reads as no directional market.
     stop_buffer_atr: float = 0.25  # Stops sit beyond the swing, where sweeps tend to reach.
-    min_target_r: float = 1.0  # A target nearer than the stop distance adds nothing.
+    min_target_r: float = 2.0  # The first target must clear the 2:1 rule on its own.
     expiry_candles: int = 8
     leverage: str = "1"
 
@@ -64,7 +64,7 @@ def _trend_of(series: CandleSeries) -> Trend:
 def _select_targets(
     catalogue: LevelCatalogue, side: Side, entry: Decimal, risk: Decimal, minimum_r: Decimal
 ) -> tuple[Decimal, ...]:
-    """Up to three catalogue levels beyond 1R. Fewer are returned rather than invented."""
+    """Up to three catalogue levels far enough away. Fewer are returned, never invented."""
     levels = catalogue.above() if side is Side.LONG else catalogue.below()
     distant = [v.price for v in levels if side.sign * (v.price - entry) >= risk * minimum_r]
     return tuple(distant[:3])

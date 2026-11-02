@@ -13,7 +13,7 @@ from redis.asyncio import Redis
 from trading_intel.api.auth import LoginLimiter, TicketLedger, TokenSigner, hash_password
 from trading_intel.api.container import Container
 from trading_intel.api.errors import ErrorResponse, install_error_handlers
-from trading_intel.api.routers import auth, health, market
+from trading_intel.api.routers import auth, health, market, trading
 from trading_intel.api.websocket import gateway
 from trading_intel.core.clock import Clock, SystemClock
 from trading_intel.core.settings import Settings
@@ -26,7 +26,9 @@ from trading_intel.database.repositories.operations import (
     RuleRepository,
     SnapshotRepository,
 )
+from trading_intel.database.repositories.paper import PaperRepository
 from trading_intel.database.repositories.reference import ReferenceRepository
+from trading_intel.database.repositories.signals import SignalRepository
 from trading_intel.events.redis_transport import RedisEventBus
 from trading_intel.monitoring.coverage import CoverageService
 
@@ -72,6 +74,8 @@ def build_services(
         snapshots=snapshots,
         bus=RedisEventBus(redis, clock),
         coverage=CoverageService(reference, candles, gaps, snapshots, EventRepository(engine)),
+        signals=SignalRepository(engine),
+        paper=PaperRepository(engine),
     )
     return container, close
 
@@ -140,5 +144,6 @@ def create_app(settings: Settings, container: Container | None = None) -> FastAP
     app.include_router(health.router)
     app.include_router(auth.router)
     app.include_router(market.router)
+    app.include_router(trading.router)
     app.include_router(gateway.router)
     return app

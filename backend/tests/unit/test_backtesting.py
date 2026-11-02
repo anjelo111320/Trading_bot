@@ -1,5 +1,6 @@
 from datetime import UTC, datetime, timedelta
 from decimal import Decimal as D
+from itertools import pairwise
 from typing import Any
 
 import pytest
@@ -119,7 +120,7 @@ def test_walk_forward_gives_ordered_folds_that_stop_before_the_holdout() -> None
         assert fold.train_end < fold.validate_start < fold.validate_end
         assert fold.validate_end < fold.test_start < fold.test_end
         assert fold.test_end <= HOLDOUT_START
-    assert all(a.test_start < b.test_start for a, b in zip(folds, folds[1:], strict=False))
+    assert all(a.test_start < b.test_start for a, b in pairwise(folds))
 
 
 def test_as_of_access_cannot_reach_a_candle_that_has_not_closed() -> None:

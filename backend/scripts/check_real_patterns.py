@@ -13,6 +13,7 @@ from trading_intel.database.engine import create_engine
 from trading_intel.database.repositories.candles import CandleRepository
 from trading_intel.database.repositories.reference import ReferenceRepository
 from trading_intel.domain.candles import Timeframe
+from trading_intel.domain.patterns import DetectedPattern
 from trading_intel.pattern_detection.pipeline import detect_patterns
 from trading_intel.technical_analysis.pipeline import compute_indicators
 from trading_intel.technical_analysis.series import CandleSeries
@@ -41,16 +42,12 @@ async def run(timeframe: Timeframe, limit: int) -> None:
         share = sum(p.pattern_type == name and p.status == "invalidated" for p in patterns) / count
         print(f"  {name:20} {count:5}  invalidated {share:.0%}")
 
+    def key(p: DetectedPattern) -> tuple[object, ...]:
+        return (p.detected_at, p.pattern_type, p.formed_at, p.direction, str(p.price_level))
+
     failures = 0
     for cut in np.linspace(len(series) // 3, len(series) - 1, 6, dtype=int).tolist():
         moment = series.close_time[cut - 1]
-        key = lambda p: (
-            p.detected_at,
-            p.pattern_type,
-            p.formed_at,
-            p.direction,
-            str(p.price_level),
-        )
         partial = sorted(
             (k for p in detect_patterns(series.upto(cut)) if (k := p.as_known_at(moment))), key=key
         )

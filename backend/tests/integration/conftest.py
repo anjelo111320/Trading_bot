@@ -38,7 +38,7 @@ def migrated_database() -> None:
 async def clean_database() -> None:
     connection = await asyncpg.connect(SUPERUSER_URL)
     await connection.execute("SET session_replication_role = replica")
-    await connection.execute(f"TRUNCATE {', '.join(CLEANED)}")
+    await connection.execute(f"TRUNCATE {', '.join(CLEANED)} CASCADE")
     await connection.close()
 
 

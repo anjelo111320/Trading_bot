@@ -94,7 +94,7 @@ def test_baseline_buys_a_break_in_line_with_higher_timeframes() -> None:
     setup = trending(Timeframe.M15, 12)
     decision = evaluate(
         setup, trending(Timeframe.H1, 12), trending(Timeframe.H4, 12), TICK,
-        BaselineParameters(min_adx=0),
+        BaselineParameters(min_adx=0, min_target_r=1.0),
     )  # fmt: skip
     assert decision.action is Action.BUY, decision.reasons
     assert decision.proposal is not None
@@ -110,7 +110,7 @@ def test_baseline_sells_the_mirror_case() -> None:
     setup = trending(Timeframe.M15, 12, up=False)
     decision = evaluate(
         setup, trending(Timeframe.H1, 12, up=False), trending(Timeframe.H4, 12, up=False), TICK,
-        BaselineParameters(min_adx=0),
+        BaselineParameters(min_adx=0, min_target_r=1.0),
     )  # fmt: skip
     assert decision.action is Action.SELL, decision.reasons
     assert decision.proposal is not None
@@ -157,10 +157,26 @@ def test_baseline_never_forces_targets() -> None:
     assert far == ()
 
 
+def test_targets_must_clear_two_to_one_by_default() -> None:
+    """Regression: version 1 chose first targets at 1R, which could not pass the risk rule."""
+    assert BaselineParameters().min_target_r == 2.0
+    setup = trending(Timeframe.M15, 12)
+    decision = evaluate(
+        setup, trending(Timeframe.H1, 12), trending(Timeframe.H4, 12), TICK,
+        BaselineParameters(min_adx=0),
+    )  # fmt: skip
+    if decision.proposal is not None:
+        proposal = decision.proposal
+        risk = proposal.entry - proposal.stop
+        assert proposal.targets[0] - proposal.entry >= 2 * risk
+
+
 def test_the_decision_is_deterministic() -> None:
     args = (trending(Timeframe.M15, 12), trending(Timeframe.H1, 12), trending(Timeframe.H4, 12))
-    first = evaluate(*args, TICK, BaselineParameters(min_adx=0))
-    assert first.proposal == evaluate(*args, TICK, BaselineParameters(min_adx=0)).proposal
+    parameters = BaselineParameters(min_adx=0, min_target_r=1.0)
+    first = evaluate(*args, TICK, parameters)
+    assert first.proposal is not None
+    assert first.proposal == evaluate(*args, TICK, parameters).proposal
 
 
 def test_quality_score_is_weighted_and_bounded() -> None:

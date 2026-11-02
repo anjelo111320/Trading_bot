@@ -19,7 +19,9 @@ if TYPE_CHECKING:
         RuleRepository,
         SnapshotRepository,
     )
+    from trading_intel.database.repositories.paper import PaperRepository
     from trading_intel.database.repositories.reference import ReferenceRepository
+    from trading_intel.database.repositories.signals import SignalRepository
     from trading_intel.events.redis_transport import RedisEventBus
     from trading_intel.monitoring.coverage import CoverageService
 
@@ -43,6 +45,8 @@ class Container:
     snapshots: SnapshotRepository = field(default=None)  # type: ignore[assignment]
     bus: RedisEventBus = field(default=None)  # type: ignore[assignment]
     coverage: CoverageService = field(default=None)  # type: ignore[assignment]
+    signals: SignalRepository = field(default=None)  # type: ignore[assignment]
+    paper: PaperRepository = field(default=None)  # type: ignore[assignment]
 
 
 def get_container(request: HTTPConnection) -> Container:

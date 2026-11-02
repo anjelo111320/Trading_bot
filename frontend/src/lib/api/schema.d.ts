@@ -123,6 +123,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/market/coverage": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Coverage */
+        get: operations["coverage_api_v1_market_coverage_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/market/gaps": {
         parameters: {
             query?: never;
@@ -166,6 +183,57 @@ export interface paths {
         };
         /** Status */
         get: operations["status_api_v1_market_status_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/paper-trading/positions": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Positions */
+        get: operations["positions_api_v1_paper_trading_positions_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/paper-trading/summary": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Summary */
+        get: operations["summary_api_v1_paper_trading_summary_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/signals": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Signals */
+        get: operations["signals_api_v1_signals_get"];
         put?: never;
         post?: never;
         delete?: never;
@@ -218,6 +286,23 @@ export interface components {
             /** Volume */
             volume: string;
         };
+        /** CoverageView */
+        CoverageView: {
+            /** Downtime */
+            downtime: components["schemas"]["DowntimeView"][];
+            /** Instruments */
+            instruments: components["schemas"]["InstrumentCoverageView"][];
+            /**
+             * Window End
+             * Format: date-time
+             */
+            window_end: string;
+            /**
+             * Window Start
+             * Format: date-time
+             */
+            window_start: string;
+        };
         /**
          * DataOrigin
          * @enum {string}
@@ -231,6 +316,23 @@ export interface components {
             name: string;
             /** Ok */
             ok: boolean;
+        };
+        /** DowntimeView */
+        DowntimeView: {
+            /**
+             * End
+             * Format: date-time
+             */
+            end: string;
+            /** Provider */
+            provider: string | null;
+            /** Reason */
+            reason: string;
+            /**
+             * Start
+             * Format: date-time
+             */
+            start: string;
         };
         /** ErrorBody */
         ErrorBody: {
@@ -318,6 +420,27 @@ export interface components {
             ready: boolean;
             trading_mode: components["schemas"]["TradingMode"];
         };
+        /** InstrumentCoverageView */
+        InstrumentCoverageView: {
+            /** Candles Expected */
+            candles_expected: number;
+            /** Candles Stored */
+            candles_stored: number;
+            /** Gaps Provider Missing */
+            gaps_provider_missing: number;
+            /** Gaps Repaired */
+            gaps_repaired: number;
+            /** Instrument Id */
+            instrument_id: number;
+            /** Provider */
+            provider: string;
+            /** Spread Minutes Lost */
+            spread_minutes_lost: number;
+            /** Spread Minutes Recorded */
+            spread_minutes_recorded: number;
+            /** Symbol */
+            symbol: string;
+        };
         /**
          * InstrumentType
          * @enum {string}
@@ -364,6 +487,68 @@ export interface components {
             /** Role */
             role: string;
         };
+        /** PaperSummary */
+        PaperSummary: {
+            /** Costs */
+            costs: string;
+            /** Equity */
+            equity: string;
+            /** Expectancy R */
+            expectancy_r: number | null;
+            /** Losses */
+            losses: number;
+            /** Net Pnl */
+            net_pnl: string;
+            /** Open Positions */
+            open_positions: number;
+            /** Resolved Trades */
+            resolved_trades: number;
+            /**
+             * Simulated
+             * @default true
+             * @constant
+             */
+            simulated: true;
+            /** Starting Balance */
+            starting_balance: string;
+            /** Unfilled */
+            unfilled: number;
+            /** Win Rate */
+            win_rate: number | null;
+            /** Wins */
+            wins: number;
+        };
+        /** PositionView */
+        PositionView: {
+            /** Average Entry */
+            average_entry: string | null;
+            /** Closed At */
+            closed_at: string | null;
+            /** Costs Paid */
+            costs_paid: string;
+            /** Id */
+            id: string;
+            /** Open Quantity */
+            open_quantity: string;
+            /** Opened At */
+            opened_at: string | null;
+            /** Planned Quantity */
+            planned_quantity: string;
+            /** Realized Pnl */
+            realized_pnl: string;
+            /** Reconstructed */
+            reconstructed: boolean;
+            /** Side */
+            side: string;
+            /** Signal State */
+            signal_state: string | null;
+            /** Status */
+            status: string;
+            /** Stop Loss */
+            stop_loss: string | null;
+            /** Symbol */
+            symbol: string;
+        };
         /** PriceView */
         PriceView: {
             /** Age Seconds */
@@ -381,6 +566,88 @@ export interface components {
             received_at: string | null;
             /** Stale */
             stale: boolean;
+        };
+        /** SignalView */
+        SignalView: {
+            /** Action */
+            action: string;
+            /** Conflicting Evidence */
+            conflicting_evidence: unknown[];
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /**
+             * Data As Of
+             * Format: date-time
+             */
+            data_as_of: string;
+            /** Data Reliability Score */
+            data_reliability_score: string;
+            /** Decision */
+            decision: string;
+            /** Entry Price */
+            entry_price: string | null;
+            /** Entry Type */
+            entry_type: string | null;
+            /** Estimated Fees */
+            estimated_fees: string | null;
+            /** Estimated Funding */
+            estimated_funding: string | null;
+            /**
+             * Expires At
+             * Format: date-time
+             */
+            expires_at: string;
+            /** Fundamental Explanation */
+            fundamental_explanation: string;
+            /** Id */
+            id: string;
+            /** Instrument Id */
+            instrument_id: number;
+            /** Invalidation Conditions */
+            invalidation_conditions: unknown[];
+            /** Market Price */
+            market_price: string;
+            /** Max Account Risk */
+            max_account_risk: string | null;
+            /** News Alignment */
+            news_alignment: string;
+            /** Notional */
+            notional: string | null;
+            /** Probability Status */
+            probability_status: string;
+            /** Provider */
+            provider: string;
+            /** Quantity */
+            quantity: string | null;
+            /** Rejection Codes */
+            rejection_codes: string[];
+            /** Reward Risk Net */
+            reward_risk_net: string | null;
+            /** Setup Quality Score */
+            setup_quality_score: string | null;
+            /** State */
+            state: string;
+            /** Stop Loss */
+            stop_loss: string | null;
+            /** Supporting Evidence */
+            supporting_evidence: unknown[];
+            /** Targets */
+            targets: components["schemas"]["TargetView"][];
+            /** Technical Explanation */
+            technical_explanation: string;
+            timeframe: components["schemas"]["Timeframe"];
+        };
+        /** TargetView */
+        TargetView: {
+            /** Allocation */
+            allocation: string;
+            /** Net Reward Risk */
+            net_reward_risk: string;
+            /** Price */
+            price: string;
         };
         /** TicketView */
         TicketView: {
@@ -620,6 +887,37 @@ export interface operations {
             };
         };
     };
+    coverage_api_v1_market_coverage_get: {
+        parameters: {
+            query?: {
+                hours?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CoverageView"];
+                };
+            };
+            /** @description Default Response */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
     gaps_api_v1_market_gaps_get: {
         parameters: {
             query?: {
@@ -701,6 +999,97 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["MarketStatusView"];
+                };
+            };
+            /** @description Default Response */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    positions_api_v1_paper_trading_positions_get: {
+        parameters: {
+            query?: {
+                limit?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PositionView"][];
+                };
+            };
+            /** @description Default Response */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    summary_api_v1_paper_trading_summary_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PaperSummary"];
+                };
+            };
+            /** @description Default Response */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    signals_api_v1_signals_get: {
+        parameters: {
+            query?: {
+                limit?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SignalView"][];
                 };
             };
             /** @description Default Response */

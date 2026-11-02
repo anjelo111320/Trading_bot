@@ -13,15 +13,26 @@ import structlog
 from redis.asyncio import Redis
 from sqlalchemy.ext.asyncio import AsyncEngine
 
+from trading_intel.core.clock import SystemClock
 from trading_intel.core.logging import configure_logging
 from trading_intel.core.settings import load_settings
 from trading_intel.database.engine import create_engine
 from trading_intel.database.repositories.analysis import AnalysisRepository
 from trading_intel.database.repositories.candles import CandleRepository
+from trading_intel.database.repositories.operations import (
+    GapRepository,
+    MarketRepository,
+    RuleRepository,
+    SnapshotRepository,
+)
+from trading_intel.database.repositories.paper import PaperRepository
 from trading_intel.database.repositories.reference import ReferenceRepository
+from trading_intel.database.repositories.signals import SignalRepository
 from trading_intel.domain.candles import Timeframe
 from trading_intel.domain.events import EventEnvelope, MarketCandlePayload
+from trading_intel.domain.instruments import Instrument
 from trading_intel.events.redis_transport import ClosedCandleConsumer
+from trading_intel.paper_trading.service import PaperService
 from trading_intel.pattern_detection.pipeline import detect_patterns
 from trading_intel.technical_analysis.pipeline import (
     FEATURE_SET_VERSION,
@@ -29,6 +40,8 @@ from trading_intel.technical_analysis.pipeline import (
     values_at,
 )
 from trading_intel.technical_analysis.series import CandleSeries
+from trading_intel.trade_signals.baseline import SETUP_TIMEFRAME
+from trading_intel.trade_signals.service import SignalService
 
 log = structlog.get_logger(__name__)
 
@@ -37,16 +50,52 @@ LOOKBACK_CANDLES: Final = 600
 MINIMUM_CANDLES: Final = 30
 
 
+class TradingLoop:
+    """Signals on the setup timeframe, and paper fills on every minute (D008: perpetuals only)."""
+
+    def __init__(
+        self,
+        signals: SignalService,
+        paper: PaperService,
+        accounts: SignalRepository,
+        owner_email: str,
+        provider_id: int,
+        instruments: dict[int, Instrument],
+    ) -> None:
+        self._signals = signals
+        self._paper = paper
+        self._accounts = accounts
+        self._owner_email = owner_email
+        self._provider_id = provider_id
+        self._instruments = instruments
+
+    async def on_closed(
+        self, provider_id: int, instrument_id: int, timeframe: Timeframe, close_time: datetime
+    ) -> None:
+        instrument = self._instruments.get(instrument_id)
+        if provider_id != self._provider_id or instrument is None:
+            return
+        if timeframe is Timeframe.M1:
+            await self._paper.sync(provider_id, instrument_id)
+        elif timeframe is SETUP_TIMEFRAME:
+            account = await self._accounts.ensure_account(self._owner_email)
+            if account is not None:
+                outcome = await self._signals.evaluate(provider_id, instrument, close_time, account)
+                log.info("signal_evaluated", action=outcome.action.value, reasons=outcome.reasons)
+
+
 class QuantService:
     def __init__(
         self,
         candles: CandleRepository,
         analysis: AnalysisRepository,
         provider_ids: dict[str, int],
+        trading: TradingLoop | None = None,
     ) -> None:
         self._candles = candles
         self._analysis = analysis
         self._provider_ids = provider_ids
+        self._trading = trading
 
     async def process(
         self, provider_id: int, instrument_id: int, timeframe: Timeframe, as_of: datetime
@@ -75,20 +124,46 @@ class QuantService:
         payload = MarketCandlePayload.model_validate(envelope.payload)
         if not payload.is_closed or payload.provider not in self._provider_ids:
             return
+        provider_id = self._provider_ids[payload.provider]
         await self.process(
-            self._provider_ids[payload.provider],
-            payload.instrument_id,
-            payload.timeframe,
-            payload.close_time,
+            provider_id, payload.instrument_id, payload.timeframe, payload.close_time
         )
+        if self._trading is not None:
+            await self._trading.on_closed(
+                provider_id, payload.instrument_id, payload.timeframe, payload.close_time
+            )
 
 
-async def build_service(engine: AsyncEngine) -> QuantService:
+async def build_service(engine: AsyncEngine, owner_email: str) -> QuantService:
     reference = ReferenceRepository(engine)
     provider_ids = {
         code: await reference.provider_id(code) for code in ("binance_spot", "binance_usdm")
     }
-    return QuantService(CandleRepository(engine), AnalysisRepository(engine), provider_ids)
+    clock = SystemClock()
+    candles = CandleRepository(engine)
+    market = MarketRepository(engine)
+    paper = PaperRepository(engine)
+    accounts = SignalRepository(engine)
+    signals = SignalService(
+        candles,
+        SnapshotRepository(engine),
+        market,
+        GapRepository(engine),
+        RuleRepository(engine),
+        accounts,
+        paper,
+        clock,
+    )
+    listed = await reference.provider_instruments("binance_usdm")
+    trading = TradingLoop(
+        signals,
+        PaperService(candles, market, paper, clock),
+        accounts,
+        owner_email,
+        provider_ids["binance_usdm"],
+        {item.instrument.id: item.instrument for item in listed},
+    )
+    return QuantService(candles, AnalysisRepository(engine), provider_ids, trading)
 
 
 async def run() -> None:
@@ -96,7 +171,7 @@ async def run() -> None:
     configure_logging(settings.log_level, settings.secret_values())
     engine = create_engine(settings.database_url)
     redis: Redis = Redis.from_url(settings.redis_url.get_secret_value())
-    service = await build_service(engine)
+    service = await build_service(engine, settings.owner_email)
     consumer = ClosedCandleConsumer(redis, GROUP, "worker-1")
     await consumer.ensure_group()
 

@@ -628,6 +628,204 @@
         "title": "OwnerView",
         "type": "object"
       },
+      "PaperSummary": {
+        "properties": {
+          "costs": {
+            "title": "Costs",
+            "type": "string"
+          },
+          "equity": {
+            "title": "Equity",
+            "type": "string"
+          },
+          "expectancy_r": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Expectancy R"
+          },
+          "losses": {
+            "title": "Losses",
+            "type": "integer"
+          },
+          "net_pnl": {
+            "title": "Net Pnl",
+            "type": "string"
+          },
+          "open_positions": {
+            "title": "Open Positions",
+            "type": "integer"
+          },
+          "resolved_trades": {
+            "title": "Resolved Trades",
+            "type": "integer"
+          },
+          "simulated": {
+            "const": true,
+            "default": true,
+            "title": "Simulated",
+            "type": "boolean"
+          },
+          "starting_balance": {
+            "title": "Starting Balance",
+            "type": "string"
+          },
+          "unfilled": {
+            "title": "Unfilled",
+            "type": "integer"
+          },
+          "win_rate": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Win Rate"
+          },
+          "wins": {
+            "title": "Wins",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "starting_balance",
+          "equity",
+          "open_positions",
+          "resolved_trades",
+          "wins",
+          "losses",
+          "unfilled",
+          "net_pnl",
+          "costs",
+          "win_rate",
+          "expectancy_r"
+        ],
+        "title": "PaperSummary",
+        "type": "object"
+      },
+      "PositionView": {
+        "properties": {
+          "average_entry": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Average Entry"
+          },
+          "closed_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Closed At"
+          },
+          "costs_paid": {
+            "title": "Costs Paid",
+            "type": "string"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "open_quantity": {
+            "title": "Open Quantity",
+            "type": "string"
+          },
+          "opened_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Opened At"
+          },
+          "planned_quantity": {
+            "title": "Planned Quantity",
+            "type": "string"
+          },
+          "realized_pnl": {
+            "title": "Realized Pnl",
+            "type": "string"
+          },
+          "reconstructed": {
+            "title": "Reconstructed",
+            "type": "boolean"
+          },
+          "side": {
+            "title": "Side",
+            "type": "string"
+          },
+          "signal_state": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Signal State"
+          },
+          "status": {
+            "title": "Status",
+            "type": "string"
+          },
+          "stop_loss": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Stop Loss"
+          },
+          "symbol": {
+            "title": "Symbol",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "symbol",
+          "side",
+          "status",
+          "planned_quantity",
+          "open_quantity",
+          "average_entry",
+          "stop_loss",
+          "realized_pnl",
+          "costs_paid",
+          "opened_at",
+          "closed_at",
+          "signal_state",
+          "reconstructed"
+        ],
+        "title": "PositionView",
+        "type": "object"
+      },
       "PriceView": {
         "properties": {
           "age_seconds": {
@@ -709,6 +907,273 @@
           "data_origin"
         ],
         "title": "PriceView",
+        "type": "object"
+      },
+      "SignalView": {
+        "properties": {
+          "action": {
+            "title": "Action",
+            "type": "string"
+          },
+          "conflicting_evidence": {
+            "items": {},
+            "title": "Conflicting Evidence",
+            "type": "array"
+          },
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "data_as_of": {
+            "format": "date-time",
+            "title": "Data As Of",
+            "type": "string"
+          },
+          "data_reliability_score": {
+            "title": "Data Reliability Score",
+            "type": "string"
+          },
+          "decision": {
+            "title": "Decision",
+            "type": "string"
+          },
+          "entry_price": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Entry Price"
+          },
+          "entry_type": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Entry Type"
+          },
+          "estimated_fees": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Estimated Fees"
+          },
+          "estimated_funding": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Estimated Funding"
+          },
+          "expires_at": {
+            "format": "date-time",
+            "title": "Expires At",
+            "type": "string"
+          },
+          "fundamental_explanation": {
+            "title": "Fundamental Explanation",
+            "type": "string"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "instrument_id": {
+            "title": "Instrument Id",
+            "type": "integer"
+          },
+          "invalidation_conditions": {
+            "items": {},
+            "title": "Invalidation Conditions",
+            "type": "array"
+          },
+          "market_price": {
+            "title": "Market Price",
+            "type": "string"
+          },
+          "max_account_risk": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Max Account Risk"
+          },
+          "news_alignment": {
+            "title": "News Alignment",
+            "type": "string"
+          },
+          "notional": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Notional"
+          },
+          "probability_status": {
+            "title": "Probability Status",
+            "type": "string"
+          },
+          "provider": {
+            "title": "Provider",
+            "type": "string"
+          },
+          "quantity": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Quantity"
+          },
+          "rejection_codes": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Rejection Codes",
+            "type": "array"
+          },
+          "reward_risk_net": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reward Risk Net"
+          },
+          "setup_quality_score": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Setup Quality Score"
+          },
+          "state": {
+            "title": "State",
+            "type": "string"
+          },
+          "stop_loss": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Stop Loss"
+          },
+          "supporting_evidence": {
+            "items": {},
+            "title": "Supporting Evidence",
+            "type": "array"
+          },
+          "targets": {
+            "items": {
+              "$ref": "#/components/schemas/TargetView"
+            },
+            "title": "Targets",
+            "type": "array"
+          },
+          "technical_explanation": {
+            "title": "Technical Explanation",
+            "type": "string"
+          },
+          "timeframe": {
+            "$ref": "#/components/schemas/Timeframe"
+          }
+        },
+        "required": [
+          "id",
+          "provider",
+          "instrument_id",
+          "timeframe",
+          "action",
+          "entry_type",
+          "state",
+          "market_price",
+          "entry_price",
+          "stop_loss",
+          "targets",
+          "quantity",
+          "notional",
+          "max_account_risk",
+          "estimated_fees",
+          "estimated_funding",
+          "reward_risk_net",
+          "decision",
+          "rejection_codes",
+          "setup_quality_score",
+          "news_alignment",
+          "data_reliability_score",
+          "probability_status",
+          "technical_explanation",
+          "fundamental_explanation",
+          "supporting_evidence",
+          "conflicting_evidence",
+          "invalidation_conditions",
+          "created_at",
+          "expires_at",
+          "data_as_of"
+        ],
+        "title": "SignalView",
+        "type": "object"
+      },
+      "TargetView": {
+        "properties": {
+          "allocation": {
+            "title": "Allocation",
+            "type": "string"
+          },
+          "net_reward_risk": {
+            "title": "Net Reward Risk",
+            "type": "string"
+          },
+          "price": {
+            "title": "Price",
+            "type": "string"
+          }
+        },
+        "required": [
+          "price",
+          "allocation",
+          "net_reward_risk"
+        ],
+        "title": "TargetView",
         "type": "object"
       },
       "TicketView": {
@@ -1248,6 +1713,135 @@
         "summary": "Status",
         "tags": [
           "market"
+        ]
+      }
+    },
+    "/api/v1/paper-trading/positions": {
+      "get": {
+        "operationId": "positions_api_v1_paper_trading_positions_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 50,
+              "maximum": 200,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/PositionView"
+                  },
+                  "title": "Response Positions Api V1 Paper Trading Positions Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Default Response"
+          }
+        },
+        "summary": "Positions",
+        "tags": [
+          "trading"
+        ]
+      }
+    },
+    "/api/v1/paper-trading/summary": {
+      "get": {
+        "operationId": "summary_api_v1_paper_trading_summary_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PaperSummary"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Default Response"
+          }
+        },
+        "summary": "Summary",
+        "tags": [
+          "trading"
+        ]
+      }
+    },
+    "/api/v1/signals": {
+      "get": {
+        "operationId": "signals_api_v1_signals_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 50,
+              "maximum": 200,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/SignalView"
+                  },
+                  "title": "Response Signals Api V1 Signals Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Default Response"
+          }
+        },
+        "summary": "Signals",
+        "tags": [
+          "trading"
         ]
       }
     }

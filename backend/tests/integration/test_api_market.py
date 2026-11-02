@@ -44,6 +44,9 @@ PASSWORD = "a-long-test-password"
 ORIGIN = "http://127.0.0.1:3000"
 PROTECTED = [
     "/api/v1/instruments",
+    "/api/v1/signals",
+    "/api/v1/paper-trading/positions",
+    "/api/v1/paper-trading/summary",
     "/api/v1/auth/me",
     "/api/v1/market/candles?provider=binance_spot&instrument_id=1&timeframe=1m",
     "/api/v1/market/price?provider=binance_spot&instrument_id=1",
@@ -272,6 +275,31 @@ def test_status_is_usable_only_when_every_feed_is_healthy(api: TestClient) -> No
 
     asyncio.run(_publish(publish_all))
     assert api.get("/api/v1/market/status").json()["usable"] is True
+
+
+def test_paper_summary_is_labelled_simulated_and_shows_no_fake_results(api: TestClient) -> None:
+    login(api)
+    body = api.get("/api/v1/paper-trading/summary").json()
+    assert body["simulated"] is True
+    assert body["starting_balance"].startswith("10000")
+    assert body["win_rate"] is None
+    assert body["expectancy_r"] is None
+    assert api.get("/api/v1/signals").json() == []
+    assert api.get("/api/v1/paper-trading/positions").json() == []
+
+
+def test_no_route_can_place_a_trade(api: TestClient) -> None:
+    routes = {
+        (method, path)
+        for path, methods in api.app.openapi()["paths"].items()  # type: ignore[attr-defined]
+        for method in methods
+    }
+    writes = {path for method, path in routes if method != "get"}
+    assert writes == {
+        "/api/v1/auth/login",
+        "/api/v1/auth/logout",
+        "/api/v1/auth/ws-ticket",
+    }
 
 
 def test_gaps_are_listed(api: TestClient) -> None:
