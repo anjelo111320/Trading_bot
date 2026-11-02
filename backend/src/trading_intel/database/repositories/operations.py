@@ -277,6 +277,24 @@ class SnapshotRepository:
         async with self._engine.begin() as connection:
             await connection.execute(query, values)
 
+    async def latest_book(
+        self, provider_id: int, instrument_id: int, as_of: datetime
+    ) -> tuple[datetime, Decimal, Decimal] | None:
+        """The most recent recorded bid and ask, with the minute they belong to."""
+        async with self._engine.connect() as connection:
+            row = (
+                await connection.execute(
+                    text(
+                        """SELECT minute_start, best_bid, best_ask FROM market_snapshots
+                           WHERE provider_id = :provider AND instrument_id = :instrument
+                             AND minute_start <= :as_of AND best_bid IS NOT NULL
+                           ORDER BY minute_start DESC LIMIT 1"""
+                    ),
+                    {"provider": provider_id, "instrument": instrument_id, "as_of": as_of},
+                )
+            ).one_or_none()
+        return (row.minute_start, row.best_bid, row.best_ask) if row else None
+
     async def latest_open_interest_minute(
         self, provider_id: int, instrument_id: int
     ) -> datetime | None:
@@ -326,6 +344,21 @@ class MarketRepository:
             )
             value: datetime | None = result.scalar_one()
         return value
+
+    async def funding_between(
+        self, provider_id: int, instrument_id: int, start: datetime, end: datetime
+    ) -> list[tuple[datetime, Decimal, Decimal | None]]:
+        async with self._engine.connect() as connection:
+            rows = await connection.execute(
+                text(
+                    """SELECT funding_time, funding_rate, mark_price FROM funding_rates
+                       WHERE provider_id = :provider AND instrument_id = :instrument
+                         AND funding_time >= :start AND funding_time < :end
+                       ORDER BY funding_time"""
+                ),
+                {"provider": provider_id, "instrument": instrument_id, "start": start, "end": end},
+            )
+            return [(r.funding_time, r.funding_rate, r.mark_price) for r in rows]
 
     async def insert_funding(self, rows: Sequence[FundingRate]) -> None:
         if not rows:

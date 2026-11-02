@@ -264,3 +264,16 @@ Consequences:
 - A phase can be code-complete before its long test passes. Reports must say which gates are still open, and nothing counts as proven until it passes.
 - Work is committed locally, one commit per task, on the `develop` branch, after a secret scan. Nothing leaves this computer.
 Revisit conditions: a long test fails in a way that changes earlier work.
+
+### D029: Holdout frozen from 2025-11-01
+Date: 2026-11-02.
+Status: Adopted.
+Context: The methodology keeps the most recent 12 months untouched, and requires the date to be frozen before any strategy research. The 90-day test window sits entirely inside that period, so running the strategy on it and reading the results would spend the only clean test.
+Options considered: freeze now; choose a date later; test on the recent window.
+Decision: The final holdout starts at 2025-11-01 00:00 UTC. The backtest code refuses any window touching it unless the run is explicitly a holdout run, which the database allows once per strategy version. Real-data checks of the engine use candles from before that date.
+Consequences:
+- The 90-day window remains valid for the dashboard, indicators and live monitoring. Only pattern counts have been read from it, never strategy results.
+- A small research window from before the holdout is needed to exercise the engine on real data.
+- Results from that window prove the engine runs. They are far too short to be evidence.
+Revisit conditions: none. A changed strategy needs fresh out-of-sample time, normally from forward paper trading.
+

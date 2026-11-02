@@ -44,7 +44,13 @@ async def run(timeframe: Timeframe, limit: int) -> None:
     failures = 0
     for cut in np.linspace(len(series) // 3, len(series) - 1, 6, dtype=int).tolist():
         moment = series.close_time[cut - 1]
-        key = lambda p: (p.detected_at, p.pattern_type, p.formed_at, p.direction, str(p.price_level))  # noqa: E731
+        key = lambda p: (
+            p.detected_at,
+            p.pattern_type,
+            p.formed_at,
+            p.direction,
+            str(p.price_level),
+        )
         partial = sorted(
             (k for p in detect_patterns(series.upto(cut)) if (k := p.as_known_at(moment))), key=key
         )

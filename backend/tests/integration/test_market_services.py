@@ -92,6 +92,21 @@ async def test_backfill_resumes_after_a_forced_stop_without_redownloading(
     )
 
 
+async def test_backfill_reaches_ranges_older_than_stored_data(ingest_engine: AsyncEngine) -> None:
+    """Regression: resuming from the newest row skipped older ranges and invented gaps."""
+    provider_id, instrument = await setup(ingest_engine)
+    repository = CandleRepository(ingest_engine)
+    await repository.insert(
+        [make_candle(provider_id, instrument.id, Timeframe.M1, START + timedelta(days=30))]
+    )
+    report = await service(FakeProvider(provider_id), ingest_engine).run(
+        [minutes(instrument, 60)], GIB
+    )
+    assert report.rows_added == 60
+    assert report.gaps == 0
+    assert await GapRepository(ingest_engine).list(provider_id=provider_id) == []
+
+
 async def test_failed_run_is_marked_failed(ingest_engine: AsyncEngine) -> None:
     provider_id, instrument = await setup(ingest_engine)
     provider = FakeProvider(provider_id)

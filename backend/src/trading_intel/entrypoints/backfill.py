@@ -28,9 +28,11 @@ from trading_intel.entrypoints.wiring import (
 )
 from trading_intel.market_data.backfill import (
     FULL_PROFILE,
+    RESEARCH_START,
     TEST_PROFILE,
     BackfillProfile,
     BackfillService,
+    plan_research_tasks,
     plan_tasks,
 )
 from trading_intel.market_data.instrument_rules import RuleSnapshotService
@@ -38,7 +40,7 @@ from trading_intel.market_data.instrument_rules import RuleSnapshotService
 log = structlog.get_logger(__name__)
 
 
-async def run(profile: BackfillProfile, codes: list[str]) -> None:
+async def run(profile: BackfillProfile, codes: list[str], research: bool = False) -> None:
     settings = load_settings()
     configure_logging(settings.log_level, settings.secret_values())
     clock = SystemClock()
@@ -64,7 +66,11 @@ async def run(profile: BackfillProfile, codes: list[str]) -> None:
             (item.instrument, EARLIEST[(code, item.instrument.symbol)]) for item in listed
         ]
         now = await provider.get_server_time()
-        tasks = plan_tasks(instruments, profile, now)
+        tasks = (
+            plan_research_tasks([item.instrument for item in listed])
+            if research
+            else plan_tasks(instruments, profile, now)
+        )
         started = time.monotonic()
         report = await service.run(tasks, profile.floor_bytes)
         await RuleSnapshotService(provider, provider_id, RuleRepository(engine), clock).refresh(
@@ -73,6 +79,8 @@ async def run(profile: BackfillProfile, codes: list[str]) -> None:
         if provider.capabilities.funding and isinstance(provider, DerivativesCapable):
             for instrument, earliest in instruments:
                 start = earliest if profile.window is None else max(earliest, now - profile.window)
+                if research:
+                    start = RESEARCH_START
                 rows = [row async for row in provider.get_funding_history(instrument, start)]
                 await market.insert_funding(rows)
         log.info(
@@ -90,11 +98,12 @@ async def run(profile: BackfillProfile, codes: list[str]) -> None:
 
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--profile", choices=["test", "full"], default="test")
+    parser.add_argument("--profile", choices=["test", "full", "research"], default="test")
     parser.add_argument("--providers", nargs="+", default=[BINANCE_SPOT, BINANCE_USDM])
     arguments = parser.parse_args()
-    profile = TEST_PROFILE if arguments.profile == "test" else FULL_PROFILE
-    asyncio.run(run(profile, arguments.providers))
+    research = arguments.profile == "research"
+    profile = FULL_PROFILE if arguments.profile == "full" else TEST_PROFILE
+    asyncio.run(run(profile, arguments.providers, research))
 
 
 if __name__ == "__main__":

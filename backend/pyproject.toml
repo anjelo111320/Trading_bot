@@ -132,3 +132,25 @@ forbidden_modules = [
     "trading_intel.market_data",
     "trading_intel.api",
 ]
+
+[[tool.importlinter.contracts]]
+name = "risk engine depends only on core and domain"
+type = "forbidden"
+source_modules = ["trading_intel.risk_management"]
+forbidden_modules = [
+    "trading_intel.database",
+    "trading_intel.events",
+    "trading_intel.data_providers",
+    "trading_intel.market_data",
+    "trading_intel.trade_signals",
+    "trading_intel.paper_trading",
+    "trading_intel.backtesting",
+    "trading_intel.api",
+    "trading_intel.entrypoints",
+]
+
+[[tool.importlinter.contracts]]
+name = "backtests never reach providers"
+type = "forbidden"
+source_modules = ["trading_intel.backtesting"]
+forbidden_modules = ["trading_intel.data_providers", "trading_intel.market_data"]

@@ -3,7 +3,7 @@
 import shutil
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass, field
-from datetime import datetime, timedelta
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Final
 
@@ -48,6 +48,10 @@ class BackfillProfile:
 
 
 TEST_PROFILE: Final = BackfillProfile("test", 2 * GIB, timedelta(days=90), ALL_TIMEFRAMES)
+# Real candles from before the frozen holdout, so the engine can run without spending it (D029).
+RESEARCH_START: Final = datetime(2025, 6, 25, tzinfo=UTC)
+RESEARCH_END: Final = datetime(2025, 11, 1, tzinfo=UTC)
+RESEARCH_TIMEFRAMES: Final = (Timeframe.M1, Timeframe.M15, Timeframe.H1, Timeframe.H4)
 FULL_PROFILE: Final = BackfillProfile("full", 10 * GIB, None, SPOT_HISTORY_TIMEFRAMES)
 
 
@@ -92,6 +96,14 @@ def plan_tasks(
                 start = max(earliest, timeframe.floor(now - profile.window))
             tasks.append(BackfillTask(instrument, timeframe, _aligned(timeframe, start), end))
     return tasks
+
+
+def plan_research_tasks(instruments: Sequence[Instrument]) -> list[BackfillTask]:
+    return [
+        BackfillTask(instrument, timeframe, RESEARCH_START, RESEARCH_END)
+        for instrument in instruments
+        for timeframe in RESEARCH_TIMEFRAMES
+    ]
 
 
 def _aligned(timeframe: Timeframe, start: datetime) -> datetime:
@@ -166,21 +178,19 @@ class BackfillService:
             )
 
     async def _load(self, task: BackfillTask, report: BackfillReport) -> None:
-        latest = await self._candles.latest_open_time(
-            self._provider_id, task.instrument.id, task.timeframe
+        """Fetch only what is missing, so older ranges and interrupted runs both work."""
+        stored = await self._candles.open_times(
+            self._provider_id, task.instrument.id, task.timeframe, task.start, task.end
         )
-        resume = task.start
-        if latest is not None and latest >= task.start:
-            resume = task.timeframe.next_open(latest)
         added = 0
-        if resume < task.end:
-            added = await store_in_batches(
+        for hole_start, hole_end in missing_ranges(stored, task.timeframe, task.start, task.end):
+            added += await store_in_batches(
                 self._provider,
                 self._candles,
                 task.instrument,
                 task.timeframe,
-                resume,
-                task.end,
+                hole_start,
+                hole_end,
                 DataOrigin.BACKFILL,
             )
         stored = await self._candles.open_times(
