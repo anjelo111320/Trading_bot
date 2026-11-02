@@ -240,7 +240,11 @@ class PaperRepository:
     async def account_state(
         self, account_id: UUID, starting_balance: Decimal, day_start: datetime
     ) -> AccountState:
-        """Equity from recorded results. Today's start excludes anything closed today."""
+        """Equity counts open positions at the latest recorded price, as the daily limit requires.
+
+        The day's starting figure has only closed results, because the open value at midnight
+        was not recorded, so an open loss carried over midnight counts as today's.
+        """
         query = text(
             """SELECT COALESCE(sum(realized_pnl), 0) AS realized,
                       COALESCE(sum(realized_pnl) FILTER (
@@ -250,12 +254,27 @@ class PaperRepository:
                         WHERE status = 'open'), 0) AS exposure
                FROM paper_positions WHERE account_id = :account"""
         )
+        unrealized = text(
+            """SELECT COALESCE(sum(
+                 CASE WHEN p.side = 'LONG' THEN 1 ELSE -1 END
+                 * (latest.mark - p.average_entry) * p.open_quantity), 0)
+               FROM paper_positions p
+               JOIN trade_recommendations r ON r.id = p.recommendation_id
+               CROSS JOIN LATERAL (
+                 SELECT (s.best_bid + s.best_ask) / 2 AS mark FROM market_snapshots s
+                 WHERE s.provider_id = r.provider_id AND s.instrument_id = r.instrument_id
+                   AND s.best_bid IS NOT NULL
+                 ORDER BY s.minute_start DESC LIMIT 1
+               ) latest
+               WHERE p.account_id = :account AND p.status = 'open'"""
+        )
         async with self._engine.connect() as connection:
             row = (
                 await connection.execute(query, {"account": account_id, "day_start": day_start})
             ).one()
+            open_pnl = (await connection.execute(unrealized, {"account": account_id})).scalar_one()
         return AccountState(
-            equity=starting_balance + row.realized,
+            equity=starting_balance + row.realized + open_pnl,
             day_start_equity=starting_balance + row.before_today,
             open_positions=int(row.open_count),
             gross_exposure=row.exposure,

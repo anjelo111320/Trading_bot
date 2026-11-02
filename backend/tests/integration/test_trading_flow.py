@@ -265,6 +265,38 @@ async def test_a_stop_loses_and_updates_equity(world: World) -> None:
     assert state.open_positions == 0
 
 
+async def test_an_open_loss_counts_against_equity(world: World) -> None:
+    """Regression: equity once ignored open positions, weakening the daily loss limit."""
+    await approve(world)
+    await world.candles.insert([bar(world, 1, "100", "100.5", "99.5", "100")])
+    world.clock.advance(120)
+    await world.paper.sync(world.provider_id, world.instrument.id)
+    ingest = create_engine(make_settings().ingest_database_url)
+    await SnapshotRepository(ingest).upsert(
+        SnapshotRow(
+            provider_id=world.provider_id,
+            instrument_id=world.instrument.id,
+            minute_start=NOW + timedelta(minutes=2),
+            best_bid=D("98.99"),
+            best_ask=D("99.01"),
+            spread_min=None,
+            spread_mean=None,
+            spread_max=None,
+            spread_last=None,
+            sample_count=1,
+            crossed_book_count=0,
+            data_origin=DataOrigin.LIVE,
+            received_at=NOW,
+        )
+    )
+    await ingest.dispose()
+    state = await world.paper_repository.account_state(
+        world.account.id, world.account.starting_balance, NOW - timedelta(days=1)
+    )
+    assert state.equity < world.account.starting_balance
+    assert state.day_start_equity == world.account.starting_balance
+
+
 async def test_fills_from_repaired_candles_are_marked_reconstructed(world: World) -> None:
     await approve(world)
     await world.candles.insert(

@@ -12,6 +12,9 @@ export type FeedStatus = Schemas["FeedStatusView"];
 export type MarketStatus = Schemas["MarketStatusView"];
 export type Ticket = Schemas["TicketView"];
 export type Timeframe = Schemas["Timeframe"];
+export type Signal = Schemas["SignalView"];
+export type Position = Schemas["PositionView"];
+export type PaperSummary = Schemas["PaperSummary"];
 
 export class ApiError extends Error {
   constructor(

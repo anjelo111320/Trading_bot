@@ -3,7 +3,6 @@
 import argparse
 import asyncio
 from datetime import UTC, datetime, timedelta
-from pathlib import Path
 
 from trading_intel.backtesting.engine import BacktestEngine, BacktestResult, CostModel, FundingEvent
 from trading_intel.backtesting.report import render
@@ -19,7 +18,7 @@ WARM_UP = timedelta(days=30)
 STRESS_LEVELS = ("1", "1.5", "2")
 
 
-async def run(symbol: str, start: datetime, end: datetime, output: Path | None) -> None:
+async def run(symbol: str, start: datetime, end: datetime) -> str:
     refuse_holdout(start, end)
     engine = create_engine(load_settings().database_url)
     listed = await ReferenceRepository(engine).provider_instruments("binance_usdm")
@@ -76,8 +75,10 @@ def main() -> None:
     arguments = parser.parse_args()
     start = datetime.fromisoformat(arguments.start).replace(tzinfo=UTC)
     end = datetime.fromisoformat(arguments.end).replace(tzinfo=UTC)
-    output = REPOSITORY_ROOT / arguments.output if arguments.output else None
-    asyncio.run(run(arguments.symbol, start, end, output))
+    text = asyncio.run(run(arguments.symbol, start, end))
+    print(text)  # noqa: T201
+    if arguments.output:
+        (REPOSITORY_ROOT / arguments.output).write_text(text)
 
 
 if __name__ == "__main__":
