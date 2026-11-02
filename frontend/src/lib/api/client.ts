@@ -1,6 +1,17 @@
 import type { components } from "./schema";
 
-export type Health = components["schemas"]["HealthResponse"];
+type Schemas = components["schemas"];
+
+export type Health = Schemas["HealthResponse"];
+export type Owner = Schemas["OwnerView"];
+export type Instrument = Schemas["InstrumentView"];
+export type Candle = Schemas["CandleView"];
+export type CandlePage = Schemas["CandlePage"];
+export type Price = Schemas["PriceView"];
+export type FeedStatus = Schemas["FeedStatusView"];
+export type MarketStatus = Schemas["MarketStatusView"];
+export type Ticket = Schemas["TicketView"];
+export type Timeframe = Schemas["Timeframe"];
 
 export class ApiError extends Error {
   constructor(
@@ -12,8 +23,8 @@ export class ApiError extends Error {
   }
 }
 
-export async function apiGet<T>(path: string): Promise<T> {
-  const response = await fetch(path, { credentials: "same-origin" });
+async function send<T>(path: string, init?: RequestInit): Promise<T> {
+  const response = await fetch(path, { credentials: "same-origin", ...init });
   if (!response.ok) {
     const body = await response.json().catch(() => null);
     throw new ApiError(
@@ -22,5 +33,17 @@ export async function apiGet<T>(path: string): Promise<T> {
       body?.error?.message ?? `Request failed with status ${response.status}`,
     );
   }
-  return (await response.json()) as T;
+  return response.status === 204 ? (undefined as T) : ((await response.json()) as T);
+}
+
+export function apiGet<T>(path: string): Promise<T> {
+  return send<T>(path);
+}
+
+export function apiPost<T>(path: string, body?: unknown): Promise<T> {
+  return send<T>(path, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: body === undefined ? undefined : JSON.stringify(body),
+  });
 }
