@@ -51,7 +51,7 @@ class Venue:
     klines_path: str
     exchange_info_path: str
     exchange_info_by_symbol: bool
-    klines_weight: int
+    klines_weight: Callable[[int], int]
     rest_cap_per_minute: int
     # Route name to URL path. A path may hold one combined connection.
     routes: Mapping[str, str]
@@ -71,7 +71,7 @@ SPOT = Venue(
     klines_path="/api/v3/klines",
     exchange_info_path="/api/v3/exchangeInfo",
     exchange_info_by_symbol=True,
-    klines_weight=2,
+    klines_weight=lambda _limit: 2,
     rest_cap_per_minute=1500,
     routes={"spot": "/stream"},
     route_of_stream=lambda _stream: "spot",
@@ -83,6 +83,13 @@ def _usdm_route(stream: str) -> str:
     return "public" if "bookTicker" in stream or "depth" in stream else "market"
 
 
+def _usdm_klines_weight(limit: int) -> int:
+    """Measured 2026-11-02: weight rises with the row limit."""
+    if limit < 100:
+        return 1
+    return 2 if limit < 500 else 5
+
+
 USDM = Venue(
     code="binance_usdm",
     capabilities=ProviderCapabilities(
@@ -92,7 +99,7 @@ USDM = Venue(
     klines_path="/fapi/v1/klines",
     exchange_info_path="/fapi/v1/exchangeInfo",
     exchange_info_by_symbol=False,
-    klines_weight=5,
+    klines_weight=_usdm_klines_weight,
     rest_cap_per_minute=600,
     routes={"market": "/market/stream", "public": "/public/stream"},
     route_of_stream=_usdm_route,
@@ -163,14 +170,16 @@ class BinanceProvider:
         symbol = self._symbols[instrument.id]
         cursor = start
         while cursor < end:
+            limit = min((end - cursor) // timeframe.delta + 1, PAGE_SIZE)
             params = {
                 "symbol": symbol,
                 "interval": timeframe.value,
                 "startTime": to_epoch_ms(cursor),
                 "endTime": to_epoch_ms(end) - 1,
-                "limit": PAGE_SIZE,
+                "limit": limit,
             }
-            rows = await self._rest.get(self._venue.klines_path, params, self._venue.klines_weight)
+            weight = self._venue.klines_weight(limit)
+            rows = await self._rest.get(self._venue.klines_path, params, weight)
             if not rows:
                 return
             server_time = await self.get_server_time()
@@ -185,7 +194,7 @@ class BinanceProvider:
                 last_open = candle.open_time
                 yield candle
             cursor = timeframe.next_open(last_open)
-            if len(rows) < PAGE_SIZE:
+            if len(rows) < limit:
                 return
 
     def stream_market(

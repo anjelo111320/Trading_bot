@@ -2,7 +2,7 @@
 
 from collections.abc import AsyncIterator, Sequence
 from datetime import datetime
-from typing import Protocol
+from typing import Protocol, runtime_checkable
 
 from trading_intel.core.clock import UtcDatetime
 from trading_intel.domain.base import DataOrigin, DomainModel
@@ -96,6 +96,7 @@ class MarketDataProvider(Protocol):
     ) -> AsyncIterator[MarketEvent]: ...
 
 
+@runtime_checkable
 class DerivativesCapable(Protocol):
     def get_funding_history(
         self, instrument: Instrument, start: datetime

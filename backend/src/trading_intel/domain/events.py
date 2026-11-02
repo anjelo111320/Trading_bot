@@ -58,6 +58,10 @@ class MarketStatusPayload(_Payload):
     provider: str
     state: Literal["HEALTHY", "DEGRADED", "STALE", "DISCONNECTED", "RECOVERING"]
     reasons: list[str]
+    last_event_at: UtcDatetime | None = None
+    lag_seconds: float | None = None
+    open_gaps: int = 0
+    clock_skew_ms: float | None = None
 
 
 def plain(value: Decimal) -> str:

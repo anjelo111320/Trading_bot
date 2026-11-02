@@ -1,6 +1,7 @@
 """Ingest runs, gaps, rule snapshots, market snapshots and system events."""
 
 import json
+from collections.abc import Sequence
 from dataclasses import dataclass
 from datetime import datetime
 from decimal import Decimal
@@ -13,6 +14,7 @@ from sqlalchemy.ext.asyncio import AsyncEngine
 from trading_intel.domain.base import DataOrigin
 from trading_intel.domain.candles import Timeframe
 from trading_intel.domain.instruments import InstrumentRules
+from trading_intel.domain.market import FundingRate, LiquidationSample
 
 GapState = Literal["detected", "repairing", "repaired", "provider_missing"]
 RunKind = Literal["backfill", "live", "repair", "reconcile"]
@@ -285,6 +287,55 @@ class SnapshotRepository:
                 {"provider": provider_id, "instrument": instrument_id, "start": start, "end": end},
             )
             return int(result.scalar_one())
+
+
+class MarketRepository:
+    """Funding and liquidation samples."""
+
+    def __init__(self, engine: AsyncEngine) -> None:
+        self._engine = engine
+
+    async def latest_funding_time(self, provider_id: int, instrument_id: int) -> datetime | None:
+        async with self._engine.connect() as connection:
+            result = await connection.execute(
+                text(
+                    """SELECT max(funding_time) FROM funding_rates
+                       WHERE provider_id = :provider AND instrument_id = :instrument"""
+                ),
+                {"provider": provider_id, "instrument": instrument_id},
+            )
+            value: datetime | None = result.scalar_one()
+        return value
+
+    async def insert_funding(self, rows: Sequence[FundingRate]) -> None:
+        if not rows:
+            return
+        values = [{**row.model_dump(), "data_origin": row.data_origin.value} for row in rows]
+        async with self._engine.begin() as connection:
+            await connection.execute(
+                text(
+                    """INSERT INTO funding_rates (provider_id, instrument_id, funding_time,
+                         funding_rate, mark_price, data_origin, received_at)
+                       VALUES (:provider_id, :instrument_id, :funding_time, :funding_rate,
+                         :mark_price, CAST(:data_origin AS data_origin_t), :received_at)
+                       ON CONFLICT (provider_id, instrument_id, funding_time) DO NOTHING"""
+                ),
+                values,
+            )
+
+    async def insert_liquidation(self, sample: LiquidationSample) -> None:
+        async with self._engine.begin() as connection:
+            await connection.execute(
+                text(
+                    """INSERT INTO liquidation_samples (provider_id, instrument_id, event_time,
+                         side, price, quantity, received_at)
+                       VALUES (:provider_id, :instrument_id, :event_time, :side, :price,
+                         :quantity, :received_at)
+                       ON CONFLICT (provider_id, instrument_id, event_time, side, price, quantity)
+                       DO NOTHING"""
+                ),
+                sample.model_dump(),
+            )
 
 
 class EventRepository:
