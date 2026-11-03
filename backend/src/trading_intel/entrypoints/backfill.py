@@ -28,10 +28,13 @@ from trading_intel.entrypoints.wiring import (
 )
 from trading_intel.market_data.backfill import (
     FULL_PROFILE,
+    HISTORY_PROFILE,
+    RESEARCH_END,
     RESEARCH_START,
     TEST_PROFILE,
     BackfillProfile,
     BackfillService,
+    plan_history_tasks,
     plan_research_tasks,
     plan_tasks,
 )
@@ -66,11 +69,13 @@ async def run(profile: BackfillProfile, codes: list[str], research: bool = False
             (item.instrument, EARLIEST[(code, item.instrument.symbol)]) for item in listed
         ]
         now = await provider.get_server_time()
-        tasks = (
-            plan_research_tasks([item.instrument for item in listed])
-            if research
-            else plan_tasks(instruments, profile, now)
-        )
+        history = profile is HISTORY_PROFILE
+        if research:
+            tasks = plan_research_tasks([item.instrument for item in listed])
+        elif history:
+            tasks = plan_history_tasks(instruments)
+        else:
+            tasks = plan_tasks(instruments, profile, now)
         started = time.monotonic()
         report = await service.run(tasks, profile.floor_bytes)
         await RuleSnapshotService(provider, provider_id, RuleRepository(engine), clock).refresh(
@@ -82,6 +87,8 @@ async def run(profile: BackfillProfile, codes: list[str], research: bool = False
                 if research:
                     start = RESEARCH_START
                 rows = [row async for row in provider.get_funding_history(instrument, start)]
+                if history:
+                    rows = [row for row in rows if row.funding_time < RESEARCH_END]
                 await market.insert_funding(rows)
         log.info(
             "backfill_finished",
@@ -98,11 +105,15 @@ async def run(profile: BackfillProfile, codes: list[str], research: bool = False
 
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--profile", choices=["test", "full", "research"], default="test")
+    parser.add_argument(
+        "--profile", choices=["test", "full", "research", "history"], default="test"
+    )
     parser.add_argument("--providers", nargs="+", default=[BINANCE_SPOT, BINANCE_USDM])
     arguments = parser.parse_args()
     research = arguments.profile == "research"
-    profile = FULL_PROFILE if arguments.profile == "full" else TEST_PROFILE
+    profile = {"full": FULL_PROFILE, "history": HISTORY_PROFILE}.get(
+        arguments.profile, TEST_PROFILE
+    )
     asyncio.run(run(profile, arguments.providers, research))
 
 

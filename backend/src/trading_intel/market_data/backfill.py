@@ -53,6 +53,9 @@ RESEARCH_START: Final = datetime(2025, 6, 25, tzinfo=UTC)
 RESEARCH_END: Final = datetime(2025, 11, 1, tzinfo=UTC)
 RESEARCH_TIMEFRAMES: Final = (Timeframe.M1, Timeframe.M15, Timeframe.H1, Timeframe.H4)
 FULL_PROFILE: Final = BackfillProfile("full", 10 * GIB, None, SPOT_HISTORY_TIMEFRAMES)
+# 1H setups need long perpetual history, but only from 15M up, which fits this computer (D034).
+HISTORY_TIMEFRAMES: Final = (Timeframe.M15, Timeframe.H1, Timeframe.H4, Timeframe.D1)
+HISTORY_PROFILE: Final = BackfillProfile("history", 2 * GIB, None, ())
 
 
 @dataclass(frozen=True)
@@ -103,6 +106,16 @@ def plan_research_tasks(instruments: Sequence[Instrument]) -> list[BackfillTask]
         BackfillTask(instrument, timeframe, RESEARCH_START, RESEARCH_END)
         for instrument in instruments
         for timeframe in RESEARCH_TIMEFRAMES
+    ]
+
+
+def plan_history_tasks(instruments: Sequence[tuple[Instrument, datetime]]) -> list[BackfillTask]:
+    """Perpetuals from listing up to the frozen holdout, which this profile never reads."""
+    return [
+        BackfillTask(instrument, timeframe, _aligned(timeframe, earliest), RESEARCH_END)
+        for instrument, earliest in instruments
+        if instrument.instrument_type is not InstrumentType.SPOT
+        for timeframe in HISTORY_TIMEFRAMES
     ]
 
 

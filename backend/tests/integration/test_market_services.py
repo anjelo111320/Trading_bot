@@ -19,10 +19,13 @@ from trading_intel.domain.instruments import Instrument, InstrumentRules
 from trading_intel.market_data.backfill import (
     FULL_PROFILE,
     GIB,
+    HISTORY_PROFILE,
+    RESEARCH_END,
     TEST_PROFILE,
     BackfillRefusedError,
     BackfillService,
     BackfillTask,
+    plan_history_tasks,
     plan_tasks,
 )
 from trading_intel.market_data.gaps import GapRepairService
@@ -186,6 +189,26 @@ async def test_plan_ends_at_the_latest_closed_candle(ingest_engine: AsyncEngine)
         Timeframe.D1,
     }
     assert all(t.timeframe.is_aligned(t.start) for t in full)
+
+
+async def test_history_plan_covers_perpetuals_and_stops_at_the_holdout(
+    ingest_engine: AsyncEngine,
+) -> None:
+    reference = ReferenceRepository(ingest_engine)
+    perpetual = (await reference.provider_instruments("binance_usdm"))[0].instrument
+    spot = (await reference.provider_instruments("binance_spot"))[0].instrument
+    listed = datetime(2019, 9, 8, 7, 30, tzinfo=UTC)
+    tasks = plan_history_tasks([(perpetual, listed), (spot, listed)])
+    assert {t.instrument for t in tasks} == {perpetual}
+    assert {t.timeframe for t in tasks} == {
+        Timeframe.M15,
+        Timeframe.H1,
+        Timeframe.H4,
+        Timeframe.D1,
+    }
+    assert all(t.end == RESEARCH_END for t in tasks)
+    assert all(t.timeframe.is_aligned(t.start) and t.start >= listed for t in tasks)
+    assert HISTORY_PROFILE.floor_bytes == 2 * GIB
 
 
 async def test_ten_minute_outage_is_repaired_with_no_manual_action(
