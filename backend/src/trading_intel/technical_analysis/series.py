@@ -80,15 +80,20 @@ class CandleSeries:
 
     def upto(self, end: int) -> CandleSeries:
         """The first `end` candles. Used to prove results never depend on later data."""
+        return self.window(0, end)
+
+    def window(self, start: int, end: int) -> CandleSeries:
+        """Candles `start` to `end - 1`. Continuity is inherited from the whole series."""
+        part = slice(max(start, 0), end)
         return CandleSeries(
             timeframe=self.timeframe,
-            open_time=self.open_time[:end],
-            close_time=self.close_time[:end],
-            open=self.open[:end],
-            high=self.high[:end],
-            low=self.low[:end],
-            close=self.close[:end],
-            volume=self.volume[:end],
-            taker_buy_volume=self.taker_buy_volume[:end],
+            open_time=self.open_time[part],
+            close_time=self.close_time[part],
+            open=self.open[part],
+            high=self.high[part],
+            low=self.low[part],
+            close=self.close[part],
+            volume=self.volume[part],
+            taker_buy_volume=self.taker_buy_volume[part],
             is_continuous=self.is_continuous,
         )

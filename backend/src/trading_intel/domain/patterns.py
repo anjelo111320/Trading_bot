@@ -5,7 +5,7 @@ from datetime import datetime
 from enum import StrEnum
 from typing import Any, Final
 
-RULE_VERSION: Final = "1"
+RULE_VERSION: Final = "2"  # 2 added trend-aware candles and chart patterns (docs/25).
 
 
 class Direction(StrEnum):

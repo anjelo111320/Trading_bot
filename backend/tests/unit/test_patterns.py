@@ -1,7 +1,9 @@
+import json
+
 import numpy as np
 
 from tests.quant_data import candle, from_closes, random_walk
-from trading_intel.domain.patterns import DetectedPattern, Direction
+from trading_intel.domain.patterns import RULE_VERSION, DetectedPattern, Direction
 from trading_intel.market_structure.structure import analyse_structure
 from trading_intel.market_structure.swings import Swing, find_swings
 from trading_intel.pattern_detection.breakouts import breakouts
@@ -180,9 +182,10 @@ def test_every_pattern_is_rated_within_bounds_and_dated_sensibly() -> None:
     for pattern in found:
         assert 0 <= pattern.strength <= 100
         assert pattern.detected_at >= pattern.formed_at
-        assert pattern.rule_version == "1"
+        assert pattern.rule_version == RULE_VERSION
         if pattern.invalidated_at:
             assert pattern.invalidated_at > pattern.detected_at
+        json.dumps(pattern.evidence)  # Stored as JSON, so it must serialise.
 
 
 def test_detection_is_deterministic() -> None:

@@ -8,7 +8,12 @@ from trading_intel.market_structure.structure import StructureEvent, analyse_str
 from trading_intel.market_structure.swings import Swing, find_swings
 from trading_intel.market_structure.zones import consolidations, supply_demand_zones
 from trading_intel.pattern_detection.breakouts import breakouts
-from trading_intel.pattern_detection.candles import engulfing, pin_bars_and_dojis
+from trading_intel.pattern_detection.candles import (
+    engulfing,
+    pin_bars_and_dojis,
+    trend_candle_patterns,
+)
+from trading_intel.pattern_detection.chart_patterns import chart_patterns
 from trading_intel.pattern_detection.divergences import divergences
 from trading_intel.pattern_detection.imbalance import fair_value_gaps, order_blocks
 from trading_intel.technical_analysis.momentum import rsi
@@ -71,13 +76,16 @@ def detect_patterns(series: CandleSeries) -> list[DetectedPattern]:
     swings = find_swings(series)
     structure = analyse_structure(series, swings)
     volatility = atr(series)
+    volume_ratio = relative_volume(series.volume)
     found = [
         *structure_patterns(structure.events, swings),
         *engulfing(series),
         *pin_bars_and_dojis(series),
+        *trend_candle_patterns(series, volatility),
+        *chart_patterns(series, volatility, volume_ratio),
         *fair_value_gaps(series, volatility),
         *order_blocks(series, structure.events, volatility),
-        *breakouts(series, structure.events, relative_volume(series.volume)),
+        *breakouts(series, structure.events, volume_ratio),
         *divergences(swings, rsi(series.close)),
         *equal_levels(series, swings, volatility),
         *liquidity_sweeps(series, swings),
