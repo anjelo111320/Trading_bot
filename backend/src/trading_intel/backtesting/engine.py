@@ -9,7 +9,7 @@ from collections.abc import Sequence
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta
 from decimal import ROUND_CEILING, Decimal
-from typing import Final
+from typing import Final, Protocol
 
 from trading_intel.backtesting.metrics import ClosedTrade, Metrics, compute_metrics
 from trading_intel.domain.candles import ClosedCandle, Timeframe
@@ -31,7 +31,7 @@ from trading_intel.risk_management.models import (
 )
 from trading_intel.risk_management.rejections import RejectionCode
 from trading_intel.technical_analysis.series import CandleSeries
-from trading_intel.trade_signals.baseline import BaselineParameters, evaluate
+from trading_intel.trade_signals.baseline import BaselineDecision, BaselineParameters, evaluate
 
 SETUP_LOOKBACK: Final = 400
 MIDDLE_LOOKBACK: Final = 200
@@ -92,12 +92,60 @@ class AsOfCandles:
         return self._candles[max(end - limit, 0) : end]
 
 
+class Strategy(Protocol):
+    """Decides at the close of each setup candle, from what was known at that moment."""
+
+    @property
+    def timeframe(self) -> Timeframe: ...
+
+    def decide(self, moment: datetime) -> BaselineDecision | None: ...
+
+
+class WindowedBaseline:
+    """The rule baseline, fed windows of candles that had closed by each decision."""
+
+    timeframe: Final = Timeframe.M15
+
+    def __init__(
+        self,
+        setup: Sequence[ClosedCandle],
+        middle: Sequence[ClosedCandle],
+        higher: Sequence[ClosedCandle],
+        tick: Decimal,
+        parameters: BaselineParameters,
+    ) -> None:
+        self._setup = AsOfCandles(setup)
+        self._middle = AsOfCandles(middle)
+        self._higher = AsOfCandles(higher)
+        self._tick = tick
+        self._parameters = parameters
+
+    def decide(self, moment: datetime) -> BaselineDecision | None:
+        setup = self._setup.closed_by(moment, SETUP_LOOKBACK)
+        middle = self._middle.closed_by(moment, MIDDLE_LOOKBACK)
+        higher = self._higher.closed_by(moment, HIGHER_LOOKBACK)
+        if (
+            len(setup) < MIN_SETUP_CANDLES
+            or len(middle) < MIN_MIDDLE_CANDLES
+            or len(higher) < MIN_HIGHER_CANDLES
+        ):
+            return None
+        return evaluate(
+            CandleSeries.of(setup),
+            CandleSeries.of(middle),
+            CandleSeries.of(higher),
+            self._tick,
+            self._parameters,
+        )
+
+
 @dataclass(frozen=True)
 class BacktestTrade:
     signal_time: datetime
     order: SimulatedOrder
     result: TradeResult
     planned_risk: Decimal
+    decision: BaselineDecision | None = None
 
 
 @dataclass
@@ -129,26 +177,37 @@ class BacktestEngine:
         costs: CostModel | None = None,
         profile: RiskProfile | None = None,
         starting_equity: Decimal = Decimal(10000),
+        strategy: Strategy | None = None,
+        skip_signals_in_trade: bool = False,
     ) -> None:
+        """`minutes` are the fill candles, normally 1M. `strategy` defaults to the baseline.
+
+        With `skip_signals_in_trade`, no decision is made while a position is open. Otherwise
+        a signal waits for the open trade to finish and may fill late, until it expires.
+        """
         self._instrument = instrument
         self._rules = rules
         self._minutes = list(minutes)
-        self._setup = AsOfCandles(setup)
         self._setup_candles = list(setup)
-        self._middle = AsOfCandles(middle)
-        self._higher = AsOfCandles(higher)
         self._funding = list(funding)
-        self._parameters = parameters or BaselineParameters()
+        self._strategy: Strategy = strategy or WindowedBaseline(
+            setup, middle, higher, rules.tick_size, parameters or BaselineParameters()
+        )
         self._costs = costs or CostModel()
         self._profile = profile or RiskProfile()
         self._equity = starting_equity
         self._starting_equity = starting_equity
+        self._skip_in_trade = skip_signals_in_trade
+        self._free_at: datetime | None = None
+        self._pending: BaselineDecision | None = None
 
     def run(self, start: datetime, end: datetime) -> BacktestResult:
         result = BacktestResult(equity=[(start, self._equity)])
         cursor = 0
         for candle in self._setup_candles:
             if candle.close_time < start or candle.close_time >= end:
+                continue
+            if self._skip_in_trade and self._free_at and candle.close_time < self._free_at:
                 continue
             result.decisions += 1
             order = self._decide(candle, result)
@@ -178,32 +237,27 @@ class BacktestEngine:
             gross_pnl=outcome.gross_pnl,
         )
 
+    def _fill_scale(self) -> int:
+        """Setup candles per fill candle, which scales setup ATR down to the fill timeframe."""
+        if not self._minutes:
+            return 1
+        fill = self._minutes[0].timeframe.delta
+        return max(int(self._strategy.timeframe.delta / fill), 1)
+
     def _decide(self, candle: ClosedCandle, result: BacktestResult) -> SimulatedOrder | None:
         moment = candle.close_time
-        setup = self._setup.closed_by(moment, SETUP_LOOKBACK)
-        middle = self._middle.closed_by(moment, MIDDLE_LOOKBACK)
-        higher = self._higher.closed_by(moment, HIGHER_LOOKBACK)
-        if (
-            len(setup) < MIN_SETUP_CANDLES
-            or len(middle) < MIN_MIDDLE_CANDLES
-            or len(higher) < MIN_HIGHER_CANDLES
-        ):
+        decision = self._strategy.decide(moment)
+        if decision is None:
             return None
-        decision = evaluate(
-            CandleSeries.of(setup),
-            CandleSeries.of(middle),
-            CandleSeries.of(higher),
-            self._rules.tick_size,
-            self._parameters,
-        )
         if decision.action not in (Action.BUY, Action.SELL) or decision.proposal is None:
             return None
         result.signals += 1
+        self._pending = decision
         proposal = decision.proposal
         assert decision.setup_atr is not None
         tick = self._rules.tick_size
         half = _ceil_to_tick(self._costs.half_spread(candle.close), tick)
-        slippage = self._costs.slippage(tick, decision.setup_atr / 15)
+        slippage = self._costs.slippage(tick, decision.setup_atr / self._fill_scale())
         taker, maker = self._costs.fees()
         request = RiskRequest(
             proposal=proposal,
@@ -232,7 +286,7 @@ class BacktestEngine:
                 result.rejections[code] = result.rejections.get(code, 0) + 1
             return None
         sizing = assessment.sizing
-        expires = moment + Timeframe.M15.delta * (proposal.expiry_candles or 1)
+        expires = moment + self._strategy.timeframe.delta * (proposal.expiry_candles or 1)
         return SimulatedOrder(
             side=proposal.side,
             entry_type=proposal.entry_type,
@@ -276,6 +330,7 @@ class BacktestEngine:
                 simulator.on_funding(event.at, event.rate, event.mark)
             simulator.on_candle(candle)
             if simulator.is_finished:
+                self._free_at = candle.close_time
                 break
         outcome = summarise(order.side, simulator.fills)
         planned = order.quantity * abs(order.entry - order.stop)
@@ -283,5 +338,7 @@ class BacktestEngine:
             self._equity += outcome.net_pnl
             if outcome.exit_time is not None:
                 result.equity.append((outcome.exit_time, self._equity))
-            result.trades.append(BacktestTrade(signal_time, order, outcome, planned))
+            result.trades.append(BacktestTrade(signal_time, order, outcome, planned, self._pending))
+        elif outcome.entered:
+            self._free_at = end  # Still open when the window ended.
         return index

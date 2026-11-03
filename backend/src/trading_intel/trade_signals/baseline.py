@@ -13,7 +13,7 @@ from typing import Any, Final
 import numpy as np
 
 from trading_intel.domain.candles import Timeframe
-from trading_intel.domain.patterns import Direction
+from trading_intel.domain.patterns import DetectedPattern, Direction
 from trading_intel.domain.signals import Action, EntryType, Side
 from trading_intel.market_structure.structure import Trend, analyse_structure
 from trading_intel.market_structure.swings import find_swings
@@ -21,7 +21,7 @@ from trading_intel.risk_management.models import TradeProposal
 from trading_intel.technical_analysis.series import CandleSeries, FloatArray
 from trading_intel.technical_analysis.trend import adx
 from trading_intel.technical_analysis.volatility import atr
-from trading_intel.trade_signals.catalogue import LevelCatalogue, build_catalogue
+from trading_intel.trade_signals.catalogue import LevelCatalogue, build_catalogue, targets_beyond
 
 STRATEGY_NAME: Final = "trend_break_baseline"
 STRATEGY_VERSION: Final = 2  # Version 1 picked targets that could not pass the 2:1 rule.
@@ -51,6 +51,7 @@ class BaselineDecision:
     proposal: TradeProposal | None = None
     catalogue: LevelCatalogue | None = None
     setup_atr: Decimal | None = None
+    patterns: tuple[DetectedPattern, ...] = ()  # What triggered it, for reports and Claude.
 
 
 def _no_trade(as_of: datetime, *reasons: str) -> BaselineDecision:
@@ -59,15 +60,6 @@ def _no_trade(as_of: datetime, *reasons: str) -> BaselineDecision:
 
 def _trend_of(series: CandleSeries) -> Trend:
     return analyse_structure(series, find_swings(series)).trend[-1]
-
-
-def _select_targets(
-    catalogue: LevelCatalogue, side: Side, entry: Decimal, risk: Decimal, minimum_r: Decimal
-) -> tuple[Decimal, ...]:
-    """Up to three catalogue levels far enough away. Fewer are returned, never invented."""
-    levels = catalogue.above() if side is Side.LONG else catalogue.below()
-    distant = [v.price for v in levels if side.sign * (v.price - entry) >= risk * minimum_r]
-    return tuple(distant[:3])
 
 
 def _stop_below_swing(series_low: Decimal, buffer: Decimal, tick: Decimal, side: Side) -> Decimal:
@@ -117,7 +109,7 @@ def evaluate(
     risk = side.sign * (entry - stop)
     if risk <= 0:
         return _no_trade(as_of, "latest swing is on the wrong side of the close")
-    targets = _select_targets(catalogue, side, entry, risk, Decimal(str(params.min_target_r)))
+    targets = targets_beyond(catalogue, side, entry, risk, Decimal(str(params.min_target_r)))
     if not targets:
         return _no_trade(as_of, "no reachable target")
     condition = "close below" if side is Side.LONG else "close above"

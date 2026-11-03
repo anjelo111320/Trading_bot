@@ -23,7 +23,9 @@ from trading_intel.backtesting.windows import (
 )
 from trading_intel.domain.candles import ClosedCandle, Timeframe
 from trading_intel.domain.instruments import Instrument, InstrumentRules, InstrumentType
-from trading_intel.trade_signals.baseline import BaselineParameters
+from trading_intel.domain.signals import Action, EntryType, Side
+from trading_intel.risk_management.models import TradeProposal
+from trading_intel.trade_signals.baseline import BaselineDecision, BaselineParameters
 
 INSTRUMENT = Instrument(
     id=1,
@@ -145,6 +147,45 @@ def test_the_engine_produces_trades_and_is_reproducible() -> None:
     assert first.metrics is not None
     assert [t.result.net_pnl for t in first.trades] == [t.result.net_pnl for t in second.trades]
     assert first.signals == second.signals
+
+
+class EverySetupCandle:
+    """A stub strategy that buys at every setup close, so signals overlap open trades."""
+
+    timeframe = Timeframe.M15
+
+    def __init__(self, setup: list[ClosedCandle]) -> None:
+        self._closes = {c.close_time: c.close for c in setup}
+
+    def decide(self, moment: datetime) -> BaselineDecision:
+        close = self._closes[moment]
+        stop = (close * D("0.98")).quantize(D("0.01"))
+        proposal = TradeProposal(
+            side=Side.LONG,
+            entry_type=EntryType.MARKET,
+            entry=close,
+            stop=stop,
+            targets=((close * D("1.05")).quantize(D("0.01")),),
+            expiry_candles=8,
+            invalidation_conditions=(f"close below {stop}",),
+        )
+        return BaselineDecision(Action.BUY, moment, ("stub",), proposal, setup_atr=D(10))
+
+
+@pytest.mark.parametrize("skip", [True, False])
+def test_skipping_signals_in_a_trade_never_overlaps_positions(skip: bool) -> None:
+    setup = candles(Timeframe.M15, 400, 15)
+    result = engine(setup=setup, strategy=EverySetupCandle(setup), skip_signals_in_trade=skip).run(
+        START, FAR_END
+    )
+    assert len(result.trades) > 3
+    assert all(t.decision is not None for t in result.trades)
+    trades = sorted(result.trades, key=lambda t: t.signal_time)
+    for earlier, later in pairwise(trades):
+        assert earlier.result.exit_time is not None and later.result.entry_time is not None
+        assert later.result.entry_time >= earlier.result.exit_time
+        if skip:  # No decision is even made while a position is open.
+            assert later.signal_time >= earlier.result.exit_time
 
 
 def test_corrupting_all_future_candles_changes_no_past_decision() -> None:

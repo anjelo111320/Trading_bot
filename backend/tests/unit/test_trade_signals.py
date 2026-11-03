@@ -10,9 +10,8 @@ from trading_intel.domain.signals import SignalState as S
 from trading_intel.market_structure.swings import find_swings
 from trading_intel.technical_analysis.series import CandleSeries
 from trading_intel.technical_analysis.volatility import atr
-from trading_intel.trade_signals import baseline
 from trading_intel.trade_signals.baseline import BaselineParameters, evaluate
-from trading_intel.trade_signals.catalogue import build_catalogue, to_tick
+from trading_intel.trade_signals.catalogue import build_catalogue, targets_beyond, to_tick
 from trading_intel.trade_signals.lifecycle import (
     ALLOWED,
     TERMINAL,
@@ -151,9 +150,7 @@ def test_baseline_never_forces_targets() -> None:
         catalogue_series, find_swings(catalogue_series), atr(catalogue_series), TICK
     )
     assert catalogue is not None
-    far = baseline._select_targets(
-        catalogue, Side.LONG, catalogue.close, Decimal(100000), Decimal(1)
-    )
+    far = targets_beyond(catalogue, Side.LONG, catalogue.close, Decimal(100000), Decimal(1))
     assert far == ()
 
 

@@ -10,7 +10,7 @@ def _value(value: float | None, digits: int = 3) -> str:
     return "n/a" if value is None else f"{value:.{digits}f}"
 
 
-def _metrics_table(metrics: Metrics) -> list[str]:
+def metrics_table(metrics: Metrics) -> list[str]:
     interval = metrics.expectancy_interval
     return [
         "| Metric | Value |",
@@ -33,7 +33,7 @@ def _metrics_table(metrics: Metrics) -> list[str]:
 def render(title: str, result: BacktestResult, notes: list[str]) -> str:
     assert result.metrics is not None
     lines = [f"# {title}", "", STATEMENT, ""]
-    lines += _metrics_table(result.metrics)
+    lines += metrics_table(result.metrics)
     lines += [
         "",
         f"Decisions checked: {result.decisions}. Signals: {result.signals}. "

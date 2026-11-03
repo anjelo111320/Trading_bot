@@ -1,5 +1,6 @@
 """Candidate price levels. Python supplies every price, and any AI only selects by ID (D009)."""
 
+from collections.abc import Sequence
 from dataclasses import dataclass
 from datetime import datetime
 from decimal import ROUND_HALF_UP, Decimal
@@ -7,6 +8,7 @@ from typing import Final, Literal
 
 from trading_intel.domain.candles import Timeframe
 from trading_intel.domain.patterns import DetectedPattern
+from trading_intel.domain.signals import Side
 from trading_intel.market_structure.levels import support_resistance
 from trading_intel.market_structure.swings import Swing
 from trading_intel.pattern_detection.imbalance import fair_value_gaps
@@ -18,8 +20,16 @@ RECENT_SWINGS: Final = 6
 ATR_PROJECTIONS: Final = (1.5, 3.0, 5.0, 8.0, 12.0)
 
 LevelKind = Literal[
-    "swing_high", "swing_low", "support", "resistance", "fvg_edge", "atr_projection"
+    "swing_high",
+    "swing_low",
+    "support",
+    "resistance",
+    "fvg_edge",
+    "atr_projection",
+    "measured_move",
+    "pattern_invalidation",
 ]
+ExtraLevel = tuple[LevelKind, float, str]
 
 
 def to_tick(value: float | Decimal, tick: Decimal) -> Decimal:
@@ -61,16 +71,33 @@ def _open_gaps(series: CandleSeries, atr: FloatArray) -> list[DetectedPattern]:
     return [p for p in fair_value_gaps(series, atr) if p.invalidated_at is None]
 
 
+def targets_beyond(
+    catalogue: LevelCatalogue, side: Side, entry: Decimal, risk: Decimal, minimum_r: Decimal
+) -> tuple[Decimal, ...]:
+    """Up to three catalogue levels far enough away. Fewer are returned, never invented."""
+    levels = catalogue.above() if side is Side.LONG else catalogue.below()
+    distant = [v.price for v in levels if side.sign * (v.price - entry) >= risk * minimum_r]
+    return tuple(distant[:3])
+
+
 def build_catalogue(
-    series: CandleSeries, swings: list[Swing], atr: FloatArray, tick: Decimal
+    series: CandleSeries,
+    swings: list[Swing],
+    atr: FloatArray,
+    tick: Decimal,
+    extra: Sequence[ExtraLevel] = (),
 ) -> LevelCatalogue | None:
-    """Levels known at the last candle, nearest first. None until ATR has warmed up."""
+    """Levels known at the last candle, nearest first. None until ATR has warmed up.
+
+    `extra` levels come from detected patterns. They win ties at the same price and are
+    never dropped by the level cap, because a pattern's own targets must stay selectable.
+    """
     last = len(series) - 1
     unit = float(atr[last])
     if unit != unit or unit <= 0:
         return None
     close = float(series.close[last])
-    raw: list[tuple[LevelKind, float, str]] = []
+    raw: list[tuple[LevelKind, float, str]] = list(extra)
     for swing in [s for s in swings if s.confirmed_index <= last][-RECENT_SWINGS:]:
         kind: LevelKind = "swing_high" if swing.kind == "high" else "swing_low"
         raw.append((kind, swing.price, f"confirmed {swing.confirmed_at.isoformat()}"))
@@ -89,7 +116,11 @@ def build_catalogue(
         rounded = to_tick(price, tick)
         if rounded > 0 and rounded != to_tick(close, tick):
             seen.setdefault(rounded, (kind, evidence))
-    ordered = sorted(seen.items(), key=lambda item: abs(float(item[0]) - close))[:MAX_LEVELS]
+    pinned = {to_tick(price, tick) for _, price, _ in extra}
+    nearest = sorted(seen.items(), key=lambda item: abs(float(item[0]) - close))
+    kept = [item for item in nearest if item[0] not in pinned][: max(MAX_LEVELS - len(pinned), 0)]
+    chosen = {price for price, _ in kept} | (pinned & seen.keys())
+    ordered = [item for item in nearest if item[0] in chosen]
     levels = tuple(
         CatalogueLevel(
             id=f"L{index}",
