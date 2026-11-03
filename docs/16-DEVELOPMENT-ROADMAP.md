@@ -10,7 +10,8 @@ Updated 2026-11-02.
 - Phase 2 is complete: [phase-2.md](reports/phase-2.md).
 - Phases 3, 4 and 5 are code complete: [phase-3.md](reports/phase-3.md), [phase-4.md](reports/phase-4.md), [phase-5.md](reports/phase-5.md). The strategy has shown no edge, and its evidence gate needs full history.
 - Phase 6 is built, and Claude classification waits for an API key: [phase-6.md](reports/phase-6.md).
-- Phase 7 has not started. It needs the owner's Claude API key and, under the cost strategy, a baseline that passes its evidence gate.
+- Pattern signals, added 2026-11-03: trend-aware candles, chart patterns, a 1H pattern strategy and a history backtest are built. The backtest made money in simulation on BTC and ETH but shows no proven edge. See [27-PATTERN-SIGNAL-PLAN.md](27-PATTERN-SIGNAL-PLAN.md) and D030 to D034.
+- Phase 7 has not started. It needs the owner's Claude API key. Under D030, Claude trades its own paper account, so it no longer waits for the evidence gate.
 
 - Done: repository inspection, provider research, the ten first deliverables and decisions D006 to D028. See [22-REQUIREMENTS-TRACEABILITY.md](22-REQUIREMENTS-TRACEABILITY.md) and [17-DECISIONS.md](17-DECISIONS.md).
 - Working method: phases are built in order without waiting for review, and long tests run alongside later work (D028).

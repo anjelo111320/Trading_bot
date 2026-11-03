@@ -277,3 +277,64 @@ Consequences:
 - Results from that window prove the engine runs. They are far too short to be evidence.
 Revisit conditions: none. A changed strategy needs fresh out-of-sample time, normally from forward paper trading.
 
+## Owner Decisions, 2026-11-03 Pattern Signals
+
+The owner asked for pattern and candle research, a Python detector that feeds Claude, news-aware signals with stops and targets, and a historical profitability test.
+
+### D030: Claude trades its own paper account
+Date: 2026-11-03.
+Status: Accepted by the owner.
+Context: The evidence gate in D025 blocks live Claude calls until the rule baseline passes its promotion gate. That needs history this Mac cannot hold, so Claude would never run.
+Options considered: Claude trades a separate paper account; Claude's signals are shown but never traded; build patterns first and keep Claude off.
+Decision: Claude's recommendations that pass validation and the risk engine open simulated trades in their own paper account, next to the rule strategy's account. The evidence gate is relaxed for paper trading only. Every other gate in [24-AI-COST-STRATEGY.md](24-AI-COST-STRATEGY.md) stays, including the $3 daily and $40 monthly limits.
+Consequences:
+- Uplift over the rule strategy is measured forward, on the same period, net of API cost.
+- Spending starts once the owner adds an API key. No key exists yet.
+- Claude still selects levels by ID and never produces a price (D009). Paper mode stays hard-coded (D016).
+Revisit conditions: 300 resolved Claude trades, spending above budget, or the owner asks for opinions only.
+
+### D031: 1H setups
+Date: 2026-11-03.
+Status: Accepted by the owner.
+Context: Chart patterns need room to form, and costs took about a third of gross profit on the 15M baseline's BTC test.
+Options considered: 15M, 1H or 4H setups.
+Decision: Pattern strategies use 1D for direction, 4H for structure, 1H for setups and 15M for entry timing. The 15M rule baseline stays as a separate strategy.
+Consequences: Fewer signals and Claude calls than 15M. History for 15M and above fits this computer (D034).
+Revisit conditions: forward results show 1H setups are too rare to evaluate.
+
+### D032: News sources
+Date: 2026-11-03.
+Status: Accepted by the owner in intent. Each source is conditional on its terms.
+Context: News today comes only from the Federal Reserve archive.
+Decision: Add crypto news RSS feeds such as CoinDesk and Cointelegraph, official sources such as SEC releases, US Treasury releases and the BLS release calendar, and one news API such as CryptoPanic or Finnhub using a key from the owner.
+Consequences:
+- Each source's terms are read in full and recorded in `providers` before collection starts. Findings so far are in [26-PATTERN-RESEARCH.md](26-PATTERN-RESEARCH.md), section 8.
+- Headlines and short summaries are stored locally for the owner only (D006). Article pages are never fetched.
+- Claude reads stored, classified items and has no web access (D022).
+Revisit conditions: a source's terms forbid this use, or the owner's key is not provided.
+
+### D033: Coin universe with news-driven candidates
+Date: 2026-11-03.
+Status: **Proposed.** Waiting for the owner.
+Context: The owner asked which coins people trade now, and for a way to add coins when news makes them relevant. Research is in [26-PATTERN-RESEARCH.md](26-PATTERN-RESEARCH.md), section 7.
+Options considered: a fixed list; automatic adds; screened suggestions that the owner approves.
+Proposal:
+- Core list: BTCUSDT and ETHUSDT now. Add SOLUSDT, XRPUSDT, BNBUSDT and DOGEUSDT after approval. All six were listed at least five years ago and rank in the top 10 by 30-day median volume.
+- A candidate is raised when classified news links a contract with relevance of at least 0.7 and medium or high impact, or when its daily volume reaches three times its 30-day median.
+- A candidate must pass a screen: a trading USD-M perpetual, listed at least 180 days, not in Binance's Alpha category, a 30-day median volume of at least 50 million USDT, and spread within risk limits.
+- Passing candidates appear as suggestions. The owner approves each one, which starts a 90-day backfill and adds it to analysis. At most eight coins are active, under the same Claude budget.
+- A coin below the volume floor for 30 days is suggested for removal.
+Consequences: New coins can enter without costs growing silently. Short histories mean pattern statistics come mainly from the core coins.
+Revisit conditions: the owner prefers automatic adds, or a fixed list.
+
+### D034: History for 1H pattern research
+Date: 2026-11-03.
+Status: Adopted.
+Context: Testing 1H setups needs years of history. Full history is mostly 1M and 5M candles, which do not fit this computer, but 15M and above do.
+Decision: The `history` backfill profile loads perpetual 15M, 1H, 4H and 1D candles and funding from listing to the frozen holdout start, 2025-11-01. Pattern research runs simulate fills on 15M candles instead of 1M.
+Consequences:
+- 527,685 rows, about 125 MB, were loaded on 2026-11-03. The only gaps are the first hours of each listing day.
+- When a stop and a target fall in the same 15M candle, the stop is taken first. Coarser candles therefore make results worse, never better. Reports say so.
+- The holdout is never loaded by this profile.
+Revisit conditions: 1M history becomes affordable, on a host or with more disk.
+
