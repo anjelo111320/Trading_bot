@@ -112,12 +112,24 @@ Decision: nothing is tuned from these results. Next, the strategy runs forward i
 
 ## What Claude Will Receive
 
-The context builder in [07-CLAUDE-AI-ANALYST.md](07-CLAUDE-AI-ANALYST.md) gains pattern evidence. Each pattern is one line, for example:
+The context builder in [07-CLAUDE-AI-ANALYST.md](07-CLAUDE-AI-ANALYST.md) gains pattern evidence. Claude reads no chart images (D035). Each pattern arrives as numbers from `pattern_detection/describe.py`, so its shape can be judged the way a person judges a picture.
+
+The real numbers for BTC trade 95, the head and shoulders of 2023-03-07, computed from stored candles. Distances are in ATR at the breakout, where 1 ATR was 70.88 USDT:
 
 ```
-pat:01 inverse_head_and_shoulders 1h bullish detected 2025-03-11T14:00Z strength 72
-       breakout over neckline L4, invalidation L9, measured move L2 (1x), L1 (2x)
+pat:01 head_and_shoulders 1h bearish, breakout close 2023-03-07 11:59 UTC
+  size        38 candles, height 4.35 ATR (1.38%), after a 5.36 ATR rise into it
+  shape       shoulders 0.07 ATR apart, head 0.56 ATR above them,
+              neckline rising 0.5 ATR per 10 candles
+  breakout    closed 0.25 ATR below the neckline, body 27% of the candle,
+              volume 1.16x the 20-candle average
+  room        2.97 ATR back to invalidation; measured moves 4.09 and 8.44 ATR away
+  points      left shoulder 22,555 (38 candles ago), neckline 22,240.1 (33),
+              head 22,594.5 (20), neckline 22,307.9 (14), right shoulder 22,550 (8)
+  levels      the neckline, invalidation and both measured moves, each by catalogue ID
 ```
+
+A person would read this as clean shoulders and a confirmed break, but a shallow head and a weak breakout candle. These are the judgments Claude makes in `pattern_assessment`, citing `pat:01`.
 
 Levels keep their catalogue IDs, and the new kinds are `measured_move` and `pattern_invalidation`. Claude can choose a pattern's levels, a different catalogue level, WAIT or NO_TRADE. It cannot write a price.
 

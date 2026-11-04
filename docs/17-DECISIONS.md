@@ -338,3 +338,15 @@ Consequences:
 - The holdout is never loaded by this profile.
 Revisit conditions: 1M history becomes affordable, on a host or with more disk.
 
+### D035: Claude reads numbers, not chart images
+Date: 2026-11-04.
+Status: Accepted by the owner.
+Context: Claude can read images, and a chart picture would let it judge a pattern the way a person does. The owner chose numbers only.
+Options considered: numbers only; numbers plus a chart image as an opinion; numbers plus an image that can veto.
+Decision: Claude receives no chart images. Each pattern's shape is described in numbers by `pattern_detection/describe.py`: size, symmetry, slopes, breakout strength, volume and room to the invalidation level and targets, in ATR at the breakout candle.
+Consequences:
+- Every value Claude reads is exact, traceable and stored with the analysis snapshot.
+- No image tokens are spent.
+- Claude judges only what the measurements capture. A cue a person would see but no measure covers needs a new measure, which Python computes.
+Revisit conditions: forward results show that pattern quality judged from numbers fails where a picture would have helped.
+

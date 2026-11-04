@@ -123,7 +123,7 @@ The context builder is deterministic. Its output is stored in `analysis_input_sn
 | `market` | Current price, bid, ask, recent OHLCV summaries by timeframe | Observed fact |
 | `indicators` | Latest indicator values by timeframe | Calculated metric |
 | `structure` | Swings, trend labels, BOS, CHoCH | Calculated metric |
-| `patterns` | Detected patterns with strength and limitations | Calculated metric |
+| `patterns` | Detected patterns, each with its shape in numbers, strength and limitations. No chart images (D035) | Calculated metric |
 | `levels` | Catalogue of support, resistance, liquidity, FVG and ATR-projected levels with IDs | Calculated metric |
 | `volume`, `order_book` | Relative volume, spikes, depth imbalance when available | Calculated metric |
 | `derivatives` | Funding, open interest, liquidation sample, when available | Observed fact |
@@ -134,6 +134,22 @@ The context builder is deterministic. Its output is stored in `analysis_input_sn
 Every item has an evidence ID such as `ind:15m:rsi14` or `pat:0192f3`. Fresh context is capped at about 4,500 tokens for `decision` and 2,000 for `review`. Older candles become summaries, and only changes since the last analysis are expanded.
 
 Only closed candles enter `market` and `indicators`. The forming candle appears once, in a separately labelled field.
+
+### Pattern Facts
+
+Claude reads no chart images (D035). Each chart pattern arrives as measurements from `pattern_detection/describe.py`, in ATR at the breakout candle and using only candles up to it, so Claude can judge a shape the way a person judges a picture. A worked example is in [27-PATTERN-SIGNAL-PLAN.md](27-PATTERN-SIGNAL-PLAN.md).
+
+| Measure | What it shows |
+|---|---|
+| `candles_in_pattern`, `height_atr`, `height_pct` | Size and duration |
+| `move_into_pattern_atr` | The trend a reversal pattern has to reverse |
+| `breakout_beyond_trigger_atr`, `breakout_body_share`, `breakout_volume_ratio` | How convincing the breakout candle was |
+| `back_to_invalidation_atr`, `measured_moves_atr` | Room to the invalidation level and to the targets |
+| `points` | Each turning point's name, price and age in candles |
+| Head and shoulders: `shoulder_gap_atr`, `head_beyond_shoulders_atr`, `neckline_slope_atr_per_10` | Symmetry, a clear head, a level neckline |
+| Double top or bottom: `peak_gap_atr`, `peak_separation_candles` | How equal and how far apart the two extremes are |
+| Triangles, wedges, rectangles, broadening: boundary slopes, `width_at_start_atr`, `width_at_breakout_atr`, `apex_progress` | The shape of the boundaries, and how late the breakout came |
+| Flags: `pole_candles`, `flag_candles`, `retrace_share` | A steep pole and a shallow pullback |
 
 ### Prompt Structure
 
