@@ -45,6 +45,7 @@ class Settings(BaseSettings):
     binance_usdm_ws_url: str = "wss://fstream.binance.com"
 
     anthropic_api_key: SecretStr = SecretStr("")
+    newsdata_api_key: SecretStr = SecretStr("")
 
     owner_email: str = ""
     owner_password: SecretStr = SecretStr("")
@@ -71,6 +72,7 @@ class Settings(BaseSettings):
             self.redis_url,
             self.owner_password,
             self.anthropic_api_key,
+            self.newsdata_api_key,
         )
         return tuple(value for s in secrets if (value := s.get_secret_value()))
 

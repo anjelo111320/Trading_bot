@@ -189,6 +189,7 @@ Checked on 2026-11-03. Each source still needs its full terms read before code i
 | Cointelegraph | RSS, `cointelegraph.com/rss` | Terms allow quoting with attribution under fair use. No RSS-specific terms found | Check |
 | CryptoPanic | API with a key | Plan tiers named developer, growth and enterprise, per a third-party SDK. Official terms not found by search | Needs the owner's key and a terms check |
 | Finnhub | API with a key | Has a crypto news category. Third-party pages describe a free personal-use tier at about 60 calls a minute | Needs the owner's key and a terms check |
+| NewsData.io | API with a key, `latest` and `crypto` endpoints | Free plan, checked 2026-11-04: 200 credits a day, 1 to 10 articles per credit, the past 48 hours, **news delayed by 12 hours**, "for testing and personal projects". The `crypto` endpoint tags articles by coin | Owner's key stored in `.env` and tested on 2026-11-04: both endpoints work |
 
 Under D006, everything stays on this computer for the owner's use. Headlines and short summaries are stored, never republished.
 

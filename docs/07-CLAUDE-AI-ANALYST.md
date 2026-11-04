@@ -217,8 +217,12 @@ class InvalidationCondition(BaseModel):
 
 
 class AnalystOutput(BaseModel):
-    schema_version: Literal[1]
+    schema_version: Literal[2]  # 2 added the playbook fields (docs/28).
     market_direction: Literal["bullish", "bearish", "ranging", "unclear"]
+    regime_fit: Literal["favourable", "neutral", "unfavourable"]
+    location: Literal[
+        "at_support", "at_resistance", "retest", "open_space", "into_major_level", "mid_range"
+    ]
     htf_structure: str
     key_level_ids: list[str]
     momentum_volatility: str
@@ -226,6 +230,10 @@ class AnalystOutput(BaseModel):
     pattern_assessment: str
     news_assessment: str
     news_alignment: Literal["aligned", "conflicting", "neutral", "unavailable"]
+    positioning_assessment: str
+    confluence_ids: list[str]  # Independent confirmations, each counted once.
+    bull_case: str  # At most 40 words.
+    bear_case: str  # At most 40 words.
     setup_exists: bool
     action: Literal["BUY", "SELL", "WAIT", "NO_TRADE"]
     selection: TradeSelection | None
@@ -237,7 +245,8 @@ class AnalystOutput(BaseModel):
     expiry_candles: int | None
     technical_explanation: str
     fundamental_explanation: str
-    analyst_assessment: Literal["low", "medium", "high"]
+    setup_grade: Literal["A", "B", "C"]  # Replaces analyst_assessment. Not a probability.
+    pre_mortem: str  # The most likely reason the trade would lose.
     unavailable_inputs: list[str]
 ```
 
@@ -255,6 +264,8 @@ Validation is deterministic and runs in this order. Any failure produces no reco
 8. A countertrend trade has a justification and at least one extra piece of evidence.
 9. Level roles suit the trade: a stop lies on the correct side, and targets are in order.
 10. Expiry falls within configured bounds.
+11. A C grade cannot carry BUY or SELL.
+12. A countertrend trade cannot grade A.
 
 Python then resolves level IDs into prices and passes the trade to the risk engine.
 
@@ -269,7 +280,7 @@ The brief forbids presenting a Claude score as a win probability, so four assess
 | Data reliability | Python, from freshness, gaps, provider health and spread | 0 to 100 |
 | Probability of success | Calibration model, on out-of-sample results only | Number with sample size, otherwise "unavailable" |
 
-Claude's own `analyst_assessment` is shown as an opinion, labelled as such. The dashboard must never show it, or the setup score, as a chance of winning. See [10-BACKTESTING.md](10-BACKTESTING.md) for calibration.
+Claude's own `setup_grade` is shown as an opinion, labelled as such. The dashboard must never show it, or the setup score, as a chance of winning. See [10-BACKTESTING.md](10-BACKTESTING.md) for calibration.
 
 ### News Classification
 

@@ -350,3 +350,30 @@ Consequences:
 - Claude judges only what the measurements capture. A cue a person would see but no measure covers needs a new measure, which Python computes.
 Revisit conditions: forward results show that pattern quality judged from numbers fails where a picture would have helped.
 
+### D036: History tunes the system, and Claude reads the present
+Date: 2026-11-04.
+Status: Accepted by the owner.
+Context: The owner judged that raw history is of little use to a single decision, and asked that past data tune the system and shape strategies for changing markets instead.
+Decision: Claude never reads raw history at decision time. History is used offline to tune and test the Python rules, and to measure how each strategy performed in each market regime. Claude receives the current regime and those base rates, with sample sizes.
+Consequences:
+- `market_structure/regime.py` labels each day by daily ADX and by daily ATR ranked against its trailing year.
+- Base rates shown to Claude come only from data before the decision.
+- Smaller context, and no outcomes for Claude to remember.
+Revisit conditions: forward results show Claude needs more history than the summaries give.
+
+### D037: Test regime rules on data they were not built from
+Date: 2026-11-04.
+Status: **Proposed.** Waiting for the owner.
+Context: Trial 1 lost on both coins when daily volatility was in the highest quarter of its year. The finding came from slicing the same data, so it cannot be validated on that data.
+Proposal: Register `pattern_breakout` version 2, which is version 1 plus "no new trade when daily volatility is in the highest quarter". Test it once on the frozen holdout, 2025-11-01 to 2026-11-01, and keep running both versions forward in paper trading.
+Consequences: The holdout is spent for version 2, as D029 allows once per version. If version 2 fails there, the rule is dropped rather than adjusted.
+Revisit conditions: the owner prefers forward paper trading only, keeping the holdout for later.
+
+### D038: Risk by setup grade
+Date: 2026-11-04.
+Status: **Proposed.** Waiting for the owner.
+Context: Professional traders risk less on weaker setups. Claude grades each setup A, B or C, and C never trades.
+Proposal: An A setup risks the profile's full 1%, and a B setup half of it. Claude never sets size: the grade maps to a fraction the risk engine applies, which can only lower risk below the profile's limit.
+Consequences: Claude influences position size, though only downwards. Results must be reported by grade.
+Revisit conditions: grades show no relation to outcomes after 100 forward trades.
+
