@@ -315,7 +315,7 @@ Revisit conditions: a source's terms forbid this use, or the owner's key is not 
 
 ### D033: Coin universe with news-driven candidates
 Date: 2026-11-03.
-Status: **Proposed.** Waiting for the owner.
+Status: Accepted by the owner on 2026-11-04. Not built yet: the core coins and the candidate screen come next.
 Context: The owner asked which coins people trade now, and for a way to add coins when news makes them relevant. Research is in [26-PATTERN-RESEARCH.md](26-PATTERN-RESEARCH.md), section 7.
 Options considered: a fixed list; automatic adds; screened suggestions that the owner approves.
 Proposal:
@@ -363,15 +363,16 @@ Revisit conditions: forward results show Claude needs more history than the summ
 
 ### D037: Test regime rules on data they were not built from
 Date: 2026-11-04.
-Status: **Proposed.** Waiting for the owner.
+Status: Accepted by the owner on 2026-11-04. Run once on 2026-11-04, together with version 1 so the rule's effect can be measured on the same year: [pattern-holdout.md](reports/pattern-holdout.md).
 Context: Trial 1 lost on both coins when daily volatility was in the highest quarter of its year. The finding came from slicing the same data, so it cannot be validated on that data.
 Proposal: Register `pattern_breakout` version 2, which is version 1 plus "no new trade when daily volatility is in the highest quarter". Test it once on the frozen holdout, 2025-11-01 to 2026-11-01, and keep running both versions forward in paper trading.
 Consequences: The holdout is spent for version 2, as D029 allows once per version. If version 2 fails there, the rule is dropped rather than adjusted.
+Result, 2026-11-04: version 2 did not beat version 1. BTC made +0.17R a trade against +0.30R, and ETH lost 0.33R a trade in both. **The volatility rule is dropped.** Both versions have now used their holdout run.
 Revisit conditions: the owner prefers forward paper trading only, keeping the holdout for later.
 
 ### D038: Risk by setup grade
 Date: 2026-11-04.
-Status: **Proposed.** Waiting for the owner.
+Status: Accepted by the owner on 2026-11-04. Built with the Claude analyst in Phase 7, since grades come from Claude.
 Context: Professional traders risk less on weaker setups. Claude grades each setup A, B or C, and C never trades.
 Proposal: An A setup risks the profile's full 1%, and a B setup half of it. Claude never sets size: the grade maps to a fraction the risk engine applies, which can only lower risk below the profile's limit.
 Consequences: Claude influences position size, though only downwards. Results must be reported by grade.

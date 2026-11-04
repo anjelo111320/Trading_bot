@@ -110,6 +110,18 @@ What this says:
 
 Decision: nothing is tuned from these results. Next, the strategy runs forward in paper trading as the 1H rule baseline that Claude's account (D030) is measured against.
 
+### Holdout Year
+
+The single holdout run, 2025-11-01 to 2026-11-01, on 2026-11-04 (D037). Full table: [pattern-holdout.md](reports/pattern-holdout.md).
+
+| Normal costs | BTC | ETH |
+|---|---|---|
+| Version 1 | 23 trades, +0.30R, +635 | 23 trades, -0.33R, -700 |
+| Version 2, skipping the most volatile quarter | 22 trades, +0.17R, +332 | 18 trades, -0.33R, -558 |
+| Buy and hold | -29.2% | -41.4% |
+
+On a year nothing was tuned on, version 1 was roughly flat across both coins while holding lost heavily. The volatility rule from 2020 to 2025 did not hold up, so it is dropped. Neither version has a proven edge.
+
 ## What Claude Will Receive
 
 The context builder in [07-CLAUDE-AI-ANALYST.md](07-CLAUDE-AI-ANALYST.md) gains pattern evidence. Claude reads no chart images (D035). Each pattern arrives as numbers from `pattern_detection/describe.py`, so its shape can be judged the way a person judges a picture.

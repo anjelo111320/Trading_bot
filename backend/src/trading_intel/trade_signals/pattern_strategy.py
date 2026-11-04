@@ -15,6 +15,7 @@ from typing import Any, Final
 from trading_intel.domain.candles import ClosedCandle, Timeframe
 from trading_intel.domain.patterns import DetectedPattern, Direction
 from trading_intel.domain.signals import Action, EntryType, Side
+from trading_intel.market_structure.regime import RegimeView
 from trading_intel.market_structure.structure import Trend, analyse_structure
 from trading_intel.market_structure.swings import find_swings
 from trading_intel.pattern_detection.candles import (
@@ -46,6 +47,7 @@ class PatternParameters:
     leverage: str = "1"
     require_candle: bool = False  # Trial 2 sets this.
     candle_window: int = 3
+    skip_volatile: bool = False  # Version 2 (D037): no new trade in the most volatile quarter.
 
     def as_dict(self) -> dict[str, Any]:
         return asdict(self)
@@ -92,6 +94,7 @@ class PatternStrategy:
         self.atr = atr(self.series)
         self.middle = _TrendView(middle)
         self.higher = _TrendView(higher)
+        self.regimes = RegimeView(CandleSeries.of(higher))
         self.index_of = {moment: i for i, moment in enumerate(self.series.close_time)}
         found = chart_patterns(self.series, self.atr, relative_volume(self.series.volume))
         self.breakouts: dict[datetime, list[DetectedPattern]] = {}
@@ -140,6 +143,13 @@ class PatternStrategy:
                 moment,
                 (f"{directions} breakout against the trend: 4H {middle}, 1D {higher}",),
                 patterns=tuple(found),
+            )
+        if self.parameters.skip_volatile and self.regimes.at(moment).volatility == "volatile":
+            return BaselineDecision(
+                Action.NO_TRADE,
+                moment,
+                ("daily volatility is in the top quarter of its year",),
+                patterns=tuple(aligned),
             )
         candidates = aligned
         confirmation: DetectedPattern | None = None

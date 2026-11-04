@@ -29,12 +29,14 @@ from trading_intel.entrypoints.wiring import (
 from trading_intel.market_data.backfill import (
     FULL_PROFILE,
     HISTORY_PROFILE,
+    HOLDOUT_PROFILE,
     RESEARCH_END,
     RESEARCH_START,
     TEST_PROFILE,
     BackfillProfile,
     BackfillService,
     plan_history_tasks,
+    plan_holdout_tasks,
     plan_research_tasks,
     plan_tasks,
 )
@@ -70,10 +72,13 @@ async def run(profile: BackfillProfile, codes: list[str], research: bool = False
         ]
         now = await provider.get_server_time()
         history = profile is HISTORY_PROFILE
+        holdout = profile is HOLDOUT_PROFILE
         if research:
             tasks = plan_research_tasks([item.instrument for item in listed])
         elif history:
             tasks = plan_history_tasks(instruments)
+        elif holdout:
+            tasks = plan_holdout_tasks([item.instrument for item in listed], now)
         else:
             tasks = plan_tasks(instruments, profile, now)
         started = time.monotonic()
@@ -86,6 +91,8 @@ async def run(profile: BackfillProfile, codes: list[str], research: bool = False
                 start = earliest if profile.window is None else max(earliest, now - profile.window)
                 if research:
                     start = RESEARCH_START
+                if holdout:
+                    start = RESEARCH_END
                 rows = [row async for row in provider.get_funding_history(instrument, start)]
                 if history:
                     rows = [row for row in rows if row.funding_time < RESEARCH_END]
@@ -106,12 +113,12 @@ async def run(profile: BackfillProfile, codes: list[str], research: bool = False
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
-        "--profile", choices=["test", "full", "research", "history"], default="test"
+        "--profile", choices=["test", "full", "research", "history", "holdout"], default="test"
     )
     parser.add_argument("--providers", nargs="+", default=[BINANCE_SPOT, BINANCE_USDM])
     arguments = parser.parse_args()
     research = arguments.profile == "research"
-    profile = {"full": FULL_PROFILE, "history": HISTORY_PROFILE}.get(
+    profile = {"full": FULL_PROFILE, "history": HISTORY_PROFILE, "holdout": HOLDOUT_PROFILE}.get(
         arguments.profile, TEST_PROFILE
     )
     asyncio.run(run(profile, arguments.providers, research))

@@ -1,7 +1,7 @@
 # Claude Trader Playbook
 
 Date: 2026-11-04
-Status: Prompt version 1 is written and untested, because no API key exists yet. D036 is accepted, and D037 and D038 are proposed. Related: [07-CLAUDE-AI-ANALYST.md](07-CLAUDE-AI-ANALYST.md), [27-PATTERN-SIGNAL-PLAN.md](27-PATTERN-SIGNAL-PLAN.md).
+Status: Prompt version 1 is written and untested, because no API key exists yet. D036, D037 and D038 were accepted by the owner on 2026-11-04. Related: [07-CLAUDE-AI-ANALYST.md](07-CLAUDE-AI-ANALYST.md), [27-PATTERN-SIGNAL-PLAN.md](27-PATTERN-SIGNAL-PLAN.md).
 
 ## The Idea
 
@@ -19,7 +19,7 @@ Practitioner sources mostly, not peer-reviewed research, but they agree on a pro
 | A written plan | Entry, stop, targets and scenarios before entering | Step 9: entry type, stop, targets and expiry by ID |
 | Don't chase | Take the retest when price has run | LIMIT at the trigger after about 1 ATR |
 | Respect events | Plan or stand aside around high-impact releases | Step 7: CPI or FOMC in the trade's life means wait |
-| Size by quality | A smaller risk for weaker setups | D038, proposed |
+| Size by quality | A smaller risk for weaker setups | D038: 1% for A, 0.5% for B |
 | Debate both sides | Argue the bull and bear case before deciding, as in the TradingAgents design | Step 8 |
 | Pre-mortem and review | Name the likely failure, then journal outcomes | Step 11, and stored analyses |
 
@@ -41,7 +41,7 @@ First regime results, trial 1, 2020 to 2025. Breakouts taken when daily volatili
 | Normal | 73 trades, +0.27R | 87 trades, +0.25R |
 | Volatile | 33 trades, -0.61R (interval -0.94 to -0.20) | 37 trades, -0.33R (interval -0.75 to +0.13) |
 
-This was found by slicing the same data several ways, so it is a hypothesis. D037 proposes how to test it honestly. Full tables are in the [BTC](reports/pattern-backtest-btc.md) and [ETH](reports/pattern-backtest-eth.md) reports.
+This was found by slicing the same data several ways, so it was a hypothesis. Tested once on the untouched holdout year under D037, it did not hold up, and the rule was dropped. Regime base rates still go to Claude as evidence, with their sample sizes, but not as hard rules. Full tables are in the [BTC](reports/pattern-backtest-btc.md) and [ETH](reports/pattern-backtest-eth.md) reports.
 
 ## Claude's Decision Steps
 

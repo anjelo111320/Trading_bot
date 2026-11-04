@@ -1,11 +1,13 @@
 """The pattern breakout strategy and its random benchmark. All candles are synthetic."""
 
+from datetime import datetime
 from decimal import Decimal
 
 from tests.quant_data import candle
 from trading_intel.backtesting.benchmarks import ExitTemplate, RandomTrendEntries, exit_template
 from trading_intel.domain.candles import ClosedCandle, Timeframe
 from trading_intel.domain.signals import Action, Side
+from trading_intel.market_structure.regime import Regime, RegimeView
 from trading_intel.trade_signals.pattern_strategy import PatternParameters, PatternStrategy
 
 TICK = Decimal("0.01")
@@ -108,6 +110,30 @@ def test_a_decision_is_the_same_without_later_candles() -> None:
     short, long = strategy(hours=HOURS).decide(BREAKOUT), strategy(hours=later).decide(BREAKOUT)
     assert short.action is long.action is Action.BUY
     assert short.proposal == long.proposal
+
+
+class FixedRegime(RegimeView):
+    """Answers one regime for every moment, to test the version 2 rule in isolation."""
+
+    def __init__(self, regime: Regime) -> None:
+        self._regime = regime
+
+    def at(self, moment: datetime) -> Regime:
+        return self._regime
+
+
+def test_version_two_skips_the_most_volatile_quarter() -> None:
+    volatile = strategy(skip_volatile=True)
+    volatile.regimes = FixedRegime(Regime("trending", "volatile", 30.0, 90.0))
+    decision = volatile.decide(BREAKOUT)
+    assert decision.action is Action.NO_TRADE
+    assert decision.reasons == ("daily volatility is in the top quarter of its year",)
+    normal = strategy(skip_volatile=True)
+    normal.regimes = FixedRegime(Regime("trending", "normal", 30.0, 50.0))
+    assert normal.decide(BREAKOUT).action is Action.BUY
+    version_one = strategy()
+    version_one.regimes = FixedRegime(Regime("trending", "volatile", 30.0, 90.0))
+    assert version_one.decide(BREAKOUT).action is Action.BUY
 
 
 def test_exit_templates_measure_stops_in_atr_and_targets_in_r() -> None:

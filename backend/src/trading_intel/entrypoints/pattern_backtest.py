@@ -12,7 +12,7 @@ from bisect import bisect_left
 from collections import Counter
 from collections.abc import Sequence
 from dataclasses import dataclass
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 from typing import Any, Final
 
@@ -39,13 +39,16 @@ from trading_intel.backtesting.report import STATEMENT, metrics_table
 from trading_intel.backtesting.windows import HOLDOUT_START, Fold, refuse_holdout, walk_forward
 from trading_intel.core.settings import REPOSITORY_ROOT, load_settings
 from trading_intel.database.engine import create_engine
+from trading_intel.database.repositories.backtests import BacktestRunRepository
 from trading_intel.database.repositories.candles import CandleRepository
 from trading_intel.database.repositories.operations import MarketRepository, RuleRepository
 from trading_intel.database.repositories.reference import ReferenceRepository
+from trading_intel.database.repositories.signals import SignalRepository
 from trading_intel.domain.candles import ClosedCandle, Timeframe
 from trading_intel.domain.instruments import Instrument, InstrumentRules
 from trading_intel.domain.patterns import RULE_VERSION, DetectedPattern
 from trading_intel.domain.signals import Action
+from trading_intel.entrypoints.wiring import git_sha
 from trading_intel.market_structure.regime import RegimeView
 from trading_intel.technical_analysis.series import CandleSeries
 from trading_intel.trade_signals.pattern_strategy import (
@@ -61,6 +64,8 @@ LOAD_FROM: Final = datetime(2019, 1, 1, tzinfo=UTC)
 STRESS: Final = ("1", "1.5", "2")
 SEEDS: Final = range(1, 21)
 TRIALS: Final = {1: PatternParameters(), 2: PatternParameters(require_candle=True)}
+HOLDOUT_END: Final = HOLDOUT_START + timedelta(days=365)
+VERSIONS: Final = {1: PatternParameters(), 2: PatternParameters(skip_volatile=True)}
 BEFORE_ENTRY: Final = 40
 MAX_BEFORE: Final = 160
 AFTER_EXIT: Final = 15
@@ -82,8 +87,8 @@ class Inputs:
     funding: list[FundingEvent]
 
 
-async def load(symbol: str) -> Inputs:
-    refuse_holdout(START, END)
+async def load(symbol: str, end: datetime = END) -> Inputs:
+    """Candles up to `end`. Callers check the window against the holdout first."""
     engine = create_engine(load_settings().database_url)
     listed = await ReferenceRepository(engine).provider_instruments("binance_usdm")
     item = next(entry for entry in listed if entry.instrument.symbol == symbol)
@@ -93,9 +98,9 @@ async def load(symbol: str) -> Inputs:
     assert rules is not None, "instrument rules are required"
 
     async def candles_of(timeframe: Timeframe) -> list[ClosedCandle]:
-        return await candles.range(provider, instrument.id, timeframe, LOAD_FROM, END)
+        return await candles.range(provider, instrument.id, timeframe, LOAD_FROM, end)
 
-    rows = await MarketRepository(engine).funding_between(provider, instrument.id, START, END)
+    rows = await MarketRepository(engine).funding_between(provider, instrument.id, START, end)
     inputs = Inputs(
         symbol=symbol,
         instrument=instrument,
@@ -110,7 +115,12 @@ async def load(symbol: str) -> Inputs:
     return inputs
 
 
-def run(inputs: Inputs, strategy: Strategy, stress: str = "1") -> BacktestResult:
+def run(
+    inputs: Inputs,
+    strategy: Strategy,
+    stress: str = "1",
+    window: tuple[datetime, datetime] = (START, END),
+) -> BacktestResult:
     return BacktestEngine(
         inputs.instrument,
         inputs.rules,
@@ -122,7 +132,7 @@ def run(inputs: Inputs, strategy: Strategy, stress: str = "1") -> BacktestResult
         costs=CostModel().stressed(stress),
         strategy=strategy,
         skip_signals_in_trade=True,
-    ).run(START, END)
+    ).run(*window)
 
 
 def _outcome(reason: str) -> str:
@@ -596,6 +606,7 @@ def _decimal_default(value: object) -> object:
 
 
 async def backtest(symbol: str) -> str:
+    refuse_holdout(START, END)
     inputs = await load(symbol)
     trials = {number: run_trial(inputs, number) for number in TRIALS}
     benchmark = run_benchmark(inputs, trials[1])
@@ -608,10 +619,109 @@ async def backtest(symbol: str) -> str:
     return text
 
 
+def _holdout_row(symbol: str, version: int, level: str, metrics: Metrics) -> str:
+    interval = metrics.expectancy_interval
+    band = f"{interval[0]:.2f} to {interval[1]:.2f}" if interval else "n/a"
+    return (
+        f"| {symbol} | {version} | {level}x | {metrics.trades} | {_value(metrics.win_rate, 2)} | "
+        f"{_value(metrics.expectancy_r, 3)} | {band} | {_value(metrics.profit_factor, 2)} | "
+        f"{metrics.net_pnl:.0f} | {metrics.max_drawdown:.1%} |"
+    )
+
+
+async def holdout(symbols: Sequence[str]) -> str:
+    """The single holdout run for each version (D029, D037). It can never be repeated."""
+    refuse_holdout(HOLDOUT_START, HOLDOUT_END, holdout_run=True)
+    engine = create_engine(load_settings().database_url)
+    runs = BacktestRunRepository(engine)
+    manifest = {
+        "symbols": list(symbols),
+        "timeframes": ["15m", "1h", "4h", "1d"],
+        "window": [HOLDOUT_START.isoformat(), HOLDOUT_END.isoformat()],
+    }
+    dataset = await runs.ensure_dataset("perpetuals-holdout-2025-11-01", manifest)
+    claims = {}
+    for version, parameters in VERSIONS.items():
+        strategy_id = await SignalRepository(engine).ensure_strategy(
+            STRATEGY_NAME, version, parameters.as_dict()
+        )
+        claims[version] = await runs.start_holdout(
+            strategy_id, dataset, (HOLDOUT_START, HOLDOUT_END), vars(CostModel()), git_sha()
+        )
+    lines = [
+        "# Pattern Breakout Holdout Run",
+        "",
+        STATEMENT,
+        "",
+        f"The single holdout run for versions 1 and 2, {HOLDOUT_START:%Y-%m-%d} to "
+        f"{HOLDOUT_END:%Y-%m-%d} (D029, D037). Nothing was tuned on this year. Version 2 is "
+        "version 1 plus no new trade when daily volatility is in the highest quarter of its "
+        "year, a rule found in 2020 to 2025 data.",
+        "",
+        "| Coin | Version | Costs | Trades | Win rate | Expectancy (R) | 95% interval | "
+        "Profit factor | Net P/L | Max drawdown |",
+        "|---|---|---|---|---|---|---|---|---|---|",
+    ]
+    results: dict[int, dict[str, Any]] = {version: {} for version in VERSIONS}
+    holds: list[str] = []
+    try:
+        for symbol in symbols:
+            inputs = await load(symbol, end=HOLDOUT_END)
+            for version, parameters in VERSIONS.items():
+                strategy = PatternStrategy(
+                    inputs.hours, inputs.four_hours, inputs.days, inputs.rules.tick_size, parameters
+                )
+                for level in ("1", "2"):
+                    metrics = run(inputs, strategy, level, (HOLDOUT_START, HOLDOUT_END)).metrics
+                    assert metrics is not None
+                    lines.append(_holdout_row(symbol, version, level, metrics))
+                    results[version][f"{symbol}_{level}x"] = {
+                        "trades": metrics.trades,
+                        "expectancy_r": metrics.expectancy_r,
+                        "profit_factor": metrics.profit_factor,
+                        "net_pnl": float(metrics.net_pnl),
+                    }
+            hold = buy_and_hold(inputs.days, HOLDOUT_START, HOLDOUT_END)
+            holds.append(f"{symbol} {hold:+.1%}" if hold is not None else f"{symbol} n/a")
+    except Exception:
+        for version, run_id in claims.items():
+            await runs.finish(run_id, "failed", results[version])
+        await engine.dispose()
+        raise
+    for version, run_id in claims.items():
+        await runs.finish(run_id, "succeeded", results[version])
+    await engine.dispose()
+    lines += [
+        "",
+        f"Buy and hold over the same year, no costs: {', '.join(holds)}.",
+        "",
+        "## Limits",
+        "",
+        "- One year and a few dozen trades per coin and version. This is far short of the "
+        "200 out-of-sample trades the promotion gate needs, so it is a check, not proof.",
+        "- This holdout is now spent for both versions. A changed strategy needs fresh data, "
+        "normally from forward paper trading.",
+        "- Fills use 15M candles, costs are conservative assumptions, and BTC and ETH were "
+        "chosen with hindsight.",
+        "",
+    ]
+    return "\n".join(lines)
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--symbols", nargs="+", default=["BTCUSDT", "ETHUSDT"])
+    parser.add_argument(
+        "--holdout",
+        action="store_true",
+        help="Run the single, unrepeatable holdout test for versions 1 and 2 (D037)",
+    )
     arguments = parser.parse_args()
+    if arguments.holdout:
+        text = asyncio.run(holdout(arguments.symbols))
+        (REPORT_DIR / "pattern-holdout.md").write_text(text)
+        print(text)
+        return
     for symbol in arguments.symbols:
         text = asyncio.run(backtest(symbol))
         name = symbol.removesuffix("USDT").lower()

@@ -26,6 +26,8 @@ CLEANED = (
     "technical_indicators",
     "detected_patterns",
     "api_usage",
+    "backtest_runs",
+    "dataset_versions",
 )
 
 
