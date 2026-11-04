@@ -10,7 +10,6 @@ import asyncio
 import json
 import sys
 from datetime import UTC, datetime, timedelta
-from decimal import Decimal
 from typing import Any
 
 from trading_intel.core.settings import load_settings
