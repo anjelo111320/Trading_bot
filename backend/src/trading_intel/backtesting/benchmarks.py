@@ -7,12 +7,13 @@ from datetime import datetime
 from decimal import Decimal
 from typing import Final
 
-from trading_intel.domain.candles import Timeframe
+from trading_intel.domain.candles import ClosedCandle, Timeframe
 from trading_intel.domain.signals import Action, EntryType, Side
 from trading_intel.risk_management.models import TradeProposal
 from trading_intel.trade_signals.baseline import BaselineDecision
 from trading_intel.trade_signals.catalogue import to_tick
 from trading_intel.trade_signals.pattern_strategy import PatternStrategy
+from trading_intel.trade_signals.trend_strategy import DailyTrendStrategy, TrendParameters
 
 ZERO: Final = Decimal(0)
 
@@ -115,3 +116,36 @@ class RandomTrendEntries:
             ),
             setup_atr=unit,
         )
+
+
+class RandomDailyEntries(DailyTrendStrategy):
+    """Benchmark for trend following: random days and directions, with the same stops and exit.
+
+    If breakouts cannot beat entering at random with the same risk and trailing exit, the
+    entry rule adds nothing.
+    """
+
+    def __init__(
+        self,
+        days: Sequence[ClosedCandle],
+        tick: Decimal,
+        parameters: TrendParameters,
+        count: int,
+        seed: int,
+        window: tuple[datetime, datetime],
+    ) -> None:
+        super().__init__(days, tick, parameters)
+        rng = random.Random(seed)  # noqa: S311 - a seeded benchmark, not security.
+        eligible = [
+            moment
+            for index, moment in enumerate(self.series.close_time)
+            if window[0] <= moment < window[1] and self.atr[index] == self.atr[index]
+        ]
+        chosen = sorted(rng.sample(eligible, min(count, len(eligible))))
+        self._sides = {moment: rng.choice((Side.LONG, Side.SHORT)) for moment in chosen}
+
+    def decide(self, moment: datetime) -> BaselineDecision:
+        side = self._sides.get(moment)
+        if side is None:
+            return BaselineDecision(Action.NO_TRADE, moment, ("not a sampled day",))
+        return self.propose(self.index_of[moment], moment, side, "random entry")

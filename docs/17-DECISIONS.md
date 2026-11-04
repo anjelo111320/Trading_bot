@@ -378,3 +378,14 @@ Proposal: An A setup risks the profile's full 1%, and a B setup half of it. Clau
 Consequences: Claude influences position size, though only downwards. Results must be reported by grade.
 Revisit conditions: grades show no relation to outcomes after 100 forward trades.
 
+
+### D039: Daily trend following and trailing stops
+Date: 2026-11-04.
+Status: Accepted by the owner, who asked for the daily trend strategy next.
+Context: The pattern strategy showed no proven edge. Trend following is the best-documented effect across markets, and it needs exits that follow price.
+Decision: Add `daily_trend`, the Turtle System 1 rules, as a second strategy, pre-registered in [29-TREND-STRATEGY.md](29-TREND-STRATEGY.md). The shared simulator gains tighten-only stops: a strategy may move its stop at a candle close, effective from the next candle, and never against the trade.
+Consequences:
+- Backtests and paper trading share the capability, so paper results keep validating backtests.
+- The risk engine still requires a target, so trend trades carry a far profit cap at 10R and exit on the trailing stop.
+- The holdout is not used for this strategy, because its direction is already known.
+Revisit conditions: the risk engine gains a native rule for trades without fixed targets.

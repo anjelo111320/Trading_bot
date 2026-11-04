@@ -70,6 +70,17 @@ class TradeSimulator:
     entry_fill: Decimal | None = None
     next_target: int = 0
     fills: list[Fill] = field(default_factory=list)
+    stop: Decimal = field(init=False)
+
+    def __post_init__(self) -> None:
+        self.stop = self.order.stop
+
+    def move_stop(self, level: Decimal) -> bool:
+        """Tighten the stop for later candles. A stop never moves against the trade."""
+        if self.status is not OrderStatus.OPEN or self.order.side.sign * (level - self.stop) <= 0:
+            return False
+        self.stop = level
+        return True
 
     @property
     def is_finished(self) -> bool:
@@ -149,7 +160,7 @@ class TradeSimulator:
         return None
 
     def _invalidated_before_entry(self, candle: ClosedCandle) -> bool:
-        return self.order.side.sign * (candle.close - self.order.stop) <= 0
+        return self.order.side.sign * (candle.close - self.stop) <= 0
 
     def _cancel(self, kind: FillKind, at: datetime) -> None:
         self.status = OrderStatus.CANCELLED
@@ -158,9 +169,9 @@ class TradeSimulator:
     def _try_exits(self, candle: ClosedCandle) -> None:
         """The stop is checked first, so a candle reaching both counts as a loss."""
         order, sign = self.order, self.order.side.sign
-        stopped = candle.low <= order.stop if sign > 0 else candle.high >= order.stop
+        stopped = candle.low <= self.stop if sign > 0 else candle.high >= self.stop
         if stopped:
-            worse = min(order.stop, candle.open) if sign > 0 else max(order.stop, candle.open)
+            worse = min(self.stop, candle.open) if sign > 0 else max(self.stop, candle.open)
             price = worse - sign * (order.half_spread + order.stop_slippage)
             self._exit("stop", candle, self.open_quantity, price, order.taker_fee, True)
             return

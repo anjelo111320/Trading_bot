@@ -5,7 +5,7 @@ simulator as paper trading, and trades go through the same risk engine.
 """
 
 from bisect import bisect_right
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta
 from decimal import ROUND_CEILING, Decimal
@@ -14,7 +14,7 @@ from typing import Final, Protocol
 from trading_intel.backtesting.metrics import ClosedTrade, Metrics, compute_metrics
 from trading_intel.domain.candles import ClosedCandle, Timeframe
 from trading_intel.domain.instruments import Instrument, InstrumentRules
-from trading_intel.domain.signals import Action
+from trading_intel.domain.signals import Action, Side
 from trading_intel.paper_trading.simulator import (
     SimulatedOrder,
     TradeResult,
@@ -90,6 +90,10 @@ class AsOfCandles:
     def closed_by(self, moment: datetime, limit: int) -> list[ClosedCandle]:
         end = bisect_right(self._close_times, moment)
         return self._candles[max(end - limit, 0) : end]
+
+
+TrailingStop = Callable[[datetime, Side, Decimal], Decimal | None]
+"""Optional on a strategy as `trailing_stop`: a tighter stop decided at a setup-candle close."""
 
 
 class Strategy(Protocol):
@@ -199,6 +203,7 @@ class BacktestEngine:
         self._starting_equity = starting_equity
         self._skip_in_trade = skip_signals_in_trade
         self._free_at: datetime | None = None
+        self._setup_closes = {c.close_time for c in self._setup_candles}
         self._pending: BaselineDecision | None = None
 
     def run(self, start: datetime, end: datetime) -> BacktestResult:
@@ -316,6 +321,7 @@ class BacktestEngine:
     ) -> int:
         """Run one trade to its end. A new signal waits until this one has finished."""
         simulator = TradeSimulator(order)
+        trail: TrailingStop | None = getattr(self._strategy, "trailing_stop", None)
         funding = [f for f in self._funding if f.at >= signal_time]
         index = cursor
         while index < len(self._minutes):
@@ -332,6 +338,10 @@ class BacktestEngine:
             if simulator.is_finished:
                 self._free_at = candle.close_time
                 break
+            if trail is not None and candle.close_time in self._setup_closes:
+                level = trail(candle.close_time, order.side, simulator.stop)
+                if level is not None:
+                    simulator.move_stop(level)  # Effective from the next candle.
         outcome = summarise(order.side, simulator.fills)
         planned = order.quantity * abs(order.entry - order.stop)
         if outcome.entered and simulator.is_finished:

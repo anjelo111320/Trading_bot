@@ -290,3 +290,42 @@ def test_the_same_candles_always_give_identical_fills(seed: int) -> None:
     first = run(TradeSimulator(order()), *bars)
     second = run(TradeSimulator(replace(order())), *bars)
     assert first.fills == second.fills
+
+
+def test_a_tightened_stop_exits_where_the_old_stop_would_not() -> None:
+    sim = run(TradeSimulator(order()), bar(0, "100", "101", "99.50", "100.80"))
+    assert sim.move_stop(D("99.80"))
+    run(sim, bar(1, "100.50", "100.60", "99.70", "99.90"))
+    stop = sim.fills[-1]
+    assert stop.kind == "stop"
+    # The worse of the new stop and the open, less half spread and slippage.
+    assert stop.price == D("99.80") - D("0.01") - D("0.05")
+
+
+def test_a_stop_never_moves_against_the_trade() -> None:
+    sim = run(TradeSimulator(order()), bar(0, "100", "101", "99.50", "100.80"))
+    assert not sim.move_stop(D("97.00"))
+    assert sim.stop == D("98.00")
+    assert sim.move_stop(D("99.00"))
+    assert not sim.move_stop(D("98.50"))
+    assert sim.stop == D("99.00")
+
+
+def test_a_stop_cannot_move_before_entry() -> None:
+    sim = TradeSimulator(order(entry_type=EntryType.LIMIT, entry=D("95.00")))
+    assert not sim.move_stop(D("99.00"))
+    assert sim.stop == D("98.00")
+
+
+def test_a_short_stop_only_moves_down() -> None:
+    short = order(
+        side=Side.SHORT,
+        stop=D("102.00"),
+        targets=(D("96.00"), D("94.00"), D("92.00")),
+    )
+    sim = run(TradeSimulator(short), bar(0, "100", "100.50", "99", "99.20"))
+    assert not sim.move_stop(D("103.00"))
+    assert sim.move_stop(D("100.40"))
+    run(sim, bar(1, "99.50", "100.45", "99.40", "100.30"))
+    assert sim.fills[-1].kind == "stop"
+    assert sim.fills[-1].price == D("100.40") + D("0.01") + D("0.05")
