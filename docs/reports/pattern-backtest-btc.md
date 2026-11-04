@@ -81,6 +81,19 @@ Risk engine rejections:
 | LONG | 101 | 0.38 | 0.298 | -0.06 to 0.64 | 1.43 | 3049 |
 | SHORT | 61 | 0.28 | -0.072 | -0.47 to 0.35 | 0.88 | -572 |
 
+## By Market Regime at the Signal, Trial 1
+
+Daily ADX of 25 or more is trending, below 20 ranging. Volatility ranks daily ATR against the trailing year: calm is the lowest quarter, volatile the highest. Labels use only data known at the signal. These are descriptions of the past, and a rule built from them needs fresh data to test.
+
+| | Trades | Win rate | Expectancy (R) | 95% interval | Profit factor | Net P/L |
+|---|---|---|---|---|---|---|
+| trend: ranging | 46 | 0.37 | 0.311 | -0.21 to 0.84 | 1.44 | 1494 |
+| trend: transition | 32 | 0.28 | -0.014 | -0.59 to 0.67 | 0.96 | -101 |
+| trend: trending | 84 | 0.35 | 0.141 | -0.21 to 0.55 | 1.18 | 1083 |
+| volatility: calm | 56 | 0.39 | 0.464 | -0.02 to 0.97 | 1.70 | 2646 |
+| volatility: normal | 73 | 0.38 | 0.271 | -0.11 to 0.70 | 1.40 | 2053 |
+| volatility: volatile | 33 | 0.15 | -0.609 | -0.94 to -0.20 | 0.30 | -2223 |
+
 ## Trial 2: Candle Confirmation Required
 
 Breakouts: 1187. Proposed: 154.

@@ -553,8 +553,8 @@ function renderTables() {
     return [pretty(name), String(list.length), pct(wins / list.length), signed(mean(list.map((t) => t.r))) + "R", signed(list.reduce((a, t) => a + t.net_pnl, 0), 0)];
   });
   table($("pattern-table"), ["Pattern", "Trades", "Win rate", "Average R", "Net USDT"], rows);
-  table($("trade-table"), ["#", "Signal (UTC)", "Pattern", "Side", "Entry", "Stop", "Exit", "Result", "R", "Net USDT"],
-    d.trades.map((t) => [String(t.number), date(t.signal_time), pretty(t.pattern.type), t.side, price(t.entry_price), price(t.stop), price(t.exit_price), t.exit_reason, signed(t.r), signed(t.net_pnl)]));
+  table($("trade-table"), ["#", "Signal (UTC)", "Pattern", "Side", "Regime", "Entry", "Stop", "Exit", "Result", "R", "Net USDT"],
+    d.trades.map((t) => [String(t.number), date(t.signal_time), pretty(t.pattern.type), t.side, t.regime || "", price(t.entry_price), price(t.stop), price(t.exit_price), t.exit_reason, signed(t.r), signed(t.net_pnl)]));
 }
 
 function renderNotes() {

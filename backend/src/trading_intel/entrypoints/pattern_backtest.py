@@ -46,6 +46,8 @@ from trading_intel.domain.candles import ClosedCandle, Timeframe
 from trading_intel.domain.instruments import Instrument, InstrumentRules
 from trading_intel.domain.patterns import RULE_VERSION, DetectedPattern
 from trading_intel.domain.signals import Action
+from trading_intel.market_structure.regime import RegimeView
+from trading_intel.technical_analysis.series import CandleSeries
 from trading_intel.trade_signals.pattern_strategy import (
     STRATEGY_NAME,
     STRATEGY_VERSION,
@@ -266,7 +268,9 @@ def gate_lines(
     ]
 
 
-def render(inputs: Inputs, trials: dict[int, TrialRun], benchmark: Benchmark | None) -> str:
+def render(
+    inputs: Inputs, trials: dict[int, TrialRun], benchmark: Benchmark | None, regimes: RegimeView
+) -> str:
     first = trials[1]
     base = first.results["1"]
     assert base.metrics is not None
@@ -342,6 +346,23 @@ def render(inputs: Inputs, trials: dict[int, TrialRun], benchmark: Benchmark | N
         lines.append(_row(name, metrics_for(members, _days(START, END))))
     for name, members in group(base.trades, side_of).items():
         lines.append(_row(name, metrics_for(members, _days(START, END))))
+    lines += [
+        "",
+        "## By Market Regime at the Signal, Trial 1",
+        "",
+        "Daily ADX of 25 or more is trending, below 20 ranging. Volatility ranks daily ATR "
+        "against the trailing year: calm is the lowest quarter, volatile the highest. Labels "
+        "use only data known at the signal. These are descriptions of the past, and a rule "
+        "built from them needs fresh data to test.",
+        "",
+        *HEADER,
+    ]
+    for prefix, read in (
+        ("trend", lambda t: regimes.at(t.signal_time).trend),
+        ("volatility", lambda t: regimes.at(t.signal_time).volatility),
+    ):
+        for name, members in group(base.trades, read).items():
+            lines.append(_row(f"{prefix}: {name}", metrics_for(members, _days(START, END))))
     second = trials[2]
     lines += [
         "",
@@ -432,6 +453,7 @@ def trade_record(
     hours: Sequence[ClosedCandle],
     close_times: Sequence[datetime],
     number: int,
+    regime: str,
 ) -> dict[str, Any]:
     outcome, order, decision = trade.result, trade.order, trade.decision
     assert decision is not None and outcome.entry_time and outcome.exit_time
@@ -446,6 +468,7 @@ def trade_record(
         "signal_time": trade.signal_time.isoformat(),
         "side": order.side.value,
         "reason": decision.reasons[0],
+        "regime": regime,
         "pattern": _geometry(pattern, close_times, start),
         "confirmation": decision.patterns[1].pattern_type if len(decision.patterns) > 1 else None,
         "entry_plan": float(order.entry),
@@ -501,7 +524,7 @@ def _spread(items: Sequence[Any], count: int) -> list[Any]:
 
 
 def chart_data(
-    inputs: Inputs, trials: dict[int, TrialRun], benchmark: Benchmark | None
+    inputs: Inputs, trials: dict[int, TrialRun], benchmark: Benchmark | None, regimes: RegimeView
 ) -> dict[str, Any]:
     first = trials[1]
     base = first.results["1"]
@@ -557,7 +580,9 @@ def chart_data(
             else [],
         },
         "trades": [
-            trade_record(trade, inputs.hours, close_times, number)
+            trade_record(
+                trade, inputs.hours, close_times, number, regimes.at(trade.signal_time).label
+            )
             for number, trade in enumerate(base.trades, start=1)
         ],
         "refused": refused,
@@ -574,10 +599,12 @@ async def backtest(symbol: str) -> str:
     inputs = await load(symbol)
     trials = {number: run_trial(inputs, number) for number in TRIALS}
     benchmark = run_benchmark(inputs, trials[1])
-    text = render(inputs, trials, benchmark)
+    regimes = RegimeView(CandleSeries.of(inputs.days))
+    text = render(inputs, trials, benchmark, regimes)
     DATA_DIR.mkdir(parents=True, exist_ok=True)
     path = DATA_DIR / f"pattern-backtest-{symbol}.json"
-    path.write_text(json.dumps(chart_data(inputs, trials, benchmark), default=_decimal_default))
+    data = chart_data(inputs, trials, benchmark, regimes)
+    path.write_text(json.dumps(data, default=_decimal_default))
     return text
 
 
