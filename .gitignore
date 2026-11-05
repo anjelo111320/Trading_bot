@@ -31,3 +31,4 @@ coverage.xml
 .import_linter_cache/
 .hypothesis/
 next-env.d.ts
+/vendor/
