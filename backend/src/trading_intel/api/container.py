@@ -14,6 +14,7 @@ if TYPE_CHECKING:
     from trading_intel.api.auth import LoginLimiter, TicketLedger, TokenSigner
     from trading_intel.database.repositories.accounts import AuditRepository, UserRepository
     from trading_intel.database.repositories.candles import CandleRepository
+    from trading_intel.database.repositories.forecasts import ForecastRepository
     from trading_intel.database.repositories.news import NewsRepository
     from trading_intel.database.repositories.operations import (
         GapRepository,
@@ -49,6 +50,7 @@ class Container:
     signals: SignalRepository = field(default=None)  # type: ignore[assignment]
     paper: PaperRepository = field(default=None)  # type: ignore[assignment]
     news: NewsRepository = field(default=None)  # type: ignore[assignment]
+    forecasts: ForecastRepository = field(default=None)  # type: ignore[assignment]
 
 
 def get_container(request: HTTPConnection) -> Container:

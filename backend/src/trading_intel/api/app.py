@@ -13,13 +13,14 @@ from redis.asyncio import Redis
 from trading_intel.api.auth import LoginLimiter, TicketLedger, TokenSigner, hash_password
 from trading_intel.api.container import Container
 from trading_intel.api.errors import ErrorResponse, install_error_handlers
-from trading_intel.api.routers import auth, health, market, trading
+from trading_intel.api.routers import auth, forecasts, health, market, trading
 from trading_intel.api.websocket import gateway
 from trading_intel.core.clock import Clock, SystemClock
 from trading_intel.core.settings import Settings
 from trading_intel.database.engine import create_engine, ping
 from trading_intel.database.repositories.accounts import AuditRepository, UserRepository
 from trading_intel.database.repositories.candles import CandleRepository
+from trading_intel.database.repositories.forecasts import ForecastRepository
 from trading_intel.database.repositories.news import NewsRepository
 from trading_intel.database.repositories.operations import (
     EventRepository,
@@ -78,6 +79,7 @@ def build_services(
         signals=SignalRepository(engine),
         paper=PaperRepository(engine),
         news=NewsRepository(engine),
+        forecasts=ForecastRepository(engine),
     )
     return container, close
 
@@ -147,5 +149,6 @@ def create_app(settings: Settings, container: Container | None = None) -> FastAP
     app.include_router(auth.router)
     app.include_router(market.router)
     app.include_router(trading.router)
+    app.include_router(forecasts.router)
     app.include_router(gateway.router)
     return app

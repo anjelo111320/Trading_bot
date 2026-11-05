@@ -113,6 +113,43 @@ class ForecastRepository:
             row = (await connection.execute(query, _key(key))).mappings().one_or_none()
         return _stored(row) if row else None
 
+    async def latest(
+        self,
+        provider_id: int,
+        instrument_id: int,
+        timeframe: Timeframe,
+        model: str,
+        model_revision: str,
+    ) -> StoredForecast | None:
+        """The forecast from the most recent close, whatever made it."""
+        query = text(
+            f"""{_SELECT}
+                WHERE provider_id = :provider AND instrument_id = :instrument
+                  AND timeframe = CAST(:timeframe AS timeframe_t)
+                  AND model = :model AND model_revision = :revision
+                ORDER BY as_of DESC, created_at DESC LIMIT 1"""
+        )
+        params = {
+            "provider": provider_id,
+            "instrument": instrument_id,
+            "timeframe": timeframe,
+            "model": model,
+            "revision": model_revision,
+        }
+        async with self._engine.connect() as connection:
+            row = (await connection.execute(query, params)).mappings().one_or_none()
+        return _stored(row) if row else None
+
+    async def paths(self, forecast_id: UUID) -> list[Any]:
+        """The sampled candles, as stored: paths of [open, high, low, close]."""
+        async with self._engine.connect() as connection:
+            found: list[Any] = (
+                await connection.execute(
+                    text("SELECT paths FROM model_forecasts WHERE id = :id"), {"id": forecast_id}
+                )
+            ).scalar_one()
+        return found
+
     async def store(self, forecast: NewForecast) -> StoredForecast:
         """Insert once. Storing the same forecast again returns the first one unchanged."""
         async with self._engine.begin() as connection:

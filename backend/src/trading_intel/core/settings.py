@@ -51,6 +51,8 @@ class Settings(BaseSettings):
     owner_password: SecretStr = SecretStr("")
     session_lifetime_hours: int = Field(default=24, gt=0)
 
+    manual_signals_dir: Path = REPOSITORY_ROOT / "data" / "signals"  # Analyst test plans, by hand.
+
     max_risk_per_trade: Decimal = Decimal("0.01")
     max_daily_loss: Decimal = Decimal("0.03")
     min_reward_risk: Decimal = Decimal("2.0")

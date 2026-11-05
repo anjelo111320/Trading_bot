@@ -1,6 +1,29 @@
 {
   "components": {
     "schemas": {
+      "BandView": {
+        "properties": {
+          "p10": {
+            "title": "P10",
+            "type": "number"
+          },
+          "p50": {
+            "title": "P50",
+            "type": "number"
+          },
+          "p90": {
+            "title": "P90",
+            "type": "number"
+          }
+        },
+        "required": [
+          "p10",
+          "p50",
+          "p90"
+        ],
+        "title": "BandView",
+        "type": "object"
+      },
       "CandlePage": {
         "properties": {
           "instrument_id": {
@@ -42,6 +65,30 @@
           "next_before"
         ],
         "title": "CandlePage",
+        "type": "object"
+      },
+      "CandleSignalView": {
+        "properties": {
+          "direction": {
+            "title": "Direction",
+            "type": "string"
+          },
+          "open_time": {
+            "format": "date-time",
+            "title": "Open Time",
+            "type": "string"
+          },
+          "type": {
+            "title": "Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "type",
+          "direction",
+          "open_time"
+        ],
+        "title": "CandleSignalView",
         "type": "object"
       },
       "CandleView": {
@@ -101,6 +148,84 @@
           "data_origin"
         ],
         "title": "CandleView",
+        "type": "object"
+      },
+      "ChartPatternView": {
+        "properties": {
+          "breakout_at": {
+            "format": "date-time",
+            "title": "Breakout At",
+            "type": "string"
+          },
+          "decision": {
+            "title": "Decision",
+            "type": "string"
+          },
+          "direction": {
+            "title": "Direction",
+            "type": "string"
+          },
+          "invalidated_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Invalidated At"
+          },
+          "invalidation": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Invalidation"
+          },
+          "measured_moves": {
+            "items": {
+              "type": "number"
+            },
+            "title": "Measured Moves",
+            "type": "array"
+          },
+          "points": {
+            "items": {
+              "$ref": "#/components/schemas/PatternPointView"
+            },
+            "title": "Points",
+            "type": "array"
+          },
+          "reasons": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Reasons",
+            "type": "array"
+          },
+          "type": {
+            "title": "Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "type",
+          "direction",
+          "breakout_at",
+          "points",
+          "invalidation",
+          "measured_moves",
+          "invalidated_at",
+          "decision",
+          "reasons"
+        ],
+        "title": "ChartPatternView",
         "type": "object"
       },
       "CoverageView": {
@@ -324,6 +449,182 @@
         "title": "FeedStatusView",
         "type": "object"
       },
+      "ForecastStepView": {
+        "properties": {
+          "baseline": {
+            "$ref": "#/components/schemas/BandView"
+          },
+          "model": {
+            "$ref": "#/components/schemas/BandView"
+          },
+          "open_time": {
+            "format": "date-time",
+            "title": "Open Time",
+            "type": "string"
+          }
+        },
+        "required": [
+          "open_time",
+          "model",
+          "baseline"
+        ],
+        "title": "ForecastStepView",
+        "type": "object"
+      },
+      "ForecastView": {
+        "properties": {
+          "as_of": {
+            "format": "date-time",
+            "title": "As Of",
+            "type": "string"
+          },
+          "atr": {
+            "title": "Atr",
+            "type": "number"
+          },
+          "baseline_paths": {
+            "title": "Baseline Paths",
+            "type": "integer"
+          },
+          "baseline_rebuilt": {
+            "title": "Baseline Rebuilt",
+            "type": "boolean"
+          },
+          "candle_signals": {
+            "items": {
+              "$ref": "#/components/schemas/CandleSignalView"
+            },
+            "title": "Candle Signals",
+            "type": "array"
+          },
+          "context": {
+            "$ref": "#/components/schemas/MarketContextView"
+          },
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "horizons": {
+            "items": {
+              "$ref": "#/components/schemas/HorizonView"
+            },
+            "title": "Horizons",
+            "type": "array"
+          },
+          "instrument_id": {
+            "title": "Instrument Id",
+            "type": "integer"
+          },
+          "label": {
+            "title": "Label",
+            "type": "string"
+          },
+          "last_close": {
+            "title": "Last Close",
+            "type": "string"
+          },
+          "levels": {
+            "items": {
+              "$ref": "#/components/schemas/LevelView"
+            },
+            "title": "Levels",
+            "type": "array"
+          },
+          "model": {
+            "title": "Model",
+            "type": "string"
+          },
+          "model_paths": {
+            "title": "Model Paths",
+            "type": "integer"
+          },
+          "model_revision": {
+            "title": "Model Revision",
+            "type": "string"
+          },
+          "paths": {
+            "items": {
+              "items": {
+                "type": "number"
+              },
+              "type": "array"
+            },
+            "title": "Paths",
+            "type": "array"
+          },
+          "patterns": {
+            "items": {
+              "$ref": "#/components/schemas/ChartPatternView"
+            },
+            "title": "Patterns",
+            "type": "array"
+          },
+          "plan": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/PlanView"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "provider": {
+            "title": "Provider",
+            "type": "string"
+          },
+          "reason": {
+            "title": "Reason",
+            "type": "string"
+          },
+          "steps": {
+            "items": {
+              "$ref": "#/components/schemas/ForecastStepView"
+            },
+            "title": "Steps",
+            "type": "array"
+          },
+          "symbol": {
+            "title": "Symbol",
+            "type": "string"
+          },
+          "timeframe": {
+            "$ref": "#/components/schemas/Timeframe"
+          },
+          "track_record": {
+            "$ref": "#/components/schemas/TrackRecordView"
+          }
+        },
+        "required": [
+          "label",
+          "provider",
+          "instrument_id",
+          "symbol",
+          "timeframe",
+          "as_of",
+          "created_at",
+          "reason",
+          "model",
+          "model_revision",
+          "last_close",
+          "atr",
+          "model_paths",
+          "baseline_paths",
+          "baseline_rebuilt",
+          "steps",
+          "paths",
+          "horizons",
+          "levels",
+          "patterns",
+          "candle_signals",
+          "context",
+          "track_record",
+          "plan"
+        ],
+        "title": "ForecastView",
+        "type": "object"
+      },
       "GapList": {
         "properties": {
           "items": {
@@ -447,6 +748,27 @@
         "title": "HealthResponse",
         "type": "object"
       },
+      "HorizonView": {
+        "properties": {
+          "baseline": {
+            "$ref": "#/components/schemas/SpreadView"
+          },
+          "candles": {
+            "title": "Candles",
+            "type": "integer"
+          },
+          "model": {
+            "$ref": "#/components/schemas/SpreadView"
+          }
+        },
+        "required": [
+          "candles",
+          "model",
+          "baseline"
+        ],
+        "title": "HorizonView",
+        "type": "object"
+      },
       "InstrumentCoverageView": {
         "properties": {
           "candles_expected": {
@@ -567,6 +889,56 @@
         "title": "InstrumentView",
         "type": "object"
       },
+      "LevelView": {
+        "properties": {
+          "distance_atr": {
+            "title": "Distance Atr",
+            "type": "number"
+          },
+          "evidence": {
+            "title": "Evidence",
+            "type": "string"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "kind": {
+            "title": "Kind",
+            "type": "string"
+          },
+          "position": {
+            "enum": [
+              "above",
+              "below"
+            ],
+            "title": "Position",
+            "type": "string"
+          },
+          "price": {
+            "title": "Price",
+            "type": "string"
+          },
+          "reach": {
+            "items": {
+              "$ref": "#/components/schemas/ReachView"
+            },
+            "title": "Reach",
+            "type": "array"
+          }
+        },
+        "required": [
+          "id",
+          "price",
+          "kind",
+          "position",
+          "evidence",
+          "distance_atr",
+          "reach"
+        ],
+        "title": "LevelView",
+        "type": "object"
+      },
       "LoginRequest": {
         "properties": {
           "email": {
@@ -587,6 +959,90 @@
           "password"
         ],
         "title": "LoginRequest",
+        "type": "object"
+      },
+      "MarketContextView": {
+        "properties": {
+          "adx_1d": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Adx 1D"
+          },
+          "regime_trend": {
+            "title": "Regime Trend",
+            "type": "string"
+          },
+          "regime_volatility": {
+            "title": "Regime Volatility",
+            "type": "string"
+          },
+          "rsi_1h": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Rsi 1H"
+          },
+          "rsi_4h": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Rsi 4H"
+          },
+          "strategies": {
+            "items": {
+              "$ref": "#/components/schemas/StrategyView"
+            },
+            "title": "Strategies",
+            "type": "array"
+          },
+          "trend_1d": {
+            "title": "Trend 1D",
+            "type": "string"
+          },
+          "trend_4h": {
+            "title": "Trend 4H",
+            "type": "string"
+          },
+          "volatility_percentile": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Volatility Percentile"
+          }
+        },
+        "required": [
+          "trend_4h",
+          "trend_1d",
+          "regime_trend",
+          "regime_volatility",
+          "adx_1d",
+          "volatility_percentile",
+          "rsi_1h",
+          "rsi_4h",
+          "strategies"
+        ],
+        "title": "MarketContextView",
         "type": "object"
       },
       "MarketStatusView": {
@@ -859,6 +1315,318 @@
         "title": "PaperSummary",
         "type": "object"
       },
+      "PatternPointView": {
+        "properties": {
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "price": {
+            "title": "Price",
+            "type": "number"
+          },
+          "time": {
+            "format": "date-time",
+            "title": "Time",
+            "type": "string"
+          }
+        },
+        "required": [
+          "name",
+          "time",
+          "price"
+        ],
+        "title": "PatternPointView",
+        "type": "object"
+      },
+      "PlanStatusView": {
+        "properties": {
+          "checked_until": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Checked Until"
+          },
+          "entry_price": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Entry Price"
+          },
+          "entry_time": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Entry Time"
+          },
+          "exit_price": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Exit Price"
+          },
+          "exit_reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Exit Reason"
+          },
+          "exit_time": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Exit Time"
+          },
+          "net_pnl": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Net Pnl"
+          },
+          "result_r": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Result R"
+          },
+          "state": {
+            "enum": [
+              "waiting",
+              "open",
+              "closed",
+              "not_filled"
+            ],
+            "title": "State",
+            "type": "string"
+          }
+        },
+        "required": [
+          "state",
+          "exit_reason",
+          "entry_price",
+          "entry_time",
+          "exit_price",
+          "exit_time",
+          "net_pnl",
+          "result_r",
+          "checked_until"
+        ],
+        "title": "PlanStatusView",
+        "type": "object"
+      },
+      "PlanView": {
+        "properties": {
+          "action": {
+            "title": "Action",
+            "type": "string"
+          },
+          "approved": {
+            "title": "Approved",
+            "type": "boolean"
+          },
+          "as_of": {
+            "format": "date-time",
+            "title": "As Of",
+            "type": "string"
+          },
+          "bear_case": {
+            "title": "Bear Case",
+            "type": "string"
+          },
+          "bull_case": {
+            "title": "Bull Case",
+            "type": "string"
+          },
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "entry": {
+            "title": "Entry",
+            "type": "string"
+          },
+          "entry_level_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Entry Level Id"
+          },
+          "entry_type": {
+            "title": "Entry Type",
+            "type": "string"
+          },
+          "expires_at": {
+            "format": "date-time",
+            "title": "Expires At",
+            "type": "string"
+          },
+          "grade": {
+            "title": "Grade",
+            "type": "string"
+          },
+          "max_loss": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Max Loss"
+          },
+          "note": {
+            "title": "Note",
+            "type": "string"
+          },
+          "pre_mortem": {
+            "title": "Pre Mortem",
+            "type": "string"
+          },
+          "quantity": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Quantity"
+          },
+          "rejection_codes": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Rejection Codes",
+            "type": "array"
+          },
+          "reward_risk": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Reward Risk",
+            "type": "array"
+          },
+          "side": {
+            "title": "Side",
+            "type": "string"
+          },
+          "source": {
+            "title": "Source",
+            "type": "string"
+          },
+          "status": {
+            "$ref": "#/components/schemas/PlanStatusView"
+          },
+          "stop": {
+            "title": "Stop",
+            "type": "string"
+          },
+          "stop_level_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Stop Level Id"
+          },
+          "target_level_ids": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Target Level Ids",
+            "type": "array"
+          },
+          "targets": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Targets",
+            "type": "array"
+          }
+        },
+        "required": [
+          "source",
+          "created_at",
+          "as_of",
+          "expires_at",
+          "action",
+          "side",
+          "entry_type",
+          "entry",
+          "stop",
+          "targets",
+          "entry_level_id",
+          "stop_level_id",
+          "target_level_ids",
+          "grade",
+          "approved",
+          "rejection_codes",
+          "quantity",
+          "max_loss",
+          "reward_risk",
+          "bull_case",
+          "bear_case",
+          "pre_mortem",
+          "note",
+          "status"
+        ],
+        "title": "PlanView",
+        "type": "object"
+      },
       "PositionView": {
         "properties": {
           "average_entry": {
@@ -1055,6 +1823,29 @@
           "data_origin"
         ],
         "title": "PriceView",
+        "type": "object"
+      },
+      "ReachView": {
+        "properties": {
+          "baseline": {
+            "title": "Baseline",
+            "type": "number"
+          },
+          "candles": {
+            "title": "Candles",
+            "type": "integer"
+          },
+          "model": {
+            "title": "Model",
+            "type": "number"
+          }
+        },
+        "required": [
+          "candles",
+          "model",
+          "baseline"
+        ],
+        "title": "ReachView",
         "type": "object"
       },
       "SignalView": {
@@ -1301,6 +2092,57 @@
         "title": "SignalView",
         "type": "object"
       },
+      "SpreadView": {
+        "properties": {
+          "close": {
+            "$ref": "#/components/schemas/BandView"
+          },
+          "highest": {
+            "$ref": "#/components/schemas/BandView"
+          },
+          "lowest": {
+            "$ref": "#/components/schemas/BandView"
+          },
+          "share_ending_higher": {
+            "title": "Share Ending Higher",
+            "type": "number"
+          }
+        },
+        "required": [
+          "share_ending_higher",
+          "highest",
+          "lowest",
+          "close"
+        ],
+        "title": "SpreadView",
+        "type": "object"
+      },
+      "StrategyView": {
+        "properties": {
+          "action": {
+            "title": "Action",
+            "type": "string"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "reasons": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Reasons",
+            "type": "array"
+          }
+        },
+        "required": [
+          "name",
+          "action",
+          "reasons"
+        ],
+        "title": "StrategyView",
+        "type": "object"
+      },
       "TargetView": {
         "properties": {
           "allocation": {
@@ -1354,6 +2196,72 @@
         ],
         "title": "Timeframe",
         "type": "string"
+      },
+      "TrackRecordView": {
+        "properties": {
+          "brier_baseline": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Brier Baseline"
+          },
+          "brier_model": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Brier Model"
+          },
+          "crps_baseline_pct": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Crps Baseline Pct"
+          },
+          "crps_model_pct": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Crps Model Pct"
+          },
+          "resolved": {
+            "title": "Resolved",
+            "type": "integer"
+          },
+          "status": {
+            "title": "Status",
+            "type": "string"
+          }
+        },
+        "required": [
+          "resolved",
+          "status",
+          "brier_model",
+          "brier_baseline",
+          "crps_model_pct",
+          "crps_baseline_pct"
+        ],
+        "title": "TrackRecordView",
+        "type": "object"
       },
       "TradingMode": {
         "description": "Paper is the only member, so no code path can represent live trading (D016).",
@@ -1495,6 +2403,60 @@
         "summary": "Ws Ticket",
         "tags": [
           "auth"
+        ]
+      }
+    },
+    "/api/v1/forecasts/latest": {
+      "get": {
+        "operationId": "latest_forecast_api_v1_forecasts_latest_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "provider",
+            "required": true,
+            "schema": {
+              "maxLength": 40,
+              "minLength": 1,
+              "title": "Provider",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "instrument_id",
+            "required": true,
+            "schema": {
+              "exclusiveMinimum": 0,
+              "title": "Instrument Id",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ForecastView"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Default Response"
+          }
+        },
+        "summary": "Latest Forecast",
+        "tags": [
+          "forecasts"
         ]
       }
     },
