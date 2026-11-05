@@ -13,8 +13,10 @@ from redis.asyncio import Redis
 from trading_intel.api.auth import LoginLimiter, TicketLedger, TokenSigner, hash_password
 from trading_intel.api.container import Container
 from trading_intel.api.errors import ErrorResponse, install_error_handlers
+from trading_intel.api.forecast_jobs import AnalysisJobs
 from trading_intel.api.routers import auth, forecasts, health, market, trading
 from trading_intel.api.websocket import gateway
+from trading_intel.backtesting.windows import HOLDOUT_START
 from trading_intel.core.clock import Clock, SystemClock
 from trading_intel.core.settings import Settings
 from trading_intel.database.engine import create_engine, ping
@@ -32,6 +34,8 @@ from trading_intel.database.repositories.paper import PaperRepository
 from trading_intel.database.repositories.reference import ReferenceRepository
 from trading_intel.database.repositories.signals import SignalRepository
 from trading_intel.events.redis_transport import RedisEventBus
+from trading_intel.forecasting.kronos import KronosRunner
+from trading_intel.forecasting.service import ForecastService
 from trading_intel.monitoring.coverage import CoverageService
 
 REQUEST_ID_HEADER = "X-Request-ID"
@@ -58,6 +62,7 @@ def build_services(
 
     reference = ReferenceRepository(engine)
     candles = CandleRepository(engine)
+    forecasts = ForecastRepository(engine)
     gaps = GapRepository(engine)
     snapshots = SnapshotRepository(engine)
     container = Container(
@@ -79,7 +84,11 @@ def build_services(
         signals=SignalRepository(engine),
         paper=PaperRepository(engine),
         news=NewsRepository(engine),
-        forecasts=ForecastRepository(engine),
+        forecasts=forecasts,
+        forecaster=ForecastService(
+            candles, forecasts, KronosRunner(), clock, holdout_start=HOLDOUT_START
+        ),
+        analyses=AnalysisJobs(clock),
     )
     return container, close
 

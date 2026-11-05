@@ -6,7 +6,7 @@ prices and money stay strings, as everywhere else in the API.
 
 from typing import Literal
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 from trading_intel.core.clock import UtcDatetime
 from trading_intel.domain.candles import Timeframe
@@ -49,8 +49,8 @@ class LevelView(BaseModel):
     kind: str
     position: Literal["above", "below"]
     evidence: str
-    distance_atr: float
-    reach: list[ReachView]
+    distance_atr: float  # From the latest close, in its 1H ATR.
+    reach: list[ReachView]  # Shares of the forecast's paths, from the forecast's close.
 
 
 class PatternPointView(BaseModel):
@@ -149,7 +149,9 @@ class ForecastView(BaseModel):
     instrument_id: int
     symbol: str
     timeframe: Timeframe
-    as_of: UtcDatetime
+    as_of: UtcDatetime  # The forecast's close: Kronos, the baseline and reach shares.
+    analysis_as_of: UtcDatetime  # The latest 1H close: levels, patterns and decisions.
+    analysis_close: str
     created_at: UtcDatetime
     reason: str
     model: str
@@ -168,3 +170,20 @@ class ForecastView(BaseModel):
     context: MarketContextView
     track_record: TrackRecordView
     plan: PlanView | None
+
+
+class AnalyseRequest(BaseModel):
+    provider: str = Field(min_length=1, max_length=40)
+    instrument_id: int = Field(gt=0)
+
+
+class AnalysisJobView(BaseModel):
+    """The latest re-analysis. Only one runs at a time, because Kronos needs about 1 GB."""
+
+    state: Literal["idle", "running", "succeeded", "failed"]
+    instrument_id: int | None = None
+    symbol: str | None = None
+    as_of: UtcDatetime | None = None
+    started_at: UtcDatetime | None = None
+    finished_at: UtcDatetime | None = None
+    message: str | None = None

@@ -36,6 +36,13 @@ class InvalidRequestError(AppError):
     status_code = 400
 
 
+class ConflictError(AppError):
+    """The request clashes with work already in progress."""
+
+    code = "conflict"
+    status_code = 409
+
+
 class ProviderError(AppError):
     """A provider failed in a way that may be retried."""
 

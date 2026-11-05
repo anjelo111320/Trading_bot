@@ -6,12 +6,14 @@ offline, and with no secrets in its environment. Its output is checked before us
 """
 
 import csv
+import fcntl
 import json
 import math
 import shutil
 import subprocess
 import tempfile
-from collections.abc import Sequence
+from collections.abc import Iterator, Sequence
+from contextlib import contextmanager
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from itertools import pairwise
@@ -27,6 +29,7 @@ from trading_intel.forecasting.paths import SampledPaths
 
 KRONOS_ROOT: Final = REPOSITORY_ROOT / "vendor" / "Kronos"
 SCRIPT: Final = REPOSITORY_ROOT / "backend" / "scripts" / "kronos_forecast.py"
+LOCK: Final = REPOSITORY_ROOT / "data" / "kronos.lock"
 
 
 class ForecastUnavailableError(AppError):
@@ -50,6 +53,7 @@ class KronosConfig:
     seed: int = 7
     threads: int = 4  # Fixed, because the thread count can change floating-point results.
     timeout_seconds: float = 900.0
+    lock: Path = LOCK  # One Kronos run at a time across processes: it needs about 1 GB.
 
     @property
     def python(self) -> Path:
@@ -67,6 +71,18 @@ class ForecastModel(Protocol):
     config: KronosConfig
 
     def forecast(self, candles: Sequence[ClosedCandle]) -> ModelForecast: ...
+
+
+@contextmanager
+def exclusive(path: Path, *, wait: bool = True) -> Iterator[None]:
+    """Hold an exclusive lock on a file. Without `wait`, a held lock raises BlockingIOError."""
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with path.open("a") as handle:
+        fcntl.flock(handle, fcntl.LOCK_EX if wait else fcntl.LOCK_EX | fcntl.LOCK_NB)
+        try:
+            yield
+        finally:
+            fcntl.flock(handle, fcntl.LOCK_UN)
 
 
 class KronosRunner:
@@ -99,7 +115,7 @@ class KronosRunner:
         if any(timeframe.next_open(a.open_time) != b.open_time for a, b in pairwise(context)):
             raise ForecastUnavailableError("the candles given to Kronos have a gap")
         self.check()
-        with tempfile.TemporaryDirectory(prefix="kronos-") as folder:
+        with exclusive(config.lock), tempfile.TemporaryDirectory(prefix="kronos-") as folder:
             source, target = Path(folder) / "candles.csv", Path(folder) / "forecast.json"
             _write_csv(source, context)
             command = [

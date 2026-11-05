@@ -1,6 +1,116 @@
 {
   "components": {
     "schemas": {
+      "AnalyseRequest": {
+        "properties": {
+          "instrument_id": {
+            "exclusiveMinimum": 0.0,
+            "title": "Instrument Id",
+            "type": "integer"
+          },
+          "provider": {
+            "maxLength": 40,
+            "minLength": 1,
+            "title": "Provider",
+            "type": "string"
+          }
+        },
+        "required": [
+          "provider",
+          "instrument_id"
+        ],
+        "title": "AnalyseRequest",
+        "type": "object"
+      },
+      "AnalysisJobView": {
+        "description": "The latest re-analysis. Only one runs at a time, because Kronos needs about 1 GB.",
+        "properties": {
+          "as_of": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "As Of"
+          },
+          "finished_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Finished At"
+          },
+          "instrument_id": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Instrument Id"
+          },
+          "message": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Message"
+          },
+          "started_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Started At"
+          },
+          "state": {
+            "enum": [
+              "idle",
+              "running",
+              "succeeded",
+              "failed"
+            ],
+            "title": "State",
+            "type": "string"
+          },
+          "symbol": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Symbol"
+          }
+        },
+        "required": [
+          "state"
+        ],
+        "title": "AnalysisJobView",
+        "type": "object"
+      },
       "BandView": {
         "properties": {
           "p10": {
@@ -473,6 +583,15 @@
       },
       "ForecastView": {
         "properties": {
+          "analysis_as_of": {
+            "format": "date-time",
+            "title": "Analysis As Of",
+            "type": "string"
+          },
+          "analysis_close": {
+            "title": "Analysis Close",
+            "type": "string"
+          },
           "as_of": {
             "format": "date-time",
             "title": "As Of",
@@ -603,6 +722,8 @@
           "symbol",
           "timeframe",
           "as_of",
+          "analysis_as_of",
+          "analysis_close",
           "created_at",
           "reason",
           "model",
@@ -2403,6 +2524,77 @@
         "summary": "Ws Ticket",
         "tags": [
           "auth"
+        ]
+      }
+    },
+    "/api/v1/forecasts/analyse": {
+      "get": {
+        "operationId": "analysis_status_api_v1_forecasts_analyse_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AnalysisJobView"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Default Response"
+          }
+        },
+        "summary": "Analysis Status",
+        "tags": [
+          "forecasts"
+        ]
+      },
+      "post": {
+        "description": "Forecast from the latest stored 1H close. Returns at once; poll the status.",
+        "operationId": "start_analysis_api_v1_forecasts_analyse_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AnalyseRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "202": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AnalysisJobView"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Default Response"
+          }
+        },
+        "summary": "Start Analysis",
+        "tags": [
+          "forecasts"
         ]
       }
     },

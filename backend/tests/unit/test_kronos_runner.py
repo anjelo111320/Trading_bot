@@ -96,6 +96,7 @@ def make_runner(tmp_path: Path) -> Callable[..., KronosRunner]:
             paths=3,
             horizon=4,
             context=20,
+            lock=tmp_path / "kronos.lock",  # Never wait on a real Kronos run.
         )
         return KronosRunner(replace(config, **overrides))  # type: ignore[arg-type]
 

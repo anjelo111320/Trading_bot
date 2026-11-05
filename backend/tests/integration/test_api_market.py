@@ -299,6 +299,8 @@ def test_no_route_can_place_a_trade(api: TestClient) -> None:
         "/api/v1/auth/login",
         "/api/v1/auth/logout",
         "/api/v1/auth/ws-ticket",
+        # Runs a Kronos forecast and stores it. Forecasts cannot reach orders (D040).
+        "/api/v1/forecasts/analyse",
     }
 
 

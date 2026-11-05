@@ -1,8 +1,9 @@
 """Assemble the forecast view: what Kronos and its baseline say, beside what Python sees.
 
-Read-only. Levels, patterns and the baseline are recomputed from stored candles at the
-forecast's close, so the page shows what was known then. A manual analyst plan, when one
-exists, is replayed through the shared execution simulator on the candles that followed.
+Read-only. Python's levels, patterns and decisions are computed at the latest stored 1H
+close, so they move on every hour. Kronos and its baseline stay at the forecast's own close
+until the next re-analysis. A manual analyst plan, when one exists, is replayed through the
+shared execution simulator on the candles that followed.
 """
 
 import json
@@ -56,7 +57,7 @@ from trading_intel.risk_management.calculators.linear import scaled_allocation
 from trading_intel.risk_management.models import RiskProfile
 from trading_intel.technical_analysis.momentum import rsi
 from trading_intel.technical_analysis.series import CandleSeries, FloatArray
-from trading_intel.trade_signals.catalogue import build_catalogue
+from trading_intel.trade_signals.catalogue import CatalogueLevel, build_catalogue
 from trading_intel.trade_signals.pattern_strategy import PatternStrategy
 from trading_intel.trade_signals.trend_strategy import DailyTrendStrategy
 
@@ -77,10 +78,9 @@ STATES: Final[dict[OrderStatus, PlanState]] = {
 
 @dataclass(frozen=True)
 class MarketInputs:
-    hours: list[ClosedCandle]  # 60 days of 1H candles closed by the forecast's close.
+    hours: list[ClosedCandle]  # 60 days of 1H candles closed by the latest 1H close.
     fours: list[ClosedCandle]
     days: list[ClosedCandle]
-    baseline_history: list[ClosedCandle]  # The candles the stored baseline was built from.
     tick: Decimal
     lot_step: Decimal
 
@@ -236,7 +236,7 @@ def _context(
 
 
 def plan_status(
-    plan: ManualPlan, quarters: Sequence[ClosedCandle], market: MarketInputs, atr: float
+    plan: ManualPlan, quarters: Sequence[ClosedCandle], tick: Decimal, lot_step: Decimal, atr: float
 ) -> PlanStatusView:
     """Replay the plan on 15M candles that opened after it existed, as the backtester does."""
     signal = plan.signal
@@ -244,7 +244,7 @@ def plan_status(
     as_of = datetime.fromisoformat(signal["as_of"])
     targets = tuple(Decimal(t) for t in proposal["targets"])
     costs = CostModel()
-    slippage = costs.slippage(market.tick, Decimal(str(plan.atr or atr)))
+    slippage = costs.slippage(tick, Decimal(str(plan.atr or atr)))
     simulator = TradeSimulator(
         SimulatedOrder(
             side=Side(proposal["side"]),
@@ -254,8 +254,8 @@ def plan_status(
             targets=targets,
             allocation=scaled_allocation(RiskProfile().target_allocation, len(targets)),
             quantity=Decimal(risk["quantity"]),
-            tick=market.tick,
-            lot_step=market.lot_step,
+            tick=tick,
+            lot_step=lot_step,
             taker_fee=costs.taker_fee,
             maker_fee=costs.maker_fee,
             half_spread=(Decimal(quote["ask"]) - Decimal(quote["bid"])) / 2,
@@ -321,42 +321,68 @@ def plan_view(plan: ManualPlan, status: PlanStatusView) -> PlanView:
     )
 
 
-def build_view(
-    *,
-    provider: str,
-    symbol: str,
-    stored: StoredForecast,
-    paths: list[Any],
-    market: MarketInputs,
-    record: TrackRecord,
-    plan: PlanView | None,
-) -> ForecastView:
+@dataclass(frozen=True)
+class ForecastPart:
+    """Everything anchored at the forecast's close. It never changes for a stored forecast."""
+
+    steps: list[ForecastStepView]
+    paths: list[list[float]]
+    summaries: dict[int, tuple[PathSummary, PathSummary]]  # Candles: (Kronos, baseline).
+    model_paths: int
+    baseline_paths: int
+    rebuilt: bool
+
+
+@dataclass(frozen=True)
+class AnalysisPart:
+    """What Python sees at the latest 1H close. It changes once an hour."""
+
+    as_of: datetime
+    close: Decimal
+    atr: float
+    levels: list[CatalogueLevel]
+    patterns: list[ChartPatternView]
+    candle_signals: list[CandleSignalView]
+    context: MarketContextView
+
+
+def forecast_part(
+    stored: StoredForecast, paths: list[Any], baseline_history: list[ClosedCandle]
+) -> ForecastPart:
     key = stored.key
     as_of, last_close = key.as_of, float(stored.last_close)
     model = SampledPaths(key.model, key.timeframe, as_of, last_close, np.array(paths, dtype=float))
-    history = CandleSeries.of(market.baseline_history)
     parameters = TimeMachineParameters(
         **{k: v for k, v in stored.baseline["parameters"].items() if k != "version"}
     )
-    baseline = time_machine(history, key.horizon_candles, parameters)
-    rebuilt = summarise(baseline).as_json() == stored.baseline["summary"]
-
+    baseline = time_machine(CandleSeries.of(baseline_history), key.horizon_candles, parameters)
     starts = [
         SETUP.next_open(SETUP.floor(as_of)) + SETUP.delta * i for i in range(key.horizon_candles)
     ]
-    steps = [
-        ForecastStepView(
-            open_time=start,
-            model=_band(model.candles[:, i, CLOSE]),
-            baseline=_band(baseline.candles[:, i, CLOSE]),
-        )
-        for i, start in enumerate(starts)
-    ]
-    windows = sorted({SHORT_HORIZON, key.horizon_candles})
-    summaries = {n: (_cut(model, n), _cut(baseline, n)) for n in windows}
+    return ForecastPart(
+        steps=[
+            ForecastStepView(
+                open_time=start,
+                model=_band(model.candles[:, i, CLOSE]),
+                baseline=_band(baseline.candles[:, i, CLOSE]),
+            )
+            for i, start in enumerate(starts)
+        ],
+        paths=[[float(f"{v:.8g}") for v in path] for path in model.candles[:, :, CLOSE]],
+        summaries={
+            n: (_cut(model, n), _cut(baseline, n))
+            for n in sorted({SHORT_HORIZON, key.horizon_candles})
+        },
+        model_paths=model.count,
+        baseline_paths=baseline.count,
+        rebuilt=summarise(baseline).as_json() == stored.baseline["summary"],
+    )
 
+
+def analysis_part(market: MarketInputs) -> AnalysisPart:
     strategy = PatternStrategy(market.hours, market.fours, market.days, market.tick)
     series = strategy.series
+    as_of = series.close_time[-1]
     window = series.window(len(series) - CATALOGUE_CANDLES, len(series))
     catalogue = build_catalogue(
         window, find_swings(window), strategy.atr[-CATALOGUE_CANDLES:], market.tick
@@ -366,6 +392,32 @@ def build_view(
         if catalogue is None
         else [*catalogue.above()[:LEVELS_PER_SIDE], *catalogue.below()[:LEVELS_PER_SIDE]]
     )
+    return AnalysisPart(
+        as_of=as_of,
+        close=market.hours[-1].close,
+        atr=float(strategy.atr[-1]),
+        levels=nearby,
+        patterns=_patterns(strategy, as_of),
+        candle_signals=_candle_signals(strategy, as_of),
+        context=_context(
+            strategy, DailyTrendStrategy(market.days, market.tick), market.fours, as_of
+        ),
+    )
+
+
+def assemble(
+    *,
+    provider: str,
+    symbol: str,
+    stored: StoredForecast,
+    forecast: ForecastPart,
+    analysis: AnalysisPart,
+    record: TrackRecord,
+    plan: PlanView | None,
+) -> ForecastView:
+    """Join the two parts. Reach shares measure the forecast's paths against today's levels."""
+    key = stored.key
+    last_close, close = float(stored.last_close), float(analysis.close)
     levels = [
         LevelView(
             id=level.id,
@@ -373,17 +425,17 @@ def build_view(
             kind=level.kind,
             position=level.position,
             evidence=level.evidence,
-            distance_atr=round((float(level.price) - last_close) / stored.atr, 2),
+            distance_atr=round((float(level.price) - close) / analysis.atr, 2),
             reach=[
                 ReachView(
                     candles=n,
                     model=round(reach_share(m, float(level.price), last_close), 3),
                     baseline=round(reach_share(b, float(level.price), last_close), 3),
                 )
-                for n, (m, b) in summaries.items()
+                for n, (m, b) in forecast.summaries.items()
             ],
         )
-        for level in nearby
+        for level in analysis.levels
     ]
     return ForecastView(
         label=LABEL,
@@ -391,28 +443,28 @@ def build_view(
         instrument_id=key.instrument_id,
         symbol=symbol,
         timeframe=key.timeframe,
-        as_of=as_of,
+        as_of=key.as_of,
+        analysis_as_of=analysis.as_of,
+        analysis_close=_price(analysis.close),
         created_at=stored.created_at,
         reason=stored.reason,
         model=key.model,
         model_revision=key.model_revision,
         last_close=_price(stored.last_close),
         atr=stored.atr,
-        model_paths=model.count,
-        baseline_paths=baseline.count,
-        baseline_rebuilt=rebuilt,
-        steps=steps,
-        paths=[[float(f"{v:.8g}") for v in path] for path in model.candles[:, :, CLOSE]],
+        model_paths=forecast.model_paths,
+        baseline_paths=forecast.baseline_paths,
+        baseline_rebuilt=forecast.rebuilt,
+        steps=forecast.steps,
+        paths=forecast.paths,
         horizons=[
             HorizonView(candles=n, model=_spread(m), baseline=_spread(b))
-            for n, (m, b) in summaries.items()
+            for n, (m, b) in forecast.summaries.items()
         ],
         levels=levels,
-        patterns=_patterns(strategy, as_of),
-        candle_signals=_candle_signals(strategy, as_of),
-        context=_context(
-            strategy, DailyTrendStrategy(market.days, market.tick), market.fours, as_of
-        ),
+        patterns=analysis.patterns,
+        candle_signals=analysis.candle_signals,
+        context=analysis.context,
         track_record=_track(record),
         plan=plan,
     )

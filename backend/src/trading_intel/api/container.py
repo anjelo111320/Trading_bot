@@ -12,6 +12,7 @@ from trading_intel.core.settings import Settings
 
 if TYPE_CHECKING:
     from trading_intel.api.auth import LoginLimiter, TicketLedger, TokenSigner
+    from trading_intel.api.forecast_jobs import AnalysisJobs
     from trading_intel.database.repositories.accounts import AuditRepository, UserRepository
     from trading_intel.database.repositories.candles import CandleRepository
     from trading_intel.database.repositories.forecasts import ForecastRepository
@@ -25,6 +26,7 @@ if TYPE_CHECKING:
     from trading_intel.database.repositories.reference import ReferenceRepository
     from trading_intel.database.repositories.signals import SignalRepository
     from trading_intel.events.redis_transport import RedisEventBus
+    from trading_intel.forecasting.service import ForecastService
     from trading_intel.monitoring.coverage import CoverageService
 
 Probe = Callable[[], Awaitable[None]]
@@ -51,6 +53,8 @@ class Container:
     paper: PaperRepository = field(default=None)  # type: ignore[assignment]
     news: NewsRepository = field(default=None)  # type: ignore[assignment]
     forecasts: ForecastRepository = field(default=None)  # type: ignore[assignment]
+    forecaster: ForecastService = field(default=None)  # type: ignore[assignment]
+    analyses: AnalysisJobs = field(default=None)  # type: ignore[assignment]
 
 
 def get_container(request: HTTPConnection) -> Container:

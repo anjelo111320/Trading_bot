@@ -5,7 +5,8 @@ The stand-in writes fixed test paths, and every candle here is constructed test 
 
 import asyncio
 import json
-from collections.abc import Iterator
+import threading
+from collections.abc import Iterator, Sequence
 from datetime import timedelta
 from decimal import Decimal as D
 from pathlib import Path
@@ -27,6 +28,7 @@ from trading_intel.database.repositories.reference import ReferenceRepository
 from trading_intel.domain.base import DataOrigin
 from trading_intel.domain.candles import ClosedCandle, Timeframe
 from trading_intel.domain.instruments import InstrumentRules
+from trading_intel.forecasting.kronos import ModelForecast
 from trading_intel.forecasting.service import ForecastService
 from trading_intel.forecasting.time_machine import TimeMachineParameters
 
@@ -177,6 +179,7 @@ def test_the_view_holds_the_forecast_levels_patterns_and_a_waiting_plan(
     view = response.json()
     assert view["label"] == "unvalidated model forecast"
     assert view["symbol"] == symbol and view["reason"] == "manual"
+    assert view["analysis_as_of"] == view["as_of"]
     assert view["baseline_rebuilt"] is True
     assert view["model_paths"] == 5 and view["baseline_paths"] == 200
     assert len(view["steps"]) == 4 and len(view["paths"]) == 5
@@ -250,3 +253,96 @@ def test_no_stored_forecast_is_a_clear_not_found(api: TestClient) -> None:
 def test_the_view_needs_the_owner(clean_database: None) -> None:
     with TestClient(create_app(make_settings()), base_url="http://127.0.0.1") as client:
         assert client.get(url(1)).status_code == 401
+
+
+def test_python_follows_the_latest_close_while_kronos_stays_put(api: TestClient) -> None:
+    provider, instrument, _, last = asyncio.run(seed())
+    later = [
+        c.model_copy(update={"provider_id": provider, "instrument_id": instrument})
+        for c in walk(Timeframe.H1, HOURS + 3, provider, instrument)[HOURS:]
+    ]
+    asyncio.run(seed_quarters(provider, instrument, later))
+    view = api.get(url(instrument)).json()
+    assert view["as_of"].startswith(last.close_time.strftime("%Y-%m-%dT%H:%M"))
+    assert view["analysis_as_of"].startswith(later[-1].close_time.strftime("%Y-%m-%dT%H:%M"))
+    assert D(view["analysis_close"]) == later[-1].close.normalize()
+
+
+class GatedModel(StandInModel):
+    """Waits for the test before answering, so a second request finds the first running."""
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.gate = threading.Event()
+
+    def forecast(self, candles: Sequence[ClosedCandle]) -> ModelForecast:
+        assert self.gate.wait(timeout=30)
+        return super().forecast(candles)
+
+
+def use_model(api: TestClient, model: StandInModel, now: Any) -> None:
+    container = api.app.state.container  # type: ignore[attr-defined]
+    container.forecaster = ForecastService(
+        container.candles,
+        container.forecasts,
+        model,
+        FixedClock(now),
+        holdout_start=now + timedelta(days=365),
+        baseline=TimeMachineParameters(lookback=100, paths=200),
+    )
+
+
+def finish(api: TestClient) -> dict[str, Any]:
+    api.portal.call(api.app.state.container.analyses.wait)  # type: ignore[attr-defined, union-attr]
+    return api.get("/api/v1/forecasts/analyse").json()
+
+
+def test_reanalysis_forecasts_the_latest_close_once_at_a_time(api: TestClient) -> None:
+    provider, instrument, symbol, _ = asyncio.run(seed())
+    later = [
+        c.model_copy(update={"provider_id": provider, "instrument_id": instrument})
+        for c in walk(Timeframe.H1, HOURS + 2, provider, instrument)[HOURS:]
+    ]
+    asyncio.run(seed_quarters(provider, instrument, later))
+    model = GatedModel()
+    use_model(api, model, later[-1].close_time + timedelta(minutes=1))
+    assert api.get("/api/v1/forecasts/analyse").json() == {
+        "state": "idle",
+        "instrument_id": None,
+        "symbol": None,
+        "as_of": None,
+        "started_at": None,
+        "finished_at": None,
+        "message": None,
+    }
+    body = {"provider": "binance_usdm", "instrument_id": instrument}
+    started = api.post("/api/v1/forecasts/analyse", json=body)
+    assert started.status_code == 202
+    assert started.json()["state"] == "running" and started.json()["symbol"] == symbol
+    second = api.post("/api/v1/forecasts/analyse", json=body)
+    assert second.status_code == 409
+    assert second.json()["error"]["code"] == "conflict"
+    model.gate.set()
+    job = finish(api)
+    assert job["state"] == "succeeded" and job["message"] is None
+    assert job["as_of"].startswith(later[-1].close_time.strftime("%Y-%m-%dT%H:%M"))
+    assert api.get(url(instrument)).json()["as_of"] == job["as_of"]
+    again = api.post("/api/v1/forecasts/analyse", json=body)
+    assert again.status_code == 202
+    assert finish(api)["message"].startswith("Already analysed at this close")
+    assert model.calls == 1
+
+
+def test_reanalysis_reports_why_it_could_not_run(api: TestClient) -> None:
+    provider, instrument, _, _ = asyncio.run(seed())
+    later = [
+        c.model_copy(update={"provider_id": provider, "instrument_id": instrument})
+        for c in walk(Timeframe.H1, HOURS + 1, provider, instrument)[HOURS:]
+    ]
+    asyncio.run(seed_quarters(provider, instrument, later))  # A newer close, not yet analysed.
+    use_model(api, StandInModel(), later[-1].close_time + timedelta(days=30))
+    body = {"provider": "binance_usdm", "instrument_id": instrument}
+    assert api.post("/api/v1/forecasts/analyse", json=body).status_code == 202
+    job = finish(api)
+    assert job["state"] == "failed"
+    assert "too old for a live forecast" in job["message"]
