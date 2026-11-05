@@ -73,7 +73,9 @@ Errors use one structure:
 
 | Method and path | Purpose | Limits |
 |---|---|---|
-| `GET /api/v1/forecasts/latest` | The latest Kronos forecast for an instrument, with what Python saw at that close | Read-only. 404 when none is stored |
+| `GET /api/v1/forecasts/latest` | The latest Kronos forecast for an instrument, with what Python sees at the latest 1H close | Read-only. 404 when none is stored |
+| `POST /api/v1/forecasts/analyse` | Start a re-analysis: a Kronos forecast from the latest stored 1H close, in the background | 202. 409 while one is running |
+| `GET /api/v1/forecasts/analyse` | The latest re-analysis: `idle`, `running`, `succeeded` or `failed`, with a message | |
 
 It takes `provider` and `instrument_id`. The response is labelled `unvalidated model forecast` (D040) and holds:
 
@@ -85,7 +87,9 @@ It takes `provider` and `instrument_id`. The response is labelled `unvalidated m
 - The model's track record.
 - The newest manual analyst plan from `data/signals`, if any, replayed on the 15M candles that followed through the shared simulator.
 
-Forecast values are floats because they are model samples. Market prices stay strings. Levels, patterns and the baseline are recomputed from stored candles at the forecast's close, and `baseline_rebuilt` says whether the redrawn baseline matched the stored one exactly.
+Forecast values are floats because they are model samples. Market prices stay strings. Kronos, the baseline and reach shares are anchored at the forecast's close (`as_of`). Levels, patterns and decisions are recomputed at the latest stored 1H close (`analysis_as_of`), so they move every hour. `baseline_rebuilt` says whether the redrawn baseline matched the stored one exactly.
+
+`POST /forecasts/analyse` takes `provider` and `instrument_id`, and is the only write route besides authentication. It runs a forecast and stores it. Forecasts cannot reach orders (D040), and a regression test keeps the list of write routes fixed.
 
 ## Event Envelope
 

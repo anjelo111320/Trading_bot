@@ -144,11 +144,28 @@ Every layer can be switched off from the legend. Candles switch between 15M, 1H,
 
 Colours were checked on the chart surface with the dataviz palette validator. Kronos blue against pattern orange separates by ΔE 26.8 under colour-blind simulation, and risk and reward always carry text labels.
 
-The page only reads. A manual analyst plan, such as the BTC test of 2026-11-05, is labelled as one, because the live system calls Claude only at a setup.
+The chart is live while the ingestor runs. The forming candle updates over the WebSocket, and each closed candle reloads the view. Python's levels, patterns and decisions are computed at the latest stored 1H close, so they move on every hour without a button. Kronos and its baseline stay at the forecast's own close, and both times are shown above the chart.
+
+**Re-analyse** runs a new Kronos forecast from the latest stored 1H close, in the background, about 90 seconds. One analysis runs at a time. A second press gets a clear refusal, and a press at a close that was already analysed keeps the stored forecast. A file lock keeps Kronos to one run at a time across processes, so a study and the button never run it together.
+
+A manual analyst plan, such as the BTC test of 2026-11-05, is labelled as one, because the live system calls Claude only at a setup. That plan's sell limit at 80,982.5 was not filled: the highest price before 07:00 UTC was 80,815.4.
 
 ## Study, 2025-09-10 to 2025-10-31
 
-Pending: the run started on 2026-11-05.
+One forecast a day for BTC and ETH, from the 1H close before each day: 104 forecasts, all on days after the weights last changed and before the holdout. Full report: [kronos-study.md](reports/kronos-study.md).
+
+**Result: worse than the baseline**, with 95% confidence on both scores.
+
+| Score | Kronos | Baseline | Target |
+|---|---|---|---|
+| Brier score of the share ending higher | 0.393 | 0.252 | Below 0.25, the score of always saying 50% |
+| Real close inside the 10th to 90th percentile band | 24% | 79% | 80% |
+| Real highest price inside its band | 36% | 81% | 80% |
+| CRPS of the close, % of price | 2.40 | 1.48 | Lower |
+
+Kronos was confident and often wrong. When it said about 99% of paths end higher, the price ended higher 54% of the time, and when it said about 6%, 43% of the time. 79 of 104 real closes fell in the outer tenths of its paths. In this configuration, it pulled its forecasts toward the average of the 400 input hours, with bands far too narrow.
+
+This meets D040's revisit condition. The configuration was fixed before the study and is not tuned on it: any other configuration must be fixed in advance and tested on days it has not seen.
 
 ## Limits
 
