@@ -127,6 +127,7 @@ The context builder is deterministic. Its output is stored in `analysis_input_sn
 | `levels` | Catalogue of support, resistance, liquidity, FVG and ATR-projected levels with IDs | Calculated metric |
 | `volume`, `order_book` | Relative volume, spikes, depth imbalance when available | Calculated metric |
 | `derivatives` | Funding, open interest, liquidation sample, when available | Observed fact |
+| `forecast` | Kronos's sampled paths and the time machine baseline, in ATR, with reach shares for catalogue levels and the model's track record (D040) | Unvalidated model output |
 | `news` | Classified headlines and snippets, each with an ID, inside an untrusted block | Untrusted external content |
 | `events` | Upcoming economic events | Observed fact |
 | `previous` | Last analysis summary and active recommendations | Prior interpretation |
@@ -150,6 +151,12 @@ Claude reads no chart images (D035). Each chart pattern arrives as measurements 
 | Double top or bottom: `peak_gap_atr`, `peak_separation_candles` | How equal and how far apart the two extremes are |
 | Triangles, wedges, rectangles, broadening: boundary slopes, `width_at_start_atr`, `width_at_breakout_atr`, `apex_progress` | The shape of the boundaries, and how late the breakout came |
 | Flags: `pole_candles`, `flag_candles`, `retrace_share` | A steep pole and a shallow pullback |
+
+### Model Forecast
+
+When a setup reaches Claude, Kronos samples 30 paths for the next 24 1H candles, and the time machine resamples 10,000 from the coin's last 60 days (D040). Claude reads, for both: the share of paths ending higher, the 10th, 50th and 90th percentiles of each path's highest price, lowest price and final close in ATR from the last close, and the share of paths reaching each catalogue level supplied. A `track_record` gives the resolved count and a status. The design is in [30-MODEL-FORECASTS.md](30-MODEL-FORECASTS.md).
+
+The forecast carries no price Claude can trade. It counts as a confirmation only once its status is "better than baseline".
 
 ### Prompt Structure
 
@@ -266,6 +273,8 @@ Validation is deterministic and runs in this order. Any failure produces no reco
 10. Expiry falls within configured bounds.
 11. A C grade cannot carry BUY or SELL.
 12. A countertrend trade cannot grade A.
+13. A BUY or SELL cites supporting evidence other than the forecast.
+14. `confluence_ids` include the forecast only when its track record status is "better than baseline".
 
 Python then resolves level IDs into prices and passes the trade to the risk engine.
 

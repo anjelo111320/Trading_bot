@@ -389,3 +389,22 @@ Consequences:
 - The risk engine still requires a target, so trend trades carry a far profit cap at 10R and exit on the trailing stop.
 - The holdout is not used for this strategy, because its direction is already known.
 Revisit conditions: the risk engine gains a native rule for trades without fixed targets.
+
+## Owner Decisions, 2026-11-05 Model Forecasts
+
+### D040: Kronos forecasts are labelled evidence, never prices
+Date: 2026-11-05.
+Status: Accepted by the owner, who chose option A.
+Context: The owner asked to install Kronos, a pretrained candle forecasting model, and day-trader-skill, so the system could give exact entries and targets. No model gives exact prices. Kronos samples possible futures, and whether it beats ordinary movement is unknown.
+Options considered: A, forecasts as evidence for Claude only; B, forecast levels that Claude can also select as entries or targets.
+Decision:
+- Kronos runs in its own environment, from a pinned checkout and pinned weights, offline and without secrets. It samples 30 paths of 24 1H candles, beside a time machine baseline of 10,000 resampled paths. Design: [30-MODEL-FORECASTS.md](30-MODEL-FORECASTS.md).
+- Claude reads both as an unvalidated forecast. Neither sets a price, a size or a decision, and trade signals, paper trading, the risk engine and backtests cannot import them.
+- Every forecast and outcome is stored once and cannot be changed. The track record compares Kronos with the baseline.
+- Kronos runs at setups, by hand, or in studies of stored days after its weights last changed on 2025-09-09 whose outcomes end before the holdout.
+- day-trader-skill is not installed. It targets US stocks, reads Yahoo Finance data, and its broker module places real orders (D016). Only its Time Machine idea is reused.
+Consequences:
+- About 90 seconds of processor time per forecast, and about 860 MB of disk for the environment, weights and code.
+- Claude's context grows by an estimated 300 tokens when a forecast is present.
+- Option B, or any effect on size, needs a new decision after live forecasts show "better than baseline".
+Revisit conditions: 100 resolved live forecasts, or a study showing Kronos worse than the baseline.

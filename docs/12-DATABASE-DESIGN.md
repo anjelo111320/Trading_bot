@@ -60,6 +60,7 @@ Names follow the brief, or this document where they agree.
 | News articles | `news_sources`, `news_articles`, `news_article_instruments`, `news_classifications` |
 | Economic events | `economic_events` |
 | AI analyses | `analysis_triggers`, `analysis_input_snapshots`, `prompt_versions`, `ai_analyses` |
+| Model forecasts (D040) | `model_forecasts`, `model_forecast_outcomes` |
 | Trade recommendations | `trade_recommendations`, `recommendation_revisions`, `signal_events`, `signal_current_state` |
 | Trade targets | `trade_targets` |
 | Risk calculations | `risk_assessments` |
@@ -97,7 +98,9 @@ These hold even if application code has a bug. Each one was tested.
 | The final holdout runs once per strategy version | Partial unique index on `backtest_runs` |
 | Roles are least privilege | The app role cannot write candles; read-only roles cannot read `users` |
 
-Immutable tables: `risk_profiles`, `market_candle_revisions`, `analysis_input_snapshots`, `ai_analyses`, `trade_recommendations`, `trade_targets`, `recommendation_revisions`, `risk_assessments`, `signal_events`, `paper_executions`, `trade_outcomes`, `audit_log`.
+Immutable tables: `risk_profiles`, `market_candle_revisions`, `analysis_input_snapshots`, `ai_analyses`, `trade_recommendations`, `trade_targets`, `recommendation_revisions`, `risk_assessments`, `signal_events`, `paper_executions`, `trade_outcomes`, `audit_log`, `model_forecasts`, `model_forecast_outcomes`.
+
+A forecast is stored before its outcome is known, and neither row can change afterwards, so a model's track record cannot be improved after the fact.
 
 ### Key Design Choices
 
@@ -171,6 +174,7 @@ Disk budget for the first year, with the tooling, backup and overhead figures be
 | `detected_patterns` | Indefinite | Yes, if rule versions are kept | Medium |
 | `news_articles` | Per provider licence, through `retain_until` | **No** | High |
 | `analysis_input_snapshots`, `ai_analyses` | Indefinite, subject to provider terms | **No** | High |
+| `model_forecasts`, `model_forecast_outcomes` | Indefinite. About 28 KB per forecast, measured on 2026-11-05 | Forecasts from a pinned model can be rerun. Their time order cannot | Medium |
 | Recommendations, risk, signals, paper, outcomes | Indefinite | **No** | Highest |
 | `backtest_*` | Keep summaries indefinitely; trades and equity points 2 years | Yes, from dataset version and code | Low |
 | `system_events` | 90 days | No | Low |

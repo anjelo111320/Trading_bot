@@ -133,6 +133,7 @@ Full design: [07-CLAUDE-AI-ANALYST.md](07-CLAUDE-AI-ANALYST.md).
 - Its numbers are ignored; prices come from Python through level IDs.
 - It cannot change settings or risk limits.
 - A failed analysis produces no trade.
+- Kronos, a third-party model, runs as a separate process from a pinned commit and pinned weights, offline, with no secret or database setting in its environment. The runner refuses a modified checkout and validates the output. Its forecasts reach only Claude's context (D040).
 
 ### Live Trading Isolation
 

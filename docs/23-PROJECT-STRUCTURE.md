@@ -77,6 +77,8 @@ backend/
 │   │   └── calculators/         spot.py, linear_perpetual.py
 │   ├── trade_signals/           level catalogue, rule baseline, quality score,
 │   │                            lifecycle, invalidation, expiry
+│   ├── forecasting/             Kronos runner, time machine baseline, scores,
+│   │                            track record, Claude's forecast facts (D040)
 │   ├── backtesting/             replay, walk-forward, metrics, calibration, reports
 │   ├── paper_trading/           accounts, positions, execution simulator
 │   ├── notifications/           alert routing and channels
@@ -124,7 +126,8 @@ Enforced by `import-linter` in CI.
 | `news_intelligence` | `core`, `domain`, `database`, `events` | `risk_management`, `trade_signals` |
 | `ai_analyst` | `core`, `domain`, `database`, `events`, and read-only quant and news types | **`paper_trading`**, `risk_management` internals |
 | `paper_trading` | `core`, `domain`, `risk_management`, `database`, `events` | `ai_analyst` |
-| `backtesting` | `core`, `domain`, quant modules, `risk_management`, `trade_signals`, `paper_trading` | **`ai_analyst`**, `data_providers` |
+| `backtesting` | `core`, `domain`, quant modules, `risk_management`, `trade_signals`, `paper_trading` | **`ai_analyst`**, **`forecasting`**, `data_providers` |
+| `forecasting` | `core`, `domain`, `technical_analysis`; `database` from its service only | `trade_signals`, `paper_trading`, `risk_management`, `backtesting`, `data_providers`, `events` |
 | `notifications` | `core`, `domain`, `events`, `database` | Business decisions |
 | `monitoring` | `core`, `domain`, `database`, `events` | Business decisions |
 | `api` | Application services and schemas | Provider adapters directly |
@@ -135,6 +138,7 @@ Critical rules:
 
 - `risk_management` cannot import `ai_analyst`.
 - `backtesting` cannot import `ai_analyst`, keeping historical tests free of model leakage.
+- `trade_signals`, `paper_trading`, `risk_management` and `backtesting` cannot import `forecasting`, so a model forecast can never set a price, a size or a decision (D040).
 - Quant modules take data as arguments, so the same code runs live and in simulation.
 
 ## Frontend

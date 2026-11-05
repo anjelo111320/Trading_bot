@@ -64,6 +64,7 @@ Each package is added in the phase that first uses it, not all at once.
 | Indicators | TA-Lib | 0.8.3 | pandas-ta, own code | BSD licence, wheels now bundle the C library. Own implementations are cross-checked against it | 2 |
 | Claude SDK | anthropic | 2.3.0 | Raw HTTP | Official SDK is the only permitted path | News or analyst phase |
 | Provider access | Direct adapters | Not applicable | ccxt | Fixtures need raw frames, and each adapter is small | 1 |
+| Forecasting model | Kronos-small, as a separate process with PyTorch in `vendor/Kronos/.venv` | Commit `67b630e`, weights `901c26c` | None | Owner request. Kept apart because the backend does not install PyTorch | Model forecasts, D040 |
 
 `uvloop` is excluded for now because no macOS arm64 wheel exists for Python 3.14.
 
