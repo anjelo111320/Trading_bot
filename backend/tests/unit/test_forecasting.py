@@ -11,6 +11,7 @@ import pytest
 
 from tests.quant_data import random_walk
 from trading_intel.domain.candles import Timeframe
+from trading_intel.entrypoints.forecast import render
 from trading_intel.forecasting.evidence import LABEL, forecast_facts
 from trading_intel.forecasting.paths import SampledPaths
 from trading_intel.forecasting.scoring import Realized, crps, realized, score
@@ -183,3 +184,15 @@ def test_facts_are_in_atr_from_the_last_close_and_labelled_unvalidated() -> None
             atr=0.0,
             record=track_record([]),
         )
+
+
+def test_report_shows_both_sources_and_says_when_nothing_has_resolved() -> None:
+    empty = render(track_record([]), {}, "all", "model at 901c26c")
+    assert "Resolved forecasts: 0. Status: too few forecasts." in empty
+    assert "No forecast has resolved yet." in empty
+    scored = [pair(0.9 if i % 2 else 0.1, 0.5, up=bool(i % 2)) for i in range(10)]
+    record = track_record(scored)
+    text = render(record, {"BTCUSDT": record}, "study", "model at 901c26c")
+    assert "| Brier score | 0.010 | 0.250 | 0.250 |" in text
+    assert "| BTCUSDT | 10 |" in text
+    assert "| Close after 24 hours | 100% | 100% | 80% |" in text

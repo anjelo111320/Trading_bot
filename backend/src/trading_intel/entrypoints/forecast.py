@@ -134,10 +134,12 @@ async def report(context: Context, reasons: str, write: Path | None) -> None:
     config = context.runner.config
     record = await context.service.track_record(TIMEFRAME, REASONS[reasons])
     per_coin = {}
-    for item in await context.listed(["BTCUSDT", "ETHUSDT"]):
-        per_coin[item.instrument.symbol] = await context.service.track_record(
+    for item in await ReferenceRepository(context.engine).provider_instruments(PROVIDER):
+        coin = await context.service.track_record(
             TIMEFRAME, REASONS[reasons], instrument_id=item.instrument.id
         )
+        if coin.count:
+            per_coin[item.instrument.symbol] = coin
     text = render(record, per_coin, reasons, f"{config.model} at {config.model_revision[:7]}")
     if write is None:
         print(text)
