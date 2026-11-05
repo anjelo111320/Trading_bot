@@ -16,6 +16,13 @@ export type Signal = Schemas["SignalView"];
 export type Position = Schemas["PositionView"];
 export type PaperSummary = Schemas["PaperSummary"];
 export type NewsItem = Schemas["NewsView"];
+export type ForecastView = Schemas["ForecastView"];
+export type ForecastHorizon = Schemas["HorizonView"];
+export type ForecastLevel = Schemas["LevelView"];
+export type ForecastPlan = Schemas["PlanView"];
+export type ForecastBand = Schemas["BandView"];
+export type ChartPattern = Schemas["ChartPatternView"];
+export type CandleSignal = Schemas["CandleSignalView"];
 
 export class ApiError extends Error {
   constructor(

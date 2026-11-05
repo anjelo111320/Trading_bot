@@ -72,6 +72,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/forecasts/latest": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Latest Forecast */
+        get: operations["latest_forecast_api_v1_forecasts_latest_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/health": {
         parameters: {
             query?: never;
@@ -263,6 +280,15 @@ export interface paths {
 export type webhooks = Record<string, never>;
 export interface components {
     schemas: {
+        /** BandView */
+        BandView: {
+            /** P10 */
+            p10: number;
+            /** P50 */
+            p50: number;
+            /** P90 */
+            p90: number;
+        };
         /** CandlePage */
         CandlePage: {
             /** Instrument Id */
@@ -274,6 +300,18 @@ export interface components {
             /** Provider */
             provider: string;
             timeframe: components["schemas"]["Timeframe"];
+        };
+        /** CandleSignalView */
+        CandleSignalView: {
+            /** Direction */
+            direction: string;
+            /**
+             * Open Time
+             * Format: date-time
+             */
+            open_time: string;
+            /** Type */
+            type: string;
         };
         /** CandleView */
         CandleView: {
@@ -302,6 +340,30 @@ export interface components {
             trade_count: number;
             /** Volume */
             volume: string;
+        };
+        /** ChartPatternView */
+        ChartPatternView: {
+            /**
+             * Breakout At
+             * Format: date-time
+             */
+            breakout_at: string;
+            /** Decision */
+            decision: string;
+            /** Direction */
+            direction: string;
+            /** Invalidated At */
+            invalidated_at: string | null;
+            /** Invalidation */
+            invalidation: number | null;
+            /** Measured Moves */
+            measured_moves: number[];
+            /** Points */
+            points: components["schemas"]["PatternPointView"][];
+            /** Reasons */
+            reasons: string[];
+            /** Type */
+            type: string;
         };
         /** CoverageView */
         CoverageView: {
@@ -384,6 +446,69 @@ export interface components {
              */
             state: "HEALTHY" | "DEGRADED" | "STALE" | "DISCONNECTED" | "RECOVERING";
         };
+        /** ForecastStepView */
+        ForecastStepView: {
+            baseline: components["schemas"]["BandView"];
+            model: components["schemas"]["BandView"];
+            /**
+             * Open Time
+             * Format: date-time
+             */
+            open_time: string;
+        };
+        /** ForecastView */
+        ForecastView: {
+            /**
+             * As Of
+             * Format: date-time
+             */
+            as_of: string;
+            /** Atr */
+            atr: number;
+            /** Baseline Paths */
+            baseline_paths: number;
+            /** Baseline Rebuilt */
+            baseline_rebuilt: boolean;
+            /** Candle Signals */
+            candle_signals: components["schemas"]["CandleSignalView"][];
+            context: components["schemas"]["MarketContextView"];
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /** Horizons */
+            horizons: components["schemas"]["HorizonView"][];
+            /** Instrument Id */
+            instrument_id: number;
+            /** Label */
+            label: string;
+            /** Last Close */
+            last_close: string;
+            /** Levels */
+            levels: components["schemas"]["LevelView"][];
+            /** Model */
+            model: string;
+            /** Model Paths */
+            model_paths: number;
+            /** Model Revision */
+            model_revision: string;
+            /** Paths */
+            paths: number[][];
+            /** Patterns */
+            patterns: components["schemas"]["ChartPatternView"][];
+            plan: components["schemas"]["PlanView"] | null;
+            /** Provider */
+            provider: string;
+            /** Reason */
+            reason: string;
+            /** Steps */
+            steps: components["schemas"]["ForecastStepView"][];
+            /** Symbol */
+            symbol: string;
+            timeframe: components["schemas"]["Timeframe"];
+            track_record: components["schemas"]["TrackRecordView"];
+        };
         /** GapList */
         GapList: {
             /** Items */
@@ -437,6 +562,13 @@ export interface components {
             ready: boolean;
             trading_mode: components["schemas"]["TradingMode"];
         };
+        /** HorizonView */
+        HorizonView: {
+            baseline: components["schemas"]["SpreadView"];
+            /** Candles */
+            candles: number;
+            model: components["schemas"]["SpreadView"];
+        };
         /** InstrumentCoverageView */
         InstrumentCoverageView: {
             /** Candles Expected */
@@ -483,12 +615,53 @@ export interface components {
             /** Tick Size */
             tick_size: string | null;
         };
+        /** LevelView */
+        LevelView: {
+            /** Distance Atr */
+            distance_atr: number;
+            /** Evidence */
+            evidence: string;
+            /** Id */
+            id: string;
+            /** Kind */
+            kind: string;
+            /**
+             * Position
+             * @enum {string}
+             */
+            position: "above" | "below";
+            /** Price */
+            price: string;
+            /** Reach */
+            reach: components["schemas"]["ReachView"][];
+        };
         /** LoginRequest */
         LoginRequest: {
             /** Email */
             email: string;
             /** Password */
             password: string;
+        };
+        /** MarketContextView */
+        MarketContextView: {
+            /** Adx 1D */
+            adx_1d: number | null;
+            /** Regime Trend */
+            regime_trend: string;
+            /** Regime Volatility */
+            regime_volatility: string;
+            /** Rsi 1H */
+            rsi_1h: number | null;
+            /** Rsi 4H */
+            rsi_4h: number | null;
+            /** Strategies */
+            strategies: components["schemas"]["StrategyView"][];
+            /** Trend 1D */
+            trend_1d: string;
+            /** Trend 4H */
+            trend_4h: string;
+            /** Volatility Percentile */
+            volatility_percentile: number | null;
         };
         /** MarketStatusView */
         MarketStatusView: {
@@ -574,6 +747,101 @@ export interface components {
             /** Wins */
             wins: number;
         };
+        /** PatternPointView */
+        PatternPointView: {
+            /** Name */
+            name: string;
+            /** Price */
+            price: number;
+            /**
+             * Time
+             * Format: date-time
+             */
+            time: string;
+        };
+        /** PlanStatusView */
+        PlanStatusView: {
+            /** Checked Until */
+            checked_until: string | null;
+            /** Entry Price */
+            entry_price: string | null;
+            /** Entry Time */
+            entry_time: string | null;
+            /** Exit Price */
+            exit_price: string | null;
+            /** Exit Reason */
+            exit_reason: string | null;
+            /** Exit Time */
+            exit_time: string | null;
+            /** Net Pnl */
+            net_pnl: string | null;
+            /** Result R */
+            result_r: number | null;
+            /**
+             * State
+             * @enum {string}
+             */
+            state: "waiting" | "open" | "closed" | "not_filled";
+        };
+        /** PlanView */
+        PlanView: {
+            /** Action */
+            action: string;
+            /** Approved */
+            approved: boolean;
+            /**
+             * As Of
+             * Format: date-time
+             */
+            as_of: string;
+            /** Bear Case */
+            bear_case: string;
+            /** Bull Case */
+            bull_case: string;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /** Entry */
+            entry: string;
+            /** Entry Level Id */
+            entry_level_id: string | null;
+            /** Entry Type */
+            entry_type: string;
+            /**
+             * Expires At
+             * Format: date-time
+             */
+            expires_at: string;
+            /** Grade */
+            grade: string;
+            /** Max Loss */
+            max_loss: string | null;
+            /** Note */
+            note: string;
+            /** Pre Mortem */
+            pre_mortem: string;
+            /** Quantity */
+            quantity: string | null;
+            /** Rejection Codes */
+            rejection_codes: string[];
+            /** Reward Risk */
+            reward_risk: string[];
+            /** Side */
+            side: string;
+            /** Source */
+            source: string;
+            status: components["schemas"]["PlanStatusView"];
+            /** Stop */
+            stop: string;
+            /** Stop Level Id */
+            stop_level_id: string | null;
+            /** Target Level Ids */
+            target_level_ids: string[];
+            /** Targets */
+            targets: string[];
+        };
         /** PositionView */
         PositionView: {
             /** Average Entry */
@@ -622,6 +890,15 @@ export interface components {
             received_at: string | null;
             /** Stale */
             stale: boolean;
+        };
+        /** ReachView */
+        ReachView: {
+            /** Baseline */
+            baseline: number;
+            /** Candles */
+            candles: number;
+            /** Model */
+            model: number;
         };
         /** SignalView */
         SignalView: {
@@ -696,6 +973,23 @@ export interface components {
             technical_explanation: string;
             timeframe: components["schemas"]["Timeframe"];
         };
+        /** SpreadView */
+        SpreadView: {
+            close: components["schemas"]["BandView"];
+            highest: components["schemas"]["BandView"];
+            lowest: components["schemas"]["BandView"];
+            /** Share Ending Higher */
+            share_ending_higher: number;
+        };
+        /** StrategyView */
+        StrategyView: {
+            /** Action */
+            action: string;
+            /** Name */
+            name: string;
+            /** Reasons */
+            reasons: string[];
+        };
         /** TargetView */
         TargetView: {
             /** Allocation */
@@ -717,6 +1011,21 @@ export interface components {
          * @enum {string}
          */
         Timeframe: "1m" | "5m" | "15m" | "30m" | "1h" | "4h" | "1d";
+        /** TrackRecordView */
+        TrackRecordView: {
+            /** Brier Baseline */
+            brier_baseline: number | null;
+            /** Brier Model */
+            brier_model: number | null;
+            /** Crps Baseline Pct */
+            crps_baseline_pct: number | null;
+            /** Crps Model Pct */
+            crps_model_pct: number | null;
+            /** Resolved */
+            resolved: number;
+            /** Status */
+            status: string;
+        };
         /**
          * TradingMode
          * @description Paper is the only member, so no code path can represent live trading (D016).
@@ -837,6 +1146,38 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["TicketView"];
+                };
+            };
+            /** @description Default Response */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    latest_forecast_api_v1_forecasts_latest_get: {
+        parameters: {
+            query: {
+                provider: string;
+                instrument_id: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ForecastView"];
                 };
             };
             /** @description Default Response */
