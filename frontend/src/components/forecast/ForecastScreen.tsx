@@ -1,11 +1,18 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useQueryClient } from "@tanstack/react-query";
+import { useEffect, useMemo, useState } from "react";
 
 import { AppNav } from "@/components/AppNav";
-import { useForecastView, useRecentCandles } from "@/features/forecast/queries";
+import {
+  useAnalysisJob,
+  useForecastView,
+  useRecentCandles,
+  useStartAnalysis,
+} from "@/features/forecast/queries";
+import { useLiveMarket } from "@/features/market/useLiveMarket";
+import { useNow } from "@/features/market/useNow";
 import { ApiError, type Instrument, type Timeframe } from "@/lib/api/client";
-import { formatUtc } from "@/lib/format";
 
 import { ForecastChart } from "./ForecastChart";
 import {
@@ -19,6 +26,7 @@ import {
   TrackRecordPanel,
 } from "./ForecastPanels";
 import { STEP_SECONDS, type Span } from "./geometry";
+import { LiveStatus, ReanalyseButton } from "./LiveControls";
 import { ALL_LAYERS, type Layers } from "./overlay";
 
 const TIMEFRAMES: Timeframe[] = ["15m", "1h", "4h", "1d"];
@@ -68,12 +76,38 @@ export function ForecastScreen({ instruments }: { instruments: Instrument[] }) {
 
   const instrument = perpetuals.find((item) => item.id === selectedId) ?? initial;
   const provider = instrument?.provider ?? "binance_usdm";
-  const forecast = useForecastView(provider, instrument?.id ?? 0);
-  const recent = useRecentCandles(provider, instrument?.id ?? 0, timeframe);
+  const instrumentId = instrument?.id ?? 0;
+  const forecast = useForecastView(provider, instrumentId);
+  const recent = useRecentCandles(provider, instrumentId, timeframe);
+  const live = useLiveMarket(provider, instrumentId, timeframe);
+  const job = useAnalysisJob();
+  const start = useStartAnalysis();
+  const now = useNow();
+  const client = useQueryClient();
+
+  // A closed candle moves Python's analysis and the plan's status, so reload both.
+  const closedAt = live.candle?.isClosed ? live.candle.openTime : null;
+  useEffect(() => {
+    if (!closedAt) return;
+    void client.invalidateQueries({ queryKey: ["recent-candles", provider, instrumentId, timeframe] });
+    void client.invalidateQueries({ queryKey: ["forecast-view", provider, instrumentId] });
+  }, [client, closedAt, provider, instrumentId, timeframe]);
+
+  // A finished re-analysis brings a new forecast.
+  const finishedAt = job.data?.finished_at ?? null;
+  useEffect(() => {
+    if (!finishedAt) return;
+    void client.invalidateQueries({ queryKey: ["forecast-view"] });
+  }, [client, finishedAt]);
+
+  const startError = start.error instanceof ApiError ? start.error.message : start.error ? "Could not start the analysis." : null;
+  const reanalyse = () => {
+    start.reset();
+    start.mutate({ provider, instrument_id: instrumentId });
+  };
   const candles = useMemo(() => recent.data?.items ?? [], [recent.data]);
   const view = forecast.data;
   const horizon = view?.horizons.find((h) => h.candles === span) ?? view?.horizons[0];
-  const lastCandle = candles[candles.length - 1];
 
   const missing = forecast.error instanceof ApiError && forecast.error.status === 404;
 
@@ -99,8 +133,9 @@ export function ForecastScreen({ instruments }: { instruments: Instrument[] }) {
         <Choice label="Forecast" values={SPANS} value={span} onChange={setSpan} format={(v) => `${v}h`} />
       </header>
 
-      <div className="flex flex-wrap items-center gap-2 border-b border-line px-4 py-2">
+      <div className="flex flex-wrap items-center justify-between gap-2 border-b border-line px-4 py-2">
         <LayerToggles layers={layers} onChange={setLayers} />
+        <ReanalyseButton job={job.data} now={now} error={startError} onClick={reanalyse} />
       </div>
 
       {missing ? (
@@ -119,14 +154,17 @@ export function ForecastScreen({ instruments }: { instruments: Instrument[] }) {
           <main className="flex h-[620px] min-w-0 flex-1 flex-col rounded border border-line bg-panel xl:h-auto">
             <div className="flex flex-wrap items-center justify-between gap-2 border-b border-line px-3 py-2">
               <HoverReadout view={view} hoverTime={hoverTime} span={span} barSeconds={STEP_SECONDS[timeframe]} />
-              <span className="text-xs text-muted">
-                {view.symbol} · forecast {formatUtc(view.as_of)} · last candle{" "}
-                {lastCandle ? formatUtc(lastCandle.close_time) : "none"}
-              </span>
+              <div className="flex flex-wrap items-center gap-3">
+                <span className="text-xs text-muted">
+                  Python {view.analysis_as_of.slice(11, 16)} UTC close · Kronos {view.as_of.slice(11, 16)} UTC close
+                </span>
+                <LiveStatus connection={live.connection} price={live.price} />
+              </div>
             </div>
             <div className="min-h-0 flex-1">
               <ForecastChart
                 candles={candles}
+                live={live.candle}
                 timeframe={timeframe}
                 view={view}
                 layers={layers}

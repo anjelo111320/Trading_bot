@@ -23,6 +23,7 @@ export type ForecastPlan = Schemas["PlanView"];
 export type ForecastBand = Schemas["BandView"];
 export type ChartPattern = Schemas["ChartPatternView"];
 export type CandleSignal = Schemas["CandleSignalView"];
+export type AnalysisJob = Schemas["AnalysisJobView"];
 
 export class ApiError extends Error {
   constructor(

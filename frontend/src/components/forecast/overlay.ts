@@ -73,6 +73,33 @@ const HOUR = 3600;
 
 export type OverlayState = { view: ForecastView | null; layers: Layers; span: Span; slots: number[] };
 
+/**
+ * Which current levels the plan uses. Catalogue IDs are renumbered at every analysis, so
+ * levels are matched to the plan by price. The stop sits beyond its level, so its ID is
+ * trusted only while the analysis is still at the plan's own close.
+ */
+export function planRoles(view: ForecastView): Map<string, string> {
+  const roles = new Map<string, string>();
+  const plan = view.plan;
+  if (!plan) return roles;
+  for (const level of view.levels) {
+    const price = Number(level.price);
+    if (price === Number(plan.entry)) roles.set(level.id, "entry");
+    plan.targets.forEach((target, index) => {
+      if (price === Number(target)) roles.set(level.id, `T${index + 1}`);
+    });
+  }
+  if (plan.stop_level_id && plan.as_of === view.analysis_as_of) {
+    roles.set(plan.stop_level_id, "stop beyond");
+  }
+  return roles;
+}
+
+/** The current level ID at a plan price, if one matches. */
+function levelAt(view: ForecastView, price: string): string | null {
+  return view.levels.find((level) => Number(level.price) === Number(price))?.id ?? null;
+}
+
 export function formatNumber(value: number | string): string {
   return Number(value).toLocaleString("en-US", { maximumFractionDigits: 8 });
 }
@@ -397,24 +424,25 @@ export class ForecastOverlay implements ISeriesPrimitive<Time> {
     if (!plan) return [];
     const side = plan.side === "SHORT" ? "Sell" : "Buy";
     const by = (id: string | null | undefined) => (id ? ` · ${id}` : "");
+    const sameClose = plan.as_of === view.analysis_as_of;
     return [
       {
         price: Number(plan.entry),
-        text: `${side} ${plan.entry_type.toLowerCase()} ${formatNumber(plan.entry)}${by(plan.entry_level_id)}`,
+        text: `${side} ${plan.entry_type.toLowerCase()} ${formatNumber(plan.entry)}${by(levelAt(view, plan.entry))}`,
         color: COLORS.ink,
         dash: [4, 3],
         strong: true,
       },
       {
         price: Number(plan.stop),
-        text: `Stop ${formatNumber(plan.stop)}${plan.stop_level_id ? ` · beyond ${plan.stop_level_id}` : ""}`,
+        text: `Stop ${formatNumber(plan.stop)}${sameClose && plan.stop_level_id ? ` · beyond ${plan.stop_level_id}` : ""}`,
         color: COLORS.risk,
         dash: [],
         strong: true,
       },
       ...plan.targets.map((target, index) => ({
         price: Number(target),
-        text: `T${index + 1} ${formatNumber(target)}${plan.reward_risk[index] ? ` · ${plan.reward_risk[index]}R` : ""}${by(plan.target_level_ids[index])}`,
+        text: `T${index + 1} ${formatNumber(target)}${plan.reward_risk[index] ? ` · ${plan.reward_risk[index]}R` : ""}${by(levelAt(view, target))}`,
         color: COLORS.reward,
         dash: [4, 3],
         strong: true,
@@ -469,11 +497,9 @@ export class ForecastOverlay implements ISeriesPrimitive<Time> {
   private paintLabels(context: Context, view: ForecastView, width: number, height: number): void {
     const { layers } = this.state;
     const plan = layers.plan ? view.plan : null;
-    const covered = new Set<string>();
-    if (plan) {
-      if (plan.entry_level_id) covered.add(plan.entry_level_id);
-      plan.target_level_ids.forEach((id) => covered.add(id));
-    }
+    const covered = new Set(
+      [...planRoles(view)].filter(([, role]) => role !== "stop beyond").map(([id]) => id),
+    );
     const rows: Row[] = [
       ...(plan ? this.planRows(view) : []),
       ...(layers.zones

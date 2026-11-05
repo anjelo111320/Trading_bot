@@ -4,7 +4,7 @@ import type { ForecastBand, ForecastHorizon, ForecastPlan, ForecastView } from "
 import { formatUtc } from "@/lib/format";
 
 import { atrDistance, floorTo, levelStyle, toSeconds, type Span } from "./geometry";
-import { COLORS, formatNumber, planState, type Layers } from "./overlay";
+import { COLORS, formatNumber, planRoles, planState, type Layers } from "./overlay";
 
 function Panel({ title, children }: { title: string; children: ReactNode }) {
   return (
@@ -213,7 +213,9 @@ export function PlanPanel({ plan }: { plan: ForecastPlan }) {
   ];
   return (
     <Panel title="Analyst plan">
-      <p className="mb-2 rounded border border-line px-2 py-1 text-xs text-muted">{plan.source}. Paper only.</p>
+      <p className="mb-2 rounded border border-line px-2 py-1 text-xs text-muted">
+        {plan.source}. Paper only. Level IDs are from the {plan.as_of.slice(11, 16)} UTC catalogue.
+      </p>
       <dl className="space-y-1 text-xs">
         {rows.map(([name, value, id]) => (
           <div key={name} className="flex justify-between gap-2">
@@ -244,11 +246,7 @@ export function PlanPanel({ plan }: { plan: ForecastPlan }) {
 }
 
 export function LevelsPanel({ view, span }: { view: ForecastView; span: Span }) {
-  const plan = view.plan;
-  const roles = new Map<string, string>();
-  if (plan?.entry_level_id) roles.set(plan.entry_level_id, "entry");
-  if (plan?.stop_level_id) roles.set(plan.stop_level_id, "stop");
-  plan?.target_level_ids.forEach((id, index) => roles.set(id, `T${index + 1}`));
+  const roles = planRoles(view);
   const levels = [...view.levels].sort((a, b) => Number(b.price) - Number(a.price));
   return (
     <Panel title={`Python levels · reached within ${span}h`}>

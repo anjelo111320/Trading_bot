@@ -4,8 +4,10 @@ import {
   CandlestickSeries,
   ColorType,
   CrosshairMode,
+  LineSeries,
   createChart,
   createSeriesMarkers,
+  type CandlestickData,
   type IChartApi,
   type ISeriesApi,
   type ISeriesMarkersPluginApi,
@@ -15,7 +17,8 @@ import {
 } from "lightweight-charts";
 import { useEffect, useMemo, useRef } from "react";
 
-import { DOWN, UP, closedBar } from "@/components/chart/bars";
+import { DOWN, UP, closedBar, formingBar } from "@/components/chart/bars";
+import type { LiveCandle } from "@/features/market/useLiveMarket";
 import type { Candle, CandleSignal, ForecastView, Timeframe } from "@/lib/api/client";
 
 import { STEP_SECONDS, floorTo, futureSlots, toSeconds, visibleWindow, type Span } from "./geometry";
@@ -23,12 +26,21 @@ import { ForecastOverlay, type Layers } from "./overlay";
 
 type Props = {
   candles: Candle[];
+  live: LiveCandle | null;
   timeframe: Timeframe;
   view: ForecastView;
   layers: Layers;
   span: Span;
   onHover: (time: number | null) => void;
 };
+
+/** The live candle: hollow while it forms, filled once it closes. */
+export function liveBar(live: LiveCandle): CandlestickData<UTCTimestamp> {
+  const bar = formingBar({ ...live, time: live.openTime });
+  return live.isClosed
+    ? { ...bar, color: undefined, borderColor: undefined, wickColor: undefined }
+    : bar;
+}
 
 /**
  * Candle signals as arrows: bearish above the bar, bullish below it. Names stay off the
@@ -57,10 +69,13 @@ export function signalMarkers(signals: CandleSignal[], step: number): SeriesMark
     .sort((a, b) => Number(a.time) - Number(b.time));
 }
 
-export function ForecastChart({ candles, timeframe, view, layers, span, onHover }: Props) {
+export function ForecastChart({ candles, live, timeframe, view, layers, span, onHover }: Props) {
   const container = useRef<HTMLDivElement>(null);
   const chartRef = useRef<IChartApi | null>(null);
   const seriesRef = useRef<ISeriesApi<"Candlestick"> | null>(null);
+  // Empty future slots live on their own series, so the candle series can update in place.
+  const slotsRef = useRef<ISeriesApi<"Line"> | null>(null);
+  const newest = useRef(0);
   const overlayRef = useRef<ForecastOverlay | null>(null);
   const markersRef = useRef<ISeriesMarkersPluginApi<Time> | null>(null);
   const hover = useRef(onHover);
@@ -95,6 +110,12 @@ export function ForecastChart({ candles, timeframe, view, layers, span, onHover 
       wickDownColor: DOWN,
       priceLineVisible: false,
     });
+    const slotSeries = chart.addSeries(LineSeries, {
+      lastValueVisible: false,
+      priceLineVisible: false,
+      crosshairMarkerVisible: false,
+      autoscaleInfoProvider: () => null,
+    });
     const overlay = new ForecastOverlay();
     series.attachPrimitive(overlay);
     chart.subscribeCrosshairMove((parameter) => {
@@ -102,12 +123,14 @@ export function ForecastChart({ candles, timeframe, view, layers, span, onHover 
     });
     chartRef.current = chart;
     seriesRef.current = series;
+    slotsRef.current = slotSeries;
     overlayRef.current = overlay;
     markersRef.current = createSeriesMarkers(series, []);
     return () => {
       chart.remove();
       chartRef.current = null;
       seriesRef.current = null;
+      slotsRef.current = null;
       overlayRef.current = null;
       markersRef.current = null;
     };
@@ -129,12 +152,24 @@ export function ForecastChart({ candles, timeframe, view, layers, span, onHover 
   }, [bars, asOf, step, timeframe, view.steps.length]);
 
   useEffect(() => {
-    seriesRef.current?.setData([
-      ...bars,
-      ...slots.future.map((time) => ({ time: time as UTCTimestamp })),
-    ]);
+    seriesRef.current?.setData(bars);
+    slotsRef.current?.setData(slots.future.map((time) => ({ time: time as UTCTimestamp })));
+    newest.current = bars.length > 0 ? Number(bars[bars.length - 1]!.time) : 0;
     overlayRef.current?.setState({ view, layers, span, slots: slots.all });
   }, [bars, slots, view, layers, span]);
+
+  useEffect(() => {
+    const series = seriesRef.current;
+    if (!series || !live) {
+      return;
+    }
+    const bar = liveBar(live);
+    if (Number(bar.time) < newest.current) {
+      return; // The chart only updates its newest bar. History refills older ones.
+    }
+    newest.current = Number(bar.time);
+    series.update(bar);
+  }, [live, bars]);
 
   useEffect(() => {
     markersRef.current?.setMarkers(layers.signals ? signalMarkers(view.candle_signals, step) : []);

@@ -2,9 +2,10 @@
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-import type { ForecastPlan, ForecastView } from "@/lib/api/client";
+import type { AnalysisJob, ForecastPlan, ForecastView } from "@/lib/api/client";
 
-import { signalMarkers } from "./ForecastChart";
+import { liveBar, signalMarkers } from "./ForecastChart";
+import { LiveStatus, ReanalyseButton, analysisText } from "./LiveControls";
 import {
   CandleSignalsPanel,
   HoverReadout,
@@ -14,7 +15,7 @@ import {
   SummaryPanel,
   TrackRecordPanel,
 } from "./ForecastPanels";
-import { ALL_LAYERS } from "./overlay";
+import { ALL_LAYERS, planRoles } from "./overlay";
 
 const band = (p10: number, p50: number, p90: number) => ({ p10, p50, p90 });
 
@@ -62,6 +63,8 @@ const VIEW: ForecastView = {
   symbol: "BTCUSDT",
   timeframe: "1h",
   as_of: "2026-11-05T02:59:59.999Z",
+  analysis_as_of: "2026-11-05T02:59:59.999Z",
+  analysis_close: "80544.2",
   created_at: "2026-11-05T03:08:00Z",
   reason: "manual",
   model: "NeoQuasar/Kronos-small",
@@ -184,5 +187,84 @@ describe("signalMarkers", () => {
   it("snaps a 1H signal onto the 4H bar that holds it", () => {
     const [marker] = signalMarkers([VIEW.candle_signals[0]!], 4 * 3600);
     expect(Number(marker!.time)).toBe(Date.parse("2026-11-05T00:00:00Z") / 1000);
+  });
+});
+
+const RUNNING: AnalysisJob = {
+  state: "running",
+  instrument_id: 3,
+  symbol: "BTCUSDT",
+  as_of: "2026-11-05T07:59:59.999Z",
+  started_at: "2026-11-05T08:01:00Z",
+  finished_at: null,
+  message: null,
+};
+
+describe("re-analysis", () => {
+  it("counts the elapsed time while Kronos runs, and names the close", () => {
+    const now = Date.parse("2026-11-05T08:01:42Z");
+    expect(analysisText(RUNNING, now)).toBe(
+      "Analysing BTCUSDT from the 07:59 UTC close · 0:42, about 1:30 for Kronos",
+    );
+    expect(analysisText({ ...RUNNING, state: "failed", message: "too old" }, now)).toBe(
+      "Analysis failed: too old",
+    );
+    expect(analysisText({ ...RUNNING, state: "succeeded" }, now)).toBe(
+      "Analysed BTCUSDT from the 07:59 UTC close",
+    );
+    expect(analysisText(undefined, now)).toBeNull();
+  });
+
+  it("disables the button while one runs, and asks for one otherwise", () => {
+    const onClick = vi.fn();
+    const { rerender } = render(<ReanalyseButton job={RUNNING} now={Date.now()} error={null} onClick={onClick} />);
+    expect((screen.getByRole("button") as HTMLButtonElement).disabled).toBe(true);
+    rerender(<ReanalyseButton job={{ ...RUNNING, state: "idle" }} now={Date.now()} error={null} onClick={onClick} />);
+    fireEvent.click(screen.getByRole("button", { name: "Re-analyse" }));
+    expect(onClick).toHaveBeenCalledOnce();
+  });
+
+  it("shows a refusal from the server", () => {
+    render(<ReanalyseButton job={undefined} now={0} error="An analysis of ETHUSDT is already running." onClick={() => {}} />);
+    expect(screen.getByRole("status").textContent).toContain("already running");
+  });
+});
+
+describe("live chart", () => {
+  it("says when the feed is live and shows the mid price", () => {
+    const { rerender } = render(
+      <LiveStatus connection="open" price={{ bid: "80600.1", ask: "80600.3", receivedAt: "" }} />,
+    );
+    expect(screen.getByRole("status").textContent).toBe("●Live80,600.2");
+    rerender(<LiveStatus connection="connecting" price={null} />);
+    expect(screen.getByRole("status").textContent).toContain("Reconnecting");
+  });
+
+  it("draws the forming candle hollow and a closed one filled", () => {
+    const candle = { openTime: "2026-11-05T07:00:00Z", open: "1", high: "3", low: "1", close: "2", isClosed: false };
+    expect(liveBar(candle).color).toBe("rgba(0, 0, 0, 0)");
+    expect(liveBar({ ...candle, isClosed: true }).color).toBeUndefined();
+    expect(Number(liveBar(candle).time)).toBe(Date.parse("2026-11-05T07:00:00Z") / 1000);
+  });
+});
+
+describe("planRoles", () => {
+  it("matches the plan to today's levels by price, not by stale IDs", () => {
+    const later: ForecastView = {
+      ...VIEW,
+      analysis_as_of: "2026-11-05T09:59:59.999Z",
+      levels: [
+        { ...VIEW.levels[0]!, id: "L2", price: "80982.5" },
+        { ...VIEW.levels[1]!, id: "L3", price: "80927.5" },
+      ],
+    };
+    const roles = planRoles(later);
+    expect(roles.get("L2")).toBe("entry");
+    expect(roles.has("L3")).toBe(false);
+    expect([...roles.values()]).not.toContain("stop beyond");
+  });
+
+  it("trusts the stop's level ID while the analysis is at the plan's close", () => {
+    expect(planRoles(VIEW).get("L6")).toBe("stop beyond");
   });
 });
