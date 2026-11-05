@@ -125,6 +125,12 @@ source_modules = [
     "trading_intel.technical_analysis",
     "trading_intel.market_structure",
     "trading_intel.pattern_detection",
+    "trading_intel.forecasting.paths",
+    "trading_intel.forecasting.summary",
+    "trading_intel.forecasting.time_machine",
+    "trading_intel.forecasting.scoring",
+    "trading_intel.forecasting.track_record",
+    "trading_intel.forecasting.evidence",
 ]
 forbidden_modules = [
     "trading_intel.database",
@@ -155,3 +161,29 @@ name = "backtests never reach providers"
 type = "forbidden"
 source_modules = ["trading_intel.backtesting"]
 forbidden_modules = ["trading_intel.data_providers", "trading_intel.market_data"]
+
+[[tool.importlinter.contracts]]
+name = "model forecasts are evidence only (D040)"
+type = "forbidden"
+source_modules = [
+    "trading_intel.trade_signals",
+    "trading_intel.paper_trading",
+    "trading_intel.risk_management",
+    "trading_intel.backtesting",
+]
+forbidden_modules = ["trading_intel.forecasting"]
+
+[[tool.importlinter.contracts]]
+name = "forecasting never reaches trading or providers"
+type = "forbidden"
+source_modules = ["trading_intel.forecasting"]
+forbidden_modules = [
+    "trading_intel.trade_signals",
+    "trading_intel.paper_trading",
+    "trading_intel.risk_management",
+    "trading_intel.backtesting",
+    "trading_intel.data_providers",
+    "trading_intel.market_data",
+    "trading_intel.events",
+    "trading_intel.api",
+]

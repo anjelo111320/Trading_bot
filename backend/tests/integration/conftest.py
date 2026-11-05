@@ -28,6 +28,7 @@ CLEANED = (
     "api_usage",
     "backtest_runs",
     "dataset_versions",
+    "model_forecasts",
 )
 
 
