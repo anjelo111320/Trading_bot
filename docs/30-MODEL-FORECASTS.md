@@ -129,6 +129,23 @@ uv run python -m trading_intel.entrypoints.forecast resolve
 uv run python -m trading_intel.entrypoints.forecast report --write ../docs/reports/kronos-study.md
 ```
 
+## Dashboard View
+
+The Forecast page (`/forecast`) draws the latest forecast over the candles, from `GET /api/v1/forecasts/latest` ([13-API-CONTRACTS.md](13-API-CONTRACTS.md)).
+
+- **Kronos:** its 30 paths as faint blue lines, with its 10th to 90th percentile band and middle line.
+- **Baseline:** the time machine's band in grey, with a dashed middle line.
+- **Python levels:** solid lines for levels price has reacted at, dotted or dashed for calculated ones. Labels sit in an empty margin on the right, so none covers a candle or the forecast.
+- **The plan:** a position box, red between entry and stop and green toward the targets, across the time the plan was valid. Its status comes from the shared simulator on the 15M candles that followed.
+- **Patterns:** each chart pattern's turning points, measured-move targets and invalidation, in orange.
+- **Candle signals:** arrows, one per direction per bar, named in a panel and under the cursor.
+
+Every layer can be switched off from the legend. Candles switch between 15M, 1H, 4H and 1D, and the forecast between its first 4 hours and all 24. On 4H and 1D candles, the hourly forecast is placed proportionally between bars. Side panels list the same values as text: Kronos against the baseline, the track record warning, the plan, the levels with reach shares, recent candle signals and the market context.
+
+Colours were checked on the chart surface with the dataviz palette validator. Kronos blue against pattern orange separates by ΔE 26.8 under colour-blind simulation, and risk and reward always carry text labels.
+
+The page only reads. A manual analyst plan, such as the BTC test of 2026-11-05, is labelled as one, because the live system calls Claude only at a setup.
+
 ## Study, 2025-09-10 to 2025-10-31
 
 Pending: the run started on 2026-11-05.

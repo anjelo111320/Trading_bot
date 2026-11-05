@@ -69,6 +69,24 @@ Errors use one structure:
 
 `GET /market/price` returns `price` as null when no live value is held. A client must never present an old price as current, so the response always includes `age_seconds` and `stale`.
 
+## Forecast Endpoint
+
+| Method and path | Purpose | Limits |
+|---|---|---|
+| `GET /api/v1/forecasts/latest` | The latest Kronos forecast for an instrument, with what Python saw at that close | Read-only. 404 when none is stored |
+
+It takes `provider` and `instrument_id`. The response is labelled `unvalidated model forecast` (D040) and holds:
+
+- Per-candle bands of the close for Kronos and the baseline, and Kronos's 30 sampled closes.
+- Summaries for 4 and 24 candles.
+- The level catalogue with each source's reach shares.
+- Chart patterns from the last 72 hours and candle signals from the last 24.
+- Trend, regime and strategy decisions.
+- The model's track record.
+- The newest manual analyst plan from `data/signals`, if any, replayed on the 15M candles that followed through the shared simulator.
+
+Forecast values are floats because they are model samples. Market prices stay strings. Levels, patterns and the baseline are recomputed from stored candles at the forecast's close, and `baseline_rebuilt` says whether the redrawn baseline matched the stored one exactly.
+
 ## Event Envelope
 
 Every event has this structure. JSON Schemas are exported from Pydantic by `domain/events.py`.
