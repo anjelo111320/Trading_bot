@@ -6,14 +6,14 @@ Delivery is at-least-once, and every write is idempotent, so a repeat changes no
 import argparse
 import asyncio
 import signal
-from datetime import datetime
+from datetime import datetime, timedelta
 from typing import Final
 
 import structlog
 from redis.asyncio import Redis
 from sqlalchemy.ext.asyncio import AsyncEngine
 
-from trading_intel.core.clock import SystemClock
+from trading_intel.core.clock import Clock, SystemClock
 from trading_intel.core.logging import configure_logging
 from trading_intel.core.settings import load_settings
 from trading_intel.database.engine import create_engine
@@ -45,6 +45,13 @@ from trading_intel.trade_signals.service import SignalService
 log = structlog.get_logger(__name__)
 
 GROUP: Final = "quant"
+# Strategies act only on fresh closes. After sleep, or a backlog in the stream, older closes
+# are skipped: trading them late would act on a market that has moved. Paper fills still
+# replay every minute, which is safe because each fill is recorded once.
+FRESH: Final[dict[Timeframe, timedelta]] = {
+    Timeframe.H1: timedelta(minutes=15),
+    Timeframe.D1: timedelta(hours=1),
+}
 LOOKBACK_CANDLES: Final = 600
 MINIMUM_CANDLES: Final = 30
 
@@ -61,7 +68,9 @@ class TradingLoop:
         owner_email: str,
         provider_id: int,
         instruments: dict[int, Instrument],
+        clock: Clock,
     ) -> None:
+        self._clock = clock
         self._signals = signals
         self._paper = paper
         self._accounts = accounts
@@ -78,7 +87,16 @@ class TradingLoop:
         if timeframe is Timeframe.M1:
             await self._paper.sync(provider_id, instrument_id)
             return
-        if timeframe not in (Timeframe.H1, Timeframe.D1):
+        fresh = FRESH.get(timeframe)
+        if fresh is None:
+            return
+        if self._clock.now() - close_time > fresh:
+            log.info(
+                "signal_skipped_stale",
+                instrument=instrument.symbol,
+                timeframe=timeframe.value,
+                close_time=close_time.isoformat(),
+            )
             return
         account = await self._accounts.ensure_account(self._owner_email)
         if account is None:
@@ -184,6 +202,7 @@ async def build_service(engine: AsyncEngine, owner_email: str) -> QuantService:
         owner_email,
         provider_ids["binance_usdm"],
         {item.instrument.id: item.instrument for item in listed},
+        clock,
     )
     return QuantService(candles, AnalysisRepository(engine), provider_ids, trading)
 
