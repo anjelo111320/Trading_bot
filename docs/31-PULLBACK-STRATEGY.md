@@ -1,7 +1,7 @@
 # Trend Pullback Strategy
 
 Date: 2026-11-06
-Status: Pre-registered before any run. Results are added below once, without changing the rules.
+Status: Pre-registered before any run, then run once on 2026-11-06 and **rejected**. The results are added below without changing the rules.
 
 ## Why This Strategy
 
@@ -46,3 +46,27 @@ Status: Pre-registered before any run. Results are added below once, without cha
 
 - [26-PATTERN-RESEARCH.md](26-PATTERN-RESEARCH.md), section 2, for the evidence on candlestick patterns.
 - Linda Bradford Raschke and Laurence Connors, *Street Smarts* (1995), for pullback entries in trends.
+
+## Results
+
+Run once on 2026-11-06, with the rules above unchanged and committed before the run. Simulated results. A profitable backtest is not proof of future profitability. Reports: [BTC](reports/pullback-backtest-btc.md), [ETH](reports/pullback-backtest-eth.md).
+
+| 2020-01-01 to 2025-11-01, normal costs | BTC | ETH |
+|---|---|---|
+| Trades | 513 | 696 |
+| Net P/L on 10,000 | -5,736 | -6,094 |
+| Expectancy, with 95% interval | -0.18R, -0.31 to -0.03 | -0.14R, -0.26 to -0.01 |
+| Profit factor | 0.78 | 0.83 |
+| Maximum drawdown | 58% | 64% |
+| Expectancy at 2× costs | -0.28R | -0.20R |
+| Random with-trend entries, same exits | -0.005R mean, 95th percentile +0.058R | -0.063R mean, 95th percentile -0.008R |
+| Walk-forward test folds | 199 trades, -0.14R, 2 of 6 positive | 307 trades, -0.20R, none positive |
+| Promotion gate | 0 of 5 | 1 of 5, trade count only |
+
+What this says:
+
+- The hypothesis is rejected. Both coins lost money with 95% confidence, at every cost level, and did worse than random entries with the same trend filter and exits.
+- Most trades ended at the stop: 405 of 513 on BTC and 550 of 696 on ETH. When a reversal candle formed at a level inside a trend, the level more often broke than held.
+- The per-candle rows are small samples. Picking the candles that happened to do well would be fitting the past.
+
+Decision: rejected. The strategy stays out of the live view, the paper loop and Claude's evidence. Its code and tests remain so the result can be reproduced.

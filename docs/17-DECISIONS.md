@@ -390,6 +390,16 @@ Consequences:
 - The holdout is not used for this strategy, because its direction is already known.
 Revisit conditions: the risk engine gains a native rule for trades without fixed targets.
 
+### D041: Trend pullback strategy, tested and rejected
+Date: 2026-11-06.
+Status: Added at the owner's request for more strategies, and rejected by its own pre-registered test.
+Context: Both earlier strategies enter on strength. The owner asked for more strategies, and a market pulling back inside its trend had no rule.
+Decision: Add `trend_pullback`, pre-registered in [31-PULLBACK-STRATEGY.md](31-PULLBACK-STRATEGY.md): a with-trend 1H reversal candle at a Python support or resistance level, with 4H and 1D agreeing, a stop beyond the level, and catalogue targets at least 2R away. It ran once on 2020 to 2025 and lost money on BTC and ETH with 95% confidence, worse than random entries with the same trend filter and exits. It is kept out of the live view, the paper loop and Claude's evidence.
+Consequences:
+- The code, tests and reports stay, so the result can be reproduced.
+- In this history, a reversal candle at a level inside a trend more often came before the level broke than before it held. Claude's reviews should not treat one as a reason to enter.
+Revisit conditions: none for this version. A changed version is a new trial with its own pre-registration.
+
 ## Owner Decisions, 2026-11-05 Model Forecasts
 
 ### D040: Kronos forecasts are labelled evidence, never prices
