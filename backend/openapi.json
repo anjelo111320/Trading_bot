@@ -582,6 +582,7 @@
         "type": "object"
       },
       "ForecastView": {
+        "description": "Python's view at the latest 1H close, with a Kronos run only while Kronos is on.",
         "properties": {
           "analysis_as_of": {
             "format": "date-time",
@@ -591,23 +592,6 @@
           "analysis_close": {
             "title": "Analysis Close",
             "type": "string"
-          },
-          "as_of": {
-            "format": "date-time",
-            "title": "As Of",
-            "type": "string"
-          },
-          "atr": {
-            "title": "Atr",
-            "type": "number"
-          },
-          "baseline_paths": {
-            "title": "Baseline Paths",
-            "type": "integer"
-          },
-          "baseline_rebuilt": {
-            "title": "Baseline Rebuilt",
-            "type": "boolean"
           },
           "candle_signals": {
             "items": {
@@ -619,61 +603,29 @@
           "context": {
             "$ref": "#/components/schemas/MarketContextView"
           },
-          "created_at": {
-            "format": "date-time",
-            "title": "Created At",
-            "type": "string"
-          },
-          "forecast_current": {
-            "title": "Forecast Current",
-            "type": "boolean"
-          },
-          "horizons": {
-            "items": {
-              "$ref": "#/components/schemas/HorizonView"
-            },
-            "title": "Horizons",
-            "type": "array"
-          },
           "instrument_id": {
             "title": "Instrument Id",
             "type": "integer"
           },
-          "label": {
-            "title": "Label",
-            "type": "string"
+          "kronos": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/KronosView"
+              },
+              {
+                "type": "null"
+              }
+            ]
           },
-          "last_close": {
-            "title": "Last Close",
-            "type": "string"
+          "kronos_enabled": {
+            "title": "Kronos Enabled",
+            "type": "boolean"
           },
           "levels": {
             "items": {
               "$ref": "#/components/schemas/LevelView"
             },
             "title": "Levels",
-            "type": "array"
-          },
-          "model": {
-            "title": "Model",
-            "type": "string"
-          },
-          "model_paths": {
-            "title": "Model Paths",
-            "type": "integer"
-          },
-          "model_revision": {
-            "title": "Model Revision",
-            "type": "string"
-          },
-          "paths": {
-            "items": {
-              "items": {
-                "type": "number"
-              },
-              "type": "array"
-            },
-            "title": "Paths",
             "type": "array"
           },
           "patterns": {
@@ -707,57 +659,29 @@
             "title": "Provider",
             "type": "string"
           },
-          "reason": {
-            "title": "Reason",
-            "type": "string"
-          },
-          "steps": {
-            "items": {
-              "$ref": "#/components/schemas/ForecastStepView"
-            },
-            "title": "Steps",
-            "type": "array"
-          },
           "symbol": {
             "title": "Symbol",
             "type": "string"
           },
           "timeframe": {
             "$ref": "#/components/schemas/Timeframe"
-          },
-          "track_record": {
-            "$ref": "#/components/schemas/TrackRecordView"
           }
         },
         "required": [
-          "label",
           "provider",
           "instrument_id",
           "symbol",
           "timeframe",
-          "as_of",
           "analysis_as_of",
           "analysis_close",
-          "forecast_current",
-          "created_at",
-          "reason",
-          "model",
-          "model_revision",
-          "last_close",
-          "atr",
-          "model_paths",
-          "baseline_paths",
-          "baseline_rebuilt",
-          "steps",
-          "paths",
-          "horizons",
           "projection",
           "levels",
           "patterns",
           "candle_signals",
           "context",
-          "track_record",
-          "plan"
+          "plan",
+          "kronos_enabled",
+          "kronos"
         ],
         "title": "ForecastView",
         "type": "object"
@@ -1024,6 +948,108 @@
           "tick_size"
         ],
         "title": "InstrumentView",
+        "type": "object"
+      },
+      "KronosView": {
+        "description": "A stored Kronos run beside the baseline drawn at its own close (D040).",
+        "properties": {
+          "as_of": {
+            "format": "date-time",
+            "title": "As Of",
+            "type": "string"
+          },
+          "atr": {
+            "title": "Atr",
+            "type": "number"
+          },
+          "baseline_paths": {
+            "title": "Baseline Paths",
+            "type": "integer"
+          },
+          "baseline_rebuilt": {
+            "title": "Baseline Rebuilt",
+            "type": "boolean"
+          },
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "current": {
+            "title": "Current",
+            "type": "boolean"
+          },
+          "horizons": {
+            "items": {
+              "$ref": "#/components/schemas/HorizonView"
+            },
+            "title": "Horizons",
+            "type": "array"
+          },
+          "label": {
+            "title": "Label",
+            "type": "string"
+          },
+          "last_close": {
+            "title": "Last Close",
+            "type": "string"
+          },
+          "model": {
+            "title": "Model",
+            "type": "string"
+          },
+          "model_paths": {
+            "title": "Model Paths",
+            "type": "integer"
+          },
+          "model_revision": {
+            "title": "Model Revision",
+            "type": "string"
+          },
+          "paths": {
+            "items": {
+              "items": {
+                "type": "number"
+              },
+              "type": "array"
+            },
+            "title": "Paths",
+            "type": "array"
+          },
+          "reason": {
+            "title": "Reason",
+            "type": "string"
+          },
+          "steps": {
+            "items": {
+              "$ref": "#/components/schemas/ForecastStepView"
+            },
+            "title": "Steps",
+            "type": "array"
+          },
+          "track_record": {
+            "$ref": "#/components/schemas/TrackRecordView"
+          }
+        },
+        "required": [
+          "label",
+          "as_of",
+          "current",
+          "created_at",
+          "reason",
+          "model",
+          "model_revision",
+          "last_close",
+          "atr",
+          "model_paths",
+          "baseline_paths",
+          "baseline_rebuilt",
+          "steps",
+          "paths",
+          "horizons",
+          "track_record"
+        ],
+        "title": "KronosView",
         "type": "object"
       },
       "LevelView": {
@@ -2781,6 +2807,7 @@
     },
     "/api/v1/forecasts/latest": {
       "get": {
+        "description": "Python's view at the latest 1H close. A Kronos run is added only while Kronos is on.",
         "operationId": "latest_forecast_api_v1_forecasts_latest_get",
         "parameters": [
           {

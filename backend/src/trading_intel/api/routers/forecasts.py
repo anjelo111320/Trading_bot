@@ -15,9 +15,11 @@ from fastapi import APIRouter, Depends, Query, status
 from trading_intel.api.auth import Owner
 from trading_intel.api.container import Container, get_container
 from trading_intel.api.forecast_view import (
+    PROJECTION_CANDLES,
     SETUP,
     AnalysisPart,
     ForecastPart,
+    KronosRun,
     MarketInputs,
     analysis_part,
     assemble,
@@ -33,7 +35,7 @@ from trading_intel.api.schemas.forecasts import (
     ForecastView,
     PlanView,
 )
-from trading_intel.core.errors import NotFoundError
+from trading_intel.core.errors import ConflictError, NotFoundError
 from trading_intel.database.repositories.reference import ProviderInstrument
 from trading_intel.domain.base import DataOrigin
 from trading_intel.domain.candles import Timeframe
@@ -83,31 +85,29 @@ async def latest_forecast(
     provider: Annotated[str, Query(min_length=1, max_length=40)],
     instrument_id: Annotated[int, Query(gt=0)],
 ) -> ForecastView:
+    """Python's view at the latest 1H close. A Kronos run is added only while Kronos is on."""
     item = await _instrument(services, provider, instrument_id)
     provider_id, candles = item.provider_id, services.candles
-    config = KronosConfig()
-    stored = await services.forecasts.latest(
-        provider_id, instrument_id, SETUP, config.model, config.model_revision
-    )
     rules = await services.rules.current(provider_id, instrument_id)
     latest = await candles.latest_open_time(provider_id, instrument_id, SETUP)
-    if stored is None:
-        raise NotFoundError("No forecast is stored for this instrument yet.")
     if rules is None or latest is None:
-        raise NotFoundError("The candles or rules behind this forecast are not stored.")
+        raise NotFoundError("No candles or rules are stored for this instrument yet.")
 
-    forecast = _forecast_parts.get(stored.id)
-    if forecast is None:
-        size = max(stored.key.horizon_candles, TimeMachineParameters().lookback) + ATR_PERIOD + 1
-        history = await candles.for_analysis(
-            provider_id, instrument_id, SETUP, stored.key.as_of, size
+    enabled = services.settings.kronos_enabled
+    config = KronosConfig()
+    stored = (
+        await services.forecasts.latest(
+            provider_id, instrument_id, SETUP, config.model, config.model_revision
         )
-        computed = await asyncio.to_thread(
-            forecast_part, stored, await services.forecasts.paths(stored.id), history
-        )
-        forecast = _remember(_forecast_parts, stored.id, computed)
-
-    parameters, horizon = stored_parameters(stored), stored.key.horizon_candles
+        if enabled
+        else None
+    )
+    # The projection uses a stored run's baseline settings, so the two can be compared.
+    parameters, horizon = (
+        (stored_parameters(stored), stored.key.horizon_candles)
+        if stored is not None
+        else (TimeMachineParameters(), PROJECTION_CANDLES)
+    )
     analysis_key = (instrument_id, SETUP.close_time(latest), parameters, horizon)
     analysis = _analysis_parts.get(analysis_key)
     if analysis is None:
@@ -129,16 +129,29 @@ async def latest_forecast(
             await asyncio.to_thread(analysis_part, market, parameters, horizon),
         )
 
-    rows = await services.forecasts.resolved(
-        model=config.model,
-        model_revision=config.model_revision,
-        timeframe=SETUP,
-        horizon_candles=stored.key.horizon_candles,
-        reasons=REASONS,
-    )
-    record = track_record(
-        [(Score.from_json(r.model_score), Score.from_json(r.baseline_score)) for r in rows]
-    )
+    kronos: KronosRun | None = None
+    if stored is not None:
+        forecast = _forecast_parts.get(stored.id)
+        if forecast is None:
+            size = max(stored.key.horizon_candles, parameters.lookback) + ATR_PERIOD + 1
+            history = await candles.for_analysis(
+                provider_id, instrument_id, SETUP, stored.key.as_of, size
+            )
+            computed = await asyncio.to_thread(
+                forecast_part, stored, await services.forecasts.paths(stored.id), history
+            )
+            forecast = _remember(_forecast_parts, stored.id, computed)
+        rows = await services.forecasts.resolved(
+            model=config.model,
+            model_revision=config.model_revision,
+            timeframe=SETUP,
+            horizon_candles=stored.key.horizon_candles,
+            reasons=REASONS,
+        )
+        record = track_record(
+            [(Score.from_json(r.model_score), Score.from_json(r.baseline_score)) for r in rows]
+        )
+        kronos = KronosRun(stored, forecast, record)
 
     plan: PlanView | None = None
     manual = await asyncio.to_thread(
@@ -157,17 +170,17 @@ async def latest_forecast(
             )
             if c.data_origin is not DataOrigin.SYNTHETIC
         ]
-        status_now = plan_status(manual, quarters, rules.tick_size, rules.lot_step, stored.atr)
+        status_now = plan_status(manual, quarters, rules.tick_size, rules.lot_step, analysis.atr)
         plan = plan_view(manual, status_now)
 
     return assemble(
         provider=provider,
+        instrument_id=instrument_id,
         symbol=item.instrument.symbol,
-        stored=stored,
-        forecast=forecast,
         analysis=analysis,
-        record=record,
         plan=plan,
+        kronos_enabled=enabled,
+        kronos=kronos,
     )
 
 
@@ -191,6 +204,10 @@ def _job_view(services: Container) -> AnalysisJobView:
 )
 async def start_analysis(_: Owner, services: Services, body: AnalyseRequest) -> AnalysisJobView:
     """Forecast from the latest stored 1H close. Returns at once; poll the status."""
+    if not services.settings.kronos_enabled:
+        raise ConflictError(
+            "Kronos is off (D040). Python's analysis updates at every 1H close on its own."
+        )
     item = await _instrument(services, body.provider, body.instrument_id)
     latest = await services.candles.latest_open_time(item.provider_id, item.instrument.id, SETUP)
     if latest is None:

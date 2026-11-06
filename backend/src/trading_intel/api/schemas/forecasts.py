@@ -180,16 +180,12 @@ class PlanView(BaseModel):
     python_at_close: list[StrategyView] | None
 
 
-class ForecastView(BaseModel):
+class KronosView(BaseModel):
+    """A stored Kronos run beside the baseline drawn at its own close (D040)."""
+
     label: str
-    provider: str
-    instrument_id: int
-    symbol: str
-    timeframe: Timeframe
-    as_of: UtcDatetime  # The forecast's close: Kronos and the baseline drawn beside it.
-    analysis_as_of: UtcDatetime  # The latest 1H close: levels, patterns, the projection.
-    analysis_close: str
-    forecast_current: bool  # The Kronos forecast is from the latest 1H close.
+    as_of: UtcDatetime  # The run's close.
+    current: bool  # The run is from the latest 1H close.
     created_at: UtcDatetime
     reason: str
     model: str
@@ -202,13 +198,26 @@ class ForecastView(BaseModel):
     steps: list[ForecastStepView]
     paths: list[list[float]]  # Kronos's sampled closes, one list per path.
     horizons: list[HorizonView]
+    track_record: TrackRecordView
+
+
+class ForecastView(BaseModel):
+    """Python's view at the latest 1H close, with a Kronos run only while Kronos is on."""
+
+    provider: str
+    instrument_id: int
+    symbol: str
+    timeframe: Timeframe
+    analysis_as_of: UtcDatetime  # The latest 1H close: levels, patterns, the projection.
+    analysis_close: str
     projection: ProjectionView | None  # None when too few 1H candles are stored.
     levels: list[LevelView]
     patterns: list[ChartPatternView]
     candle_signals: list[CandleSignalView]
     context: MarketContextView
-    track_record: TrackRecordView
     plan: PlanView | None
+    kronos_enabled: bool  # Off since 2026-11-06 (D040).
+    kronos: KronosView | None  # None while Kronos is off, or before its first stored run.
 
 
 class AnalyseRequest(BaseModel):

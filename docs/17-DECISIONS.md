@@ -404,7 +404,7 @@ Revisit conditions: none for this version. A changed version is a new trial with
 
 ### D040: Kronos forecasts are labelled evidence, never prices
 Date: 2026-11-05.
-Status: Accepted by the owner, who chose option A.
+Status: Accepted by the owner, who chose option A. **Retired by the owner on 2026-11-06** after the study and the audit: the setting `kronos_enabled` is off, so Kronos is not on the dashboard, not run by re-analysis or at setups, and not in Claude's evidence. Its code, stored runs and research commands stay, so it can be studied again under a new pre-registered configuration.
 Context: The owner asked to install Kronos, a pretrained candle forecasting model, and day-trader-skill, so the system could give exact entries and targets. No model gives exact prices. Kronos samples possible futures, and whether it beats ordinary movement is unknown.
 Options considered: A, forecasts as evidence for Claude only; B, forecast levels that Claude can also select as entries or targets.
 Decision:

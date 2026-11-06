@@ -73,11 +73,11 @@ Errors use one structure:
 
 | Method and path | Purpose | Limits |
 |---|---|---|
-| `GET /api/v1/forecasts/latest` | The latest Kronos forecast for an instrument, with what Python sees at the latest 1H close | Read-only. 404 when none is stored |
-| `POST /api/v1/forecasts/analyse` | Start a re-analysis: a Kronos forecast from the latest stored 1H close, in the background | 202. 409 while one is running |
+| `GET /api/v1/forecasts/latest` | What Python sees at the latest 1H close, with the baseline projection, and a Kronos run only while Kronos is on | Read-only. 404 when no candles or rules are stored |
+| `POST /api/v1/forecasts/analyse` | Start a re-analysis: a Kronos forecast from the latest stored 1H close, in the background | 202. 409 while one is running, or while Kronos is off |
 | `GET /api/v1/forecasts/analyse` | The latest re-analysis: `idle`, `running`, `succeeded` or `failed`, with a message | |
 
-It takes `provider` and `instrument_id`. The response is labelled `unvalidated model forecast` (D040) and holds:
+It takes `provider` and `instrument_id`. Kronos was retired on 2026-11-06 (D040): `kronos_enabled` is false and `kronos` is null, so everything Kronos below is absent unless the setting is turned on. A Kronos run, when present, is labelled `unvalidated model forecast`. The response holds:
 
 - Per-candle bands of the close for Kronos and the baseline, and Kronos's 30 sampled closes.
 - Summaries for 4 and 24 candles.

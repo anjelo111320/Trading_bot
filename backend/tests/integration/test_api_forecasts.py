@@ -66,7 +66,7 @@ def walk(timeframe: Timeframe, count: int, provider: int, instrument: int) -> li
     return rows
 
 
-async def seed() -> tuple[int, int, str, ClosedCandle]:
+async def seed(forecast: bool = True) -> tuple[int, int, str, ClosedCandle]:
     """Candles on four timeframes, rules, and one stored forecast from the last 1H close."""
     ingest = create_engine(make_settings().ingest_database_url)
     listed = await ReferenceRepository(ingest).provider_instruments("binance_usdm")
@@ -92,8 +92,10 @@ async def seed() -> tuple[int, int, str, ClosedCandle]:
         hours[0].open_time,
     )
     await ingest.dispose()
-    app = create_engine(make_settings().database_url)
     last = hours[-1]
+    if not forecast:
+        return provider, instrument, listed[0].instrument.symbol, last
+    app = create_engine(make_settings().database_url)
     await ForecastService(
         CandleRepository(app),
         ForecastRepository(app),
@@ -150,10 +152,12 @@ def write_plan(folder: Path, symbol: str, last: ClosedCandle) -> dict[str, Any]:
     return signal
 
 
-@pytest.fixture
-def api(clean_database: None, tmp_path: Path) -> Iterator[TestClient]:
+def logged_in(tmp_path: Path, kronos: bool) -> Iterator[TestClient]:
     settings = make_settings(
-        owner_email=EMAIL, owner_password=PASSWORD, manual_signals_dir=tmp_path
+        owner_email=EMAIL,
+        owner_password=PASSWORD,
+        manual_signals_dir=tmp_path,
+        kronos_enabled=kronos,
     )
     with TestClient(create_app(settings), base_url="http://127.0.0.1") as client:
         response = client.post(
@@ -165,35 +169,48 @@ def api(clean_database: None, tmp_path: Path) -> Iterator[TestClient]:
         yield client
 
 
+@pytest.fixture
+def api(clean_database: None, tmp_path: Path) -> Iterator[TestClient]:
+    """The default since 2026-11-06: Kronos is off (D040)."""
+    yield from logged_in(tmp_path, kronos=False)
+
+
+@pytest.fixture
+def kronos_api(clean_database: None, tmp_path: Path) -> Iterator[TestClient]:
+    yield from logged_in(tmp_path, kronos=True)
+
+
 def url(instrument: int) -> str:
     return f"/api/v1/forecasts/latest?provider=binance_usdm&instrument_id={instrument}"
 
 
 def test_the_view_holds_the_forecast_levels_patterns_and_a_waiting_plan(
-    api: TestClient, tmp_path: Path
+    kronos_api: TestClient, tmp_path: Path
 ) -> None:
     _, instrument, symbol, last = asyncio.run(seed())
     write_plan(tmp_path, symbol, last)
-    response = api.get(url(instrument))
+    response = kronos_api.get(url(instrument))
     assert response.status_code == 200, response.text
     view = response.json()
-    assert view["label"] == "unvalidated model forecast"
-    assert view["symbol"] == symbol and view["reason"] == "manual"
-    assert view["analysis_as_of"] == view["as_of"]
-    assert view["baseline_rebuilt"] is True
-    assert view["model_paths"] == 5 and view["baseline_paths"] == 200
-    assert len(view["steps"]) == 4 and len(view["paths"]) == 5
-    assert view["steps"][0]["open_time"].startswith(
+    assert view["symbol"] == symbol and view["kronos_enabled"] is True
+    kronos = view["kronos"]
+    assert kronos["label"] == "unvalidated model forecast" and kronos["reason"] == "manual"
+    assert view["analysis_as_of"] == kronos["as_of"] and kronos["current"] is True
+    assert kronos["baseline_rebuilt"] is True
+    assert kronos["model_paths"] == 5 and kronos["baseline_paths"] == 200
+    assert len(kronos["steps"]) == 4 and len(kronos["paths"]) == 5
+    assert kronos["steps"][0]["open_time"].startswith(
         (last.open_time + timedelta(hours=1)).strftime("%Y-%m-%dT%H")
     )
-    assert [h["candles"] for h in view["horizons"]] == [4]
-    assert view["forecast_current"] is True
+    assert [h["candles"] for h in kronos["horizons"]] == [4]
     projection = view["projection"]
     assert projection["as_of"] == view["analysis_as_of"]
-    assert projection["last_close"] == view["last_close"] and projection["paths"] == 200
-    assert [s["open_time"] for s in projection["steps"]] == [s["open_time"] for s in view["steps"]]
+    assert projection["last_close"] == kronos["last_close"] and projection["paths"] == 200
+    assert [s["open_time"] for s in projection["steps"]] == [
+        s["open_time"] for s in kronos["steps"]
+    ]
     # At the forecast's own close, the projection is the forecast's baseline, drawn again.
-    assert projection["horizons"][0]["baseline"] == view["horizons"][0]["baseline"]
+    assert projection["horizons"][0]["baseline"] == kronos["horizons"][0]["baseline"]
     assert view["levels"], "the catalogue should have levels"
     for level in view["levels"]:
         assert level["position"] in ("above", "below")
@@ -203,7 +220,7 @@ def test_the_view_holds_the_forecast_levels_patterns_and_a_waiting_plan(
     assert view["context"]["strategies"][0]["name"] == "1H pattern breakout"
     for strategy in view["context"]["strategies"]:
         assert (strategy["proposal"] is None) == (strategy["action"] == "NO_TRADE")
-    assert view["track_record"] == {
+    assert kronos["track_record"] == {
         "resolved": 0,
         "status": "too few forecasts",
         "brier_model": None,
@@ -297,10 +314,39 @@ def test_a_plan_is_replayed_on_the_candles_that_followed(api: TestClient, tmp_pa
     assert D(status["net_pnl"]) > 0 and status["result_r"] > 0
 
 
-def test_no_stored_forecast_is_a_clear_not_found(api: TestClient) -> None:
+def test_a_coin_without_candles_is_a_clear_not_found(api: TestClient) -> None:
     response = api.get(url(1))
     assert response.status_code == 404
     assert response.json()["error"]["code"] == "not_found"
+
+
+def test_with_kronos_off_the_view_is_python_alone(api: TestClient) -> None:
+    """Kronos was retired on 2026-11-06 (D040): a stored run is not shown, and none is needed."""
+    _, instrument, _, last = asyncio.run(seed())
+    view = api.get(url(instrument)).json()
+    assert view["kronos_enabled"] is False and view["kronos"] is None
+    projection = view["projection"]
+    assert projection["paths"] == 10_000 and len(projection["steps"]) == 24
+    assert [h["candles"] for h in projection["horizons"]] == [4, 24]
+    assert projection["as_of"].startswith(last.close_time.strftime("%Y-%m-%dT%H:%M"))
+    for level in view["levels"]:
+        assert [r["candles"] for r in level["reach"]] == [4, 24]
+        assert all(r["model"] is None and r["baseline"] is not None for r in level["reach"])
+
+
+def test_a_coin_kronos_never_ran_on_still_has_a_view(kronos_api: TestClient) -> None:
+    _, instrument, _, _ = asyncio.run(seed(forecast=False))
+    view = kronos_api.get(url(instrument)).json()
+    assert view["kronos_enabled"] is True and view["kronos"] is None
+    assert view["projection"] is not None and view["context"]["strategies"]
+
+
+def test_reanalysis_is_refused_while_kronos_is_off(api: TestClient) -> None:
+    _, instrument, _, _ = asyncio.run(seed())
+    body = {"provider": "binance_usdm", "instrument_id": instrument}
+    response = api.post("/api/v1/forecasts/analyse", json=body)
+    assert response.status_code == 409
+    assert "Kronos is off" in response.json()["error"]["message"]
 
 
 def test_the_view_needs_the_owner(clean_database: None) -> None:
@@ -308,21 +354,23 @@ def test_the_view_needs_the_owner(clean_database: None) -> None:
         assert client.get(url(1)).status_code == 401
 
 
-def test_python_follows_the_latest_close_while_kronos_stays_put(api: TestClient) -> None:
+def test_python_follows_the_latest_close_while_kronos_stays_put(kronos_api: TestClient) -> None:
     provider, instrument, _, last = asyncio.run(seed())
     later = [
         c.model_copy(update={"provider_id": provider, "instrument_id": instrument})
         for c in walk(Timeframe.H1, HOURS + 3, provider, instrument)[HOURS:]
     ]
     asyncio.run(seed_quarters(provider, instrument, later))
-    view = api.get(url(instrument)).json()
-    assert view["as_of"].startswith(last.close_time.strftime("%Y-%m-%dT%H:%M"))
+    view = kronos_api.get(url(instrument)).json()
+    assert view["kronos"]["as_of"].startswith(last.close_time.strftime("%Y-%m-%dT%H:%M"))
     assert view["analysis_as_of"].startswith(later[-1].close_time.strftime("%Y-%m-%dT%H:%M"))
     assert D(view["analysis_close"]) == later[-1].close.normalize()
-    assert view["forecast_current"] is False
+    assert view["kronos"]["current"] is False
 
 
-def test_the_projection_starts_at_the_latest_close_when_kronos_is_old(api: TestClient) -> None:
+def test_the_projection_starts_at_the_latest_close_when_kronos_is_old(
+    kronos_api: TestClient,
+) -> None:
     """Regression: the chart's future was drawn from the forecast's close, hours in the past."""
     provider, instrument, _, last = asyncio.run(seed())
     later = [
@@ -330,13 +378,13 @@ def test_the_projection_starts_at_the_latest_close_when_kronos_is_old(api: TestC
         for c in walk(Timeframe.H1, HOURS + 3, provider, instrument)[HOURS:]
     ]
     asyncio.run(seed_quarters(provider, instrument, later))
-    view = api.get(url(instrument)).json()
+    view = kronos_api.get(url(instrument)).json()
     projection = view["projection"]
     assert projection["as_of"] == view["analysis_as_of"]
     assert D(projection["last_close"]) == later[-1].close.normalize()
     first = projection["steps"][0]["open_time"]
     assert first.startswith((later[-1].open_time + timedelta(hours=1)).strftime("%Y-%m-%dT%H"))
-    assert view["steps"][0]["open_time"].startswith(
+    assert view["kronos"]["steps"][0]["open_time"].startswith(
         (last.open_time + timedelta(hours=1)).strftime("%Y-%m-%dT%H")
     )
     for level in view["levels"]:
@@ -374,7 +422,8 @@ def finish(api: TestClient) -> dict[str, Any]:
     return api.get("/api/v1/forecasts/analyse").json()
 
 
-def test_reanalysis_forecasts_the_latest_close_once_at_a_time(api: TestClient) -> None:
+def test_reanalysis_forecasts_the_latest_close_once_at_a_time(kronos_api: TestClient) -> None:
+    api = kronos_api
     provider, instrument, symbol, _ = asyncio.run(seed())
     later = [
         c.model_copy(update={"provider_id": provider, "instrument_id": instrument})
@@ -403,14 +452,15 @@ def test_reanalysis_forecasts_the_latest_close_once_at_a_time(api: TestClient) -
     job = finish(api)
     assert job["state"] == "succeeded" and job["message"] is None
     assert job["as_of"].startswith(later[-1].close_time.strftime("%Y-%m-%dT%H:%M"))
-    assert api.get(url(instrument)).json()["as_of"] == job["as_of"]
+    assert api.get(url(instrument)).json()["kronos"]["as_of"] == job["as_of"]
     again = api.post("/api/v1/forecasts/analyse", json=body)
     assert again.status_code == 202
     assert finish(api)["message"].startswith("Already analysed at this close")
     assert model.calls == 1
 
 
-def test_reanalysis_reports_why_it_could_not_run(api: TestClient) -> None:
+def test_reanalysis_reports_why_it_could_not_run(kronos_api: TestClient) -> None:
+    api = kronos_api
     provider, instrument, _, _ = asyncio.run(seed())
     later = [
         c.model_copy(update={"provider_id": provider, "instrument_id": instrument})

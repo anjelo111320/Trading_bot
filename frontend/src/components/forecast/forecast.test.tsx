@@ -2,7 +2,7 @@
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-import type { AnalysisJob, ForecastPlan, ForecastProjection, ForecastStrategy, ForecastView } from "@/lib/api/client";
+import type { AnalysisJob, ForecastKronos, ForecastPlan, ForecastProjection, ForecastStrategy, ForecastView } from "@/lib/api/client";
 
 import { liveBar, signalMarkers } from "./ForecastChart";
 import { LiveStatus, ReanalyseButton, analysisText, duration } from "./LiveControls";
@@ -72,16 +72,10 @@ const PROJECTION: ForecastProjection = {
   ],
 };
 
-const VIEW: ForecastView = {
+const KRONOS: ForecastKronos = {
   label: "unvalidated model forecast",
-  provider: "binance_usdm",
-  instrument_id: 3,
-  symbol: "BTCUSDT",
-  timeframe: "1h",
   as_of: "2026-11-05T02:59:59.999Z",
-  analysis_as_of: "2026-11-05T02:59:59.999Z",
-  analysis_close: "80544.2",
-  forecast_current: true,
+  current: true,
   created_at: "2026-11-05T03:08:00Z",
   reason: "manual",
   model: "NeoQuasar/Kronos-small",
@@ -102,6 +96,17 @@ const VIEW: ForecastView = {
       baseline: { share_ending_higher: 0.49, highest: band(80607, 80848, 81445), lowest: band(79586, 80220, 80481), close: band(79900, 80534, 81157) },
     },
   ],
+  track_record: { resolved: 3, status: "too few forecasts", brier_model: 0.898, brier_baseline: 0.258, crps_model_pct: 3.2, crps_baseline_pct: 0.9 },
+};
+
+/** A view from before Kronos was retired, with a current run. */
+const VIEW: ForecastView = {
+  provider: "binance_usdm",
+  instrument_id: 3,
+  symbol: "BTCUSDT",
+  timeframe: "1h",
+  analysis_as_of: "2026-11-05T02:59:59.999Z",
+  analysis_close: "80544.2",
   projection: PROJECTION,
   levels: [
     { id: "L3", price: "80982.5", kind: "resistance", position: "above", evidence: "test", distance_atr: 0.84, reach: [{ candles: 4, model: 0.42, baseline: 0.35 }] },
@@ -123,8 +128,9 @@ const VIEW: ForecastView = {
     rsi_4h: 66.2,
     strategies: [{ name: "1H pattern breakout", action: "NO_TRADE", reasons: ["no pattern breakout"] }],
   },
-  track_record: { resolved: 3, status: "too few forecasts", brier_model: 0.898, brier_baseline: 0.258, crps_model_pct: 3.2, crps_baseline_pct: 0.9 },
   plan: PLAN,
+  kronos_enabled: true,
+  kronos: KRONOS,
 };
 
 /** Seven hours later: Python has moved on, and the Kronos run is still from 02:59. */
@@ -132,7 +138,7 @@ const LATER: ForecastView = {
   ...VIEW,
   analysis_as_of: "2026-11-05T09:59:59.999Z",
   analysis_close: "79100",
-  forecast_current: false,
+  kronos: { ...KRONOS, current: false },
   projection: {
     ...PROJECTION,
     as_of: "2026-11-05T09:59:59.999Z",
@@ -148,7 +154,41 @@ const LATER: ForecastView = {
   levels: VIEW.levels.map((level) => ({ ...level, reach: [{ candles: 4, model: null, baseline: 0.2 }] })),
 };
 
+/** Since 2026-11-06 Kronos is off (D040): Python's view alone. */
+const PYTHON_ONLY: ForecastView = {
+  ...LATER,
+  kronos_enabled: false,
+  kronos: null,
+  levels: VIEW.levels.map((level) => ({ ...level, reach: [{ candles: 4, model: null, baseline: 0.3 }] })),
+};
+
 afterEach(cleanup);
+
+describe("with Kronos off", () => {
+  it("shows the baseline from the latest close and no Kronos column", () => {
+    render(<SummaryPanel view={PYTHON_ONLY} span={4} />);
+    expect(screen.getByText("47%")).toBeTruthy();
+    expect(screen.queryByText("Kronos")).toBeNull();
+    expect(screen.queryByText("–")).toBeNull();
+  });
+
+  it("lists levels with the baseline's reach only", () => {
+    render(<LevelsPanel view={PYTHON_ONLY} span={4} />);
+    expect(screen.queryByText("Kronos")).toBeNull();
+    expect(screen.getAllByText("30%")).toHaveLength(2);
+  });
+
+  it("hides the Kronos track record, readout and layer switches", () => {
+    const { container } = render(<TrackRecordPanel view={PYTHON_ONLY} />);
+    expect(container.textContent).toBe("");
+    render(<HoverReadout view={PYTHON_ONLY} hoverTime={null} span={4} barSeconds={3600} />);
+    expect(screen.getByText(/baseline 47% of paths end higher/)).toBeTruthy();
+    expect(screen.queryByText(/Kronos/)).toBeNull();
+    render(<LayerToggles layers={ALL_LAYERS} onChange={() => {}} />);
+    expect(screen.queryByRole("button", { name: /Kronos/ })).toBeNull();
+    expect(screen.getByRole("button", { name: /Baseline/ })).toBeTruthy();
+  });
+});
 
 describe("forecast panels", () => {
   it("compares a current Kronos run with the baseline from the latest close", () => {
@@ -255,7 +295,7 @@ describe("forecast panels", () => {
 
   it("turns layers off from the legend", () => {
     const onChange = vi.fn();
-    render(<LayerToggles layers={ALL_LAYERS} onChange={onChange} />);
+    render(<LayerToggles layers={ALL_LAYERS} onChange={onChange} kronos />);
     fireEvent.click(screen.getByRole("button", { name: /Kronos paths/ }));
     expect(onChange).toHaveBeenCalledWith({ ...ALL_LAYERS, paths: false });
   });

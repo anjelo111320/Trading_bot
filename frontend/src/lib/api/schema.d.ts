@@ -100,7 +100,10 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** Latest Forecast */
+        /**
+         * Latest Forecast
+         * @description Python's view at the latest 1H close. A Kronos run is added only while Kronos is on.
+         */
         get: operations["latest_forecast_api_v1_forecasts_latest_get"];
         put?: never;
         post?: never;
@@ -507,7 +510,10 @@ export interface components {
              */
             open_time: string;
         };
-        /** ForecastView */
+        /**
+         * ForecastView
+         * @description Python's view at the latest 1H close, with a Kronos run only while Kronos is on.
+         */
         ForecastView: {
             /**
              * Analysis As Of
@@ -516,59 +522,25 @@ export interface components {
             analysis_as_of: string;
             /** Analysis Close */
             analysis_close: string;
-            /**
-             * As Of
-             * Format: date-time
-             */
-            as_of: string;
-            /** Atr */
-            atr: number;
-            /** Baseline Paths */
-            baseline_paths: number;
-            /** Baseline Rebuilt */
-            baseline_rebuilt: boolean;
             /** Candle Signals */
             candle_signals: components["schemas"]["CandleSignalView"][];
             context: components["schemas"]["MarketContextView"];
-            /**
-             * Created At
-             * Format: date-time
-             */
-            created_at: string;
-            /** Forecast Current */
-            forecast_current: boolean;
-            /** Horizons */
-            horizons: components["schemas"]["HorizonView"][];
             /** Instrument Id */
             instrument_id: number;
-            /** Label */
-            label: string;
-            /** Last Close */
-            last_close: string;
+            kronos: components["schemas"]["KronosView"] | null;
+            /** Kronos Enabled */
+            kronos_enabled: boolean;
             /** Levels */
             levels: components["schemas"]["LevelView"][];
-            /** Model */
-            model: string;
-            /** Model Paths */
-            model_paths: number;
-            /** Model Revision */
-            model_revision: string;
-            /** Paths */
-            paths: number[][];
             /** Patterns */
             patterns: components["schemas"]["ChartPatternView"][];
             plan: components["schemas"]["PlanView"] | null;
             projection: components["schemas"]["ProjectionView"] | null;
             /** Provider */
             provider: string;
-            /** Reason */
-            reason: string;
-            /** Steps */
-            steps: components["schemas"]["ForecastStepView"][];
             /** Symbol */
             symbol: string;
             timeframe: components["schemas"]["Timeframe"];
-            track_record: components["schemas"]["TrackRecordView"];
         };
         /** GapList */
         GapList: {
@@ -675,6 +647,49 @@ export interface components {
             symbol: string;
             /** Tick Size */
             tick_size: string | null;
+        };
+        /**
+         * KronosView
+         * @description A stored Kronos run beside the baseline drawn at its own close (D040).
+         */
+        KronosView: {
+            /**
+             * As Of
+             * Format: date-time
+             */
+            as_of: string;
+            /** Atr */
+            atr: number;
+            /** Baseline Paths */
+            baseline_paths: number;
+            /** Baseline Rebuilt */
+            baseline_rebuilt: boolean;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /** Current */
+            current: boolean;
+            /** Horizons */
+            horizons: components["schemas"]["HorizonView"][];
+            /** Label */
+            label: string;
+            /** Last Close */
+            last_close: string;
+            /** Model */
+            model: string;
+            /** Model Paths */
+            model_paths: number;
+            /** Model Revision */
+            model_revision: string;
+            /** Paths */
+            paths: number[][];
+            /** Reason */
+            reason: string;
+            /** Steps */
+            steps: components["schemas"]["ForecastStepView"][];
+            track_record: components["schemas"]["TrackRecordView"];
         };
         /** LevelView */
         LevelView: {

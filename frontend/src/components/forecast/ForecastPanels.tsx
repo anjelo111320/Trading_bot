@@ -29,7 +29,7 @@ function horizonOf<T extends { candles: number }>(items: T[], span: Span): T | u
 
 /** How long ago Kronos last ran, counted from the latest close. */
 function kronosAge(view: ForecastView): string {
-  return `${hoursBetween(view.as_of, view.analysis_as_of)}h`;
+  return view.kronos ? `${hoursBetween(view.kronos.as_of, view.analysis_as_of)}h` : "";
 }
 
 /** Python's prices for a signal, in words. */
@@ -77,6 +77,8 @@ export function PythonSignalPanel({ view }: { view: ForecastView }) {
   );
 }
 
+const KRONOS_LAYERS: readonly (keyof Layers)[] = ["paths", "band"];
+
 const LAYER_ITEMS: { key: keyof Layers; label: string; swatch: ReactNode }[] = [
   { key: "paths", label: "Kronos paths", swatch: <span className="h-0.5 w-4" style={{ background: COLORS.kronosPath }} /> },
   { key: "band", label: "Kronos 10–90%", swatch: <span className="h-3 w-4 rounded-sm border-t-2" style={{ background: COLORS.kronosFill, borderColor: COLORS.kronos }} /> },
@@ -87,11 +89,23 @@ const LAYER_ITEMS: { key: keyof Layers; label: string; swatch: ReactNode }[] = [
   { key: "signals", label: "Candle signals", swatch: <span className="text-[10px] leading-none text-down">▼</span> },
 ];
 
-/** The legend doubles as the layer switches, so every colour on the chart is named. */
-export function LayerToggles({ layers, onChange }: { layers: Layers; onChange: (layers: Layers) => void }) {
+/**
+ * The legend doubles as the layer switches, so every colour on the chart is named. Kronos's
+ * switches show only while a Kronos run is on the chart (D040).
+ */
+export function LayerToggles({
+  layers,
+  onChange,
+  kronos = false,
+}: {
+  layers: Layers;
+  onChange: (layers: Layers) => void;
+  kronos?: boolean;
+}) {
+  const items = kronos ? LAYER_ITEMS : LAYER_ITEMS.filter((item) => !KRONOS_LAYERS.includes(item.key));
   return (
     <div role="group" aria-label="Chart layers" className="flex flex-wrap gap-1">
-      {LAYER_ITEMS.map((item) => (
+      {items.map((item) => (
         <button
           key={item.key}
           type="button"
@@ -144,7 +158,7 @@ export function HoverReadout({
       ? undefined
       : steps.slice(0, span).find((s) => Math.floor(Date.parse(s.open_time) / 3_600_000) === hour);
   const projected = atHour(view.projection?.steps ?? []);
-  const kronos = atHour(view.steps);
+  const kronos = atHour(view.kronos?.steps ?? []);
   const signals =
     hoverTime === null
       ? []
@@ -156,7 +170,7 @@ export function HoverReadout({
           {projected.open_time.slice(11, 16)} UTC candle · Baseline {formatNumber(projected.close.p50.toFixed(1))} (
           {range(projected.close)})
         </span>
-        {view.forecast_current && kronos ? (
+        {view.kronos?.current && kronos ? (
           <>
             <span className="text-muted"> · </span>
             <span style={{ color: COLORS.kronos }}>Kronos {formatNumber(kronos.model.p50.toFixed(1))}</span>
@@ -171,7 +185,7 @@ export function HoverReadout({
       <p className="text-xs">
         <span className="text-muted">{kronos.open_time.slice(11, 16)} UTC candle · </span>
         <span style={{ color: COLORS.kronos }}>
-          Kronos run from {view.as_of.slice(11, 16)} UTC: {formatNumber(kronos.model.p50.toFixed(1))}
+          Kronos run from {view.kronos?.as_of.slice(11, 16)} UTC: {formatNumber(kronos.model.p50.toFixed(1))}
         </span>
         <span className="text-muted"> ({range(kronos.model)})</span>
       </p>
@@ -190,7 +204,7 @@ export function HoverReadout({
     );
   }
   const baseline = horizonOf(view.projection?.horizons ?? [], span);
-  const model = view.forecast_current ? horizonOf(view.horizons, span) : undefined;
+  const model = view.kronos?.current ? horizonOf(view.kronos.horizons, span) : undefined;
   return (
     <p className="text-xs">
       <span className="text-muted">
@@ -201,14 +215,17 @@ export function HoverReadout({
       </span>
       {model ? (
         <span style={{ color: COLORS.kronos }}> · Kronos {percent(model.model.share_ending_higher)}</span>
-      ) : (
+      ) : view.kronos ? (
         <span className="text-muted"> · Kronos run is {kronosAge(view)} old</span>
-      )}
+      ) : null}
     </p>
   );
 }
 
-/** The next hours from the latest close. Kronos joins only when its run is from that close. */
+/**
+ * The next hours from the latest close. Kronos has a column only while a run is shown, and
+ * values only when that run is from the latest close.
+ */
 export function SummaryPanel({ view, span }: { view: ForecastView; span: Span }) {
   const projection = view.projection;
   const horizon = projection ? horizonOf(projection.horizons, span) : undefined;
@@ -222,7 +239,8 @@ export function SummaryPanel({ view, span }: { view: ForecastView; span: Span })
   const close = Number(projection.last_close);
   const atr = projection.atr;
   const base = horizon.baseline;
-  const model = view.forecast_current ? horizonOf(view.horizons, span)?.model : undefined;
+  const run = view.kronos;
+  const model = run?.current ? horizonOf(run.horizons, span)?.model : undefined;
   const rows: { label: string; model: string; baseline: string }[] = [
     { label: "Paths ending higher", model: model ? percent(model.share_ending_higher) : "–", baseline: percent(base.share_ending_higher) },
     { label: "Close, middle", model: model ? formatNumber(model.close.p50.toFixed(1)) : "–", baseline: formatNumber(base.close.p50.toFixed(1)) },
@@ -236,7 +254,9 @@ export function SummaryPanel({ view, span }: { view: ForecastView; span: Span })
         <thead>
           <tr className="text-muted">
             <th className="py-1 text-left font-normal" scope="col">Measure</th>
-            <th className="py-1 text-right font-normal" scope="col" style={{ color: COLORS.kronos }}>Kronos</th>
+            {run ? (
+              <th className="py-1 text-right font-normal" scope="col" style={{ color: COLORS.kronos }}>Kronos</th>
+            ) : null}
             <th className="py-1 text-right font-normal" scope="col">Baseline</th>
           </tr>
         </thead>
@@ -244,7 +264,7 @@ export function SummaryPanel({ view, span }: { view: ForecastView; span: Span })
           {rows.map((row) => (
             <tr key={row.label} className="border-t border-raised">
               <th className="py-1 text-left font-normal text-muted" scope="row">{row.label}</th>
-              <td className="py-1 text-right">{row.model}</td>
+              {run ? <td className="py-1 text-right">{row.model}</td> : null}
               <td className="py-1 text-right text-muted">{row.baseline}</td>
             </tr>
           ))}
@@ -252,16 +272,23 @@ export function SummaryPanel({ view, span }: { view: ForecastView; span: Span })
       </table>
       <p className="mt-2 text-xs text-muted">
         The baseline replays this coin&apos;s own last 60 days from the latest close, with no view on direction.{" "}
-        {model
-          ? "Kronos says something only where it differs."
-          : `Kronos last ran from the ${view.as_of.slice(11, 16)} UTC close, ${kronosAge(view)} earlier, so it is left out. Re-analyse runs it from the latest close.`}
+        {!run
+          ? ""
+          : model
+            ? "Kronos says something only where it differs."
+            : `Kronos last ran from the ${run.as_of.slice(11, 16)} UTC close, ${kronosAge(view)} earlier, so it is left out.${
+                view.kronos_enabled ? " Re-analyse runs it from the latest close." : ""
+              }`}
       </p>
     </Panel>
   );
 }
 
 export function TrackRecordPanel({ view }: { view: ForecastView }) {
-  const record = view.track_record;
+  const record = view.kronos?.track_record;
+  if (!record) {
+    return null;
+  }
   const worse =
     record.brier_model !== null && record.brier_baseline !== null && record.brier_model > record.brier_baseline;
   return (
@@ -362,6 +389,7 @@ export function PlanPanel({ plan }: { plan: ForecastPlan }) {
 export function LevelsPanel({ view, span }: { view: ForecastView; span: Span }) {
   const roles = planRoles(view);
   const levels = [...view.levels].sort((a, b) => Number(b.price) - Number(a.price));
+  const run = view.kronos !== null;
   return (
     <Panel title={`Python levels · reached within ${span}h`}>
       <table className="w-full text-xs">
@@ -369,7 +397,9 @@ export function LevelsPanel({ view, span }: { view: ForecastView; span: Span }) 
           <tr className="text-muted">
             <th className="py-1 text-left font-normal" scope="col">Level</th>
             <th className="py-1 text-right font-normal" scope="col">Price</th>
-            <th className="py-1 text-right font-normal" scope="col" style={{ color: COLORS.kronos }}>Kronos</th>
+            {run ? (
+              <th className="py-1 text-right font-normal" scope="col" style={{ color: COLORS.kronos }}>Kronos</th>
+            ) : null}
             <th className="py-1 text-right font-normal" scope="col">Base</th>
           </tr>
         </thead>
@@ -388,7 +418,7 @@ export function LevelsPanel({ view, span }: { view: ForecastView; span: Span }) 
                   {formatNumber(level.price)}
                   <span className="block text-muted">{level.distance_atr >= 0 ? "+" : ""}{level.distance_atr.toFixed(2)} ATR</span>
                 </td>
-                <td className="py-1 text-right">{reach && reach.model !== null ? percent(reach.model) : "–"}</td>
+                {run ? <td className="py-1 text-right">{reach && reach.model !== null ? percent(reach.model) : "–"}</td> : null}
                 <td className="py-1 text-right text-muted">
                   {reach && reach.baseline !== null ? percent(reach.baseline) : "–"}
                 </td>
@@ -398,8 +428,8 @@ export function LevelsPanel({ view, span }: { view: ForecastView; span: Span }) 
         </tbody>
       </table>
       <p className="mt-2 text-xs text-muted">
-        Shares of paths that touch each level within {span}h of the {view.analysis_as_of.slice(11, 16)} UTC close. Kronos is shown only
-        when its run is from that close.
+        Shares of the baseline&apos;s paths that touch each level within {span}h of the {view.analysis_as_of.slice(11, 16)} UTC close.
+        {run ? " Kronos is shown only when its run is from that close." : ""}
       </p>
     </Panel>
   );

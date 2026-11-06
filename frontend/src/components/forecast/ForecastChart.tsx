@@ -139,7 +139,7 @@ export function ForecastChart({ candles, live, timeframe, view, layers, span, on
   const step = STEP_SECONDS[timeframe];
   // The chart is anchored at the latest close, where the projection starts. Kronos may be older.
   const now = toSeconds(view.analysis_as_of);
-  const horizon = Math.max(view.projection?.steps.length ?? 0, view.steps.length);
+  const horizon = Math.max(view.projection?.steps.length ?? 0, view.kronos?.steps.length ?? 0);
   const bars = useMemo(() => candles.map(closedBar), [candles]);
   const slots = useMemo(() => {
     const lastOpen = bars.length > 0 ? Number(bars[bars.length - 1]!.time) : floorTo(now, step);
@@ -194,7 +194,7 @@ export function ForecastChart({ candles, live, timeframe, view, layers, span, on
       ref={container}
       className="h-full w-full"
       role="img"
-      aria-label="Candles with the baseline projected from the latest close, the Kronos forecast, Python's levels and the plan. The same values are listed in the panels beside the chart."
+      aria-label="Candles with the baseline projected from the latest close, Python's levels, patterns and the plan. The same values are listed in the panels beside the chart."
     />
   );
 }

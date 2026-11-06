@@ -18,7 +18,7 @@ import type {
   Time,
 } from "lightweight-charts";
 
-import type { ForecastPlan, ForecastView } from "@/lib/api/client";
+import type { ForecastKronos, ForecastPlan, ForecastView } from "@/lib/api/client";
 
 import { hoursBetween, interpolateX, levelStyle, momentX, spreadLabels, toSeconds, type Span } from "./geometry";
 
@@ -246,10 +246,11 @@ export class ForecastOverlay implements ISeriesPrimitive<Time> {
         for (const step of projected) values.push(step.close.p10, step.close.p90);
       }
     }
-    const steps = view.steps.slice(0, span);
-    if (view.forecast_current && steps.length > 0 && inView(toSeconds(view.as_of), closeOf(steps[steps.length - 1]!))) {
+    const run = view.kronos;
+    const steps = run?.steps.slice(0, span) ?? [];
+    if (run?.current && steps.length > 0 && inView(toSeconds(run.as_of), closeOf(steps[steps.length - 1]!))) {
       if (layers.band) for (const step of steps) values.push(step.model.p10, step.model.p90);
-      if (layers.paths) for (const path of view.paths) values.push(...path.slice(0, span));
+      if (layers.paths) for (const path of run.paths) values.push(...path.slice(0, span));
     }
     const plan = view.plan;
     if (layers.plan && plan && planActive(plan) && inView(toSeconds(plan.created_at), toSeconds(plan.expires_at))) {
@@ -313,14 +314,17 @@ export class ForecastOverlay implements ISeriesPrimitive<Time> {
     return { fan: this.fan(projection.as_of, projection.last_close, steps), steps };
   }
 
-  private kronos(view: ForecastView): { fan: Fan | null; steps: ForecastView["steps"] } {
-    const steps = view.steps.slice(0, this.state.span);
-    return { fan: this.fan(view.as_of, view.last_close, steps), steps };
+  /** The Kronos run, when Kronos is on and one is stored (D040). */
+  private kronos(view: ForecastView): { fan: Fan | null; steps: ForecastKronos["steps"]; run: ForecastKronos | null } {
+    const run = view.kronos;
+    if (!run) return { fan: null, steps: [], run: null };
+    const steps = run.steps.slice(0, this.state.span);
+    return { fan: this.fan(run.as_of, run.last_close, steps), steps, run };
   }
 
   /** The future from the latest close, shaded, so it is clear where "now" ends. */
   private window(view: ForecastView): { start: number; end: number } | null {
-    const { fan, steps } = view.projection ? this.projected(view) : view.forecast_current ? this.kronos(view) : { fan: null, steps: [] };
+    const { fan, steps } = view.projection ? this.projected(view) : view.kronos?.current ? this.kronos(view) : { fan: null, steps: [] };
     const last = steps[steps.length - 1];
     if (!fan || !last) {
       return null;
@@ -356,7 +360,7 @@ export class ForecastOverlay implements ISeriesPrimitive<Time> {
     if (layers.band && kronos.fan) {
       const upper = this.line(kronos.steps.map((s) => s.model.p90), kronos.fan);
       const lower = this.line(kronos.steps.map((s) => s.model.p10), kronos.fan);
-      this.band(context, upper, lower, view.forecast_current ? COLORS.kronosFill : COLORS.kronosOldFill);
+      this.band(context, upper, lower, view.kronos?.current ? COLORS.kronosFill : COLORS.kronosOldFill);
     }
     if (layers.zones) {
       context.lineWidth = 1;
@@ -398,7 +402,7 @@ export class ForecastOverlay implements ISeriesPrimitive<Time> {
     if (!view) {
       return;
     }
-    const current = view.forecast_current;
+    const current = view.kronos?.current ?? false;
     const kronos = this.kronos(view);
     const ahead = this.projected(view);
     const window = this.window(view);
@@ -406,7 +410,7 @@ export class ForecastOverlay implements ISeriesPrimitive<Time> {
     if (layers.paths && kronos.fan) {
       context.lineWidth = 1;
       context.strokeStyle = current ? COLORS.kronosPath : COLORS.kronosOldPath;
-      for (const path of view.paths) {
+      for (const path of kronos.run?.paths ?? []) {
         polyline(context, this.line(path.slice(0, span), kronos.fan));
         context.stroke();
       }
@@ -432,8 +436,9 @@ export class ForecastOverlay implements ISeriesPrimitive<Time> {
     if (!current && kronos.fan && (layers.paths || layers.band)) {
       // Where the older run started, so it reads as history rather than as the forecast.
       verticalLine(context, kronos.fan.start.x, height, COLORS.kronosOld);
-      const age = hoursBetween(view.as_of, view.analysis_as_of);
-      label(context, `Kronos run from ${view.as_of.slice(11, 16)} UTC · ${age}h old`, kronos.fan.start.x + 4, 30, COLORS.kronos, "left");
+      const runAt = kronos.run?.as_of ?? view.analysis_as_of;
+      const age = hoursBetween(runAt, view.analysis_as_of);
+      label(context, `Kronos run from ${runAt.slice(11, 16)} UTC · ${age}h old`, kronos.fan.start.x + 4, 30, COLORS.kronos, "left");
     }
 
     if (layers.patterns) {

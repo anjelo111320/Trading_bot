@@ -1,6 +1,6 @@
 # Model Forecasts
 
-Date: 2026-11-05. Status: Built under D040. The owner chose option A: forecasts are evidence for Claude, never a source of prices.
+Date: 2026-11-05. Status: Built under D040, then **retired on 2026-11-06** by the owner after the study below: the setting `kronos_enabled` is off. The dashboard shows Python's view with the baseline projection alone, re-analysis is refused, and Claude's evidence has no forecast. The code, stored runs and the `forecast` commands stay for research.
 
 ## Summary
 

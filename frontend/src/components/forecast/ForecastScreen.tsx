@@ -137,8 +137,9 @@ export function ForecastScreen({ instruments }: { instruments: Instrument[] }) {
       </header>
 
       <div className="flex flex-wrap items-center justify-between gap-2 border-b border-line px-4 py-2">
-        <LayerToggles layers={layers} onChange={setLayers} />
-        <ReanalyseButton job={job.data} now={now} error={startError} onClick={reanalyse} />
+        <LayerToggles layers={layers} onChange={setLayers} kronos={Boolean(view?.kronos)} />
+        {/* Re-analysis runs Kronos, so it is offered only while Kronos is on (D040). */}
+        {view?.kronos_enabled ? <ReanalyseButton job={job.data} now={now} error={startError} onClick={reanalyse} /> : null}
       </div>
 
       {missing ? (
@@ -159,8 +160,12 @@ export function ForecastScreen({ instruments }: { instruments: Instrument[] }) {
               <HoverReadout view={view} hoverTime={hoverTime} span={span} barSeconds={STEP_SECONDS[timeframe]} />
               <div className="flex flex-wrap items-center gap-3">
                 <span className="text-xs text-muted">
-                  Python {view.analysis_as_of.slice(11, 16)} UTC close · Kronos {view.as_of.slice(11, 16)} UTC close
-                  {view.forecast_current ? "" : `, ${hoursBetween(view.as_of, view.analysis_as_of)}h old`}
+                  Python {view.analysis_as_of.slice(11, 16)} UTC close
+                  {view.kronos
+                    ? ` · Kronos ${view.kronos.as_of.slice(11, 16)} UTC close${
+                        view.kronos.current ? "" : `, ${hoursBetween(view.kronos.as_of, view.analysis_as_of)}h old`
+                      }`
+                    : ""}
                 </span>
                 {behind > BEHIND_HOURS ? (
                   <span role="alert" className="text-xs text-warn">
@@ -182,10 +187,15 @@ export function ForecastScreen({ instruments }: { instruments: Instrument[] }) {
               />
             </div>
             <p className="border-t border-line px-3 py-2 text-xs text-muted">
-              {view.label}: Kronos ({view.model_paths} paths) from the {view.as_of.slice(11, 16)} UTC close, and the no-edge baseline (
-              {(view.projection?.paths ?? view.baseline_paths).toLocaleString("en-US")} paths) from the latest close
-              {view.baseline_rebuilt ? "" : ", baseline redrawn from changed candles"}. Prices to trade come only from Python&apos;s levels and the
-              risk engine. Times in UTC. Chart by{" "}
+              {view.projection
+                ? `The no-edge baseline (${view.projection.paths.toLocaleString("en-US")} paths) from the latest close. `
+                : ""}
+              {view.kronos
+                ? `${view.kronos.label}: Kronos (${view.kronos.model_paths} paths) from the ${view.kronos.as_of.slice(11, 16)} UTC close${
+                    view.kronos.baseline_rebuilt ? "" : ", baseline redrawn from changed candles"
+                  }. `
+                : ""}
+              Prices to trade come only from Python&apos;s levels and the risk engine. Times in UTC. Chart by{" "}
               <a className="underline" href="https://www.tradingview.com/" rel="noreferrer" target="_blank">
                 TradingView Lightweight Charts
               </a>

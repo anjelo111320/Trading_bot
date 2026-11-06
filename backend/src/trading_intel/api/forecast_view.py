@@ -24,6 +24,7 @@ from trading_intel.api.schemas.forecasts import (
     ForecastStepView,
     ForecastView,
     HorizonView,
+    KronosView,
     LevelView,
     MarketContextView,
     PatternPointView,
@@ -67,6 +68,7 @@ from trading_intel.trade_signals.pattern_strategy import PatternStrategy
 from trading_intel.trade_signals.trend_strategy import DailyTrendStrategy
 
 SHORT_HORIZON: Final = 4  # The 4-hour test window, in 1H candles.
+PROJECTION_CANDLES: Final = 24  # The projection's horizon when no Kronos run sets one.
 PATTERN_HOURS: Final = 72
 SIGNAL_HOURS: Final = 24
 LEVELS_PER_SIDE: Final = 5
@@ -516,25 +518,62 @@ def _projection_view(analysis: AnalysisPart) -> ProjectionView | None:
     )
 
 
+@dataclass(frozen=True)
+class KronosRun:
+    """A stored Kronos run, what was drawn from it, and Kronos's track record."""
+
+    stored: StoredForecast
+    part: ForecastPart
+    record: TrackRecord
+
+
+def _kronos_view(run: KronosRun, current: bool) -> KronosView:
+    key, part = run.stored.key, run.part
+    return KronosView(
+        label=LABEL,
+        as_of=key.as_of,
+        current=current,
+        created_at=run.stored.created_at,
+        reason=run.stored.reason,
+        model=key.model,
+        model_revision=key.model_revision,
+        last_close=_price(run.stored.last_close),
+        atr=run.stored.atr,
+        model_paths=part.model_paths,
+        baseline_paths=part.baseline_paths,
+        baseline_rebuilt=part.rebuilt,
+        steps=part.steps,
+        paths=part.paths,
+        horizons=[
+            HorizonView(candles=n, model=_spread(m), baseline=_spread(b))
+            for n, (m, b) in part.summaries.items()
+        ],
+        track_record=_track(run.record),
+    )
+
+
 def assemble(
     *,
     provider: str,
+    instrument_id: int,
     symbol: str,
-    stored: StoredForecast,
-    forecast: ForecastPart,
     analysis: AnalysisPart,
-    record: TrackRecord,
     plan: PlanView | None,
+    kronos_enabled: bool,
+    kronos: KronosRun | None,
 ) -> ForecastView:
-    """Join the two parts. Reach shares are measured from the latest close.
+    """Python's view at the latest close, with a Kronos run when one is given.
 
-    Kronos's paths start at its own close, so its shares are given only while that is the
-    latest close. Measured from an older close, they would describe a market that has moved.
+    Reach shares are measured from the latest close. Kronos's paths start at its own close,
+    so its shares are given only while that is the latest close. Measured from an older
+    close, they would describe a market that has moved.
     """
-    key = stored.key
-    last_close, close = float(stored.last_close), float(analysis.close)
-    current = key.as_of == analysis.as_of
+    close = float(analysis.close)
+    current = kronos is not None and kronos.stored.key.as_of == analysis.as_of
     projected = analysis.projection.summaries if analysis.projection else {}
+    modelled = {n: m for n, (m, _) in kronos.part.summaries.items()} if kronos else {}
+    run_close = float(kronos.stored.last_close) if kronos else close
+    horizons = sorted(set(projected) | set(modelled))
     levels = [
         LevelView(
             id=level.id,
@@ -546,48 +585,31 @@ def assemble(
             reach=[
                 ReachView(
                     candles=n,
-                    model=round(reach_share(m, float(level.price), last_close), 3)
-                    if current
+                    model=round(reach_share(modelled[n], float(level.price), run_close), 3)
+                    if current and n in modelled
                     else None,
                     baseline=round(reach_share(projected[n], float(level.price), close), 3)
                     if n in projected
                     else None,
                 )
-                for n, (m, _) in forecast.summaries.items()
+                for n in horizons
             ],
         )
         for level in analysis.levels
     ]
     return ForecastView(
-        label=LABEL,
         provider=provider,
-        instrument_id=key.instrument_id,
+        instrument_id=instrument_id,
         symbol=symbol,
-        timeframe=key.timeframe,
-        as_of=key.as_of,
+        timeframe=SETUP,
         analysis_as_of=analysis.as_of,
         analysis_close=_price(analysis.close),
-        forecast_current=current,
-        created_at=stored.created_at,
-        reason=stored.reason,
-        model=key.model,
-        model_revision=key.model_revision,
-        last_close=_price(stored.last_close),
-        atr=stored.atr,
-        model_paths=forecast.model_paths,
-        baseline_paths=forecast.baseline_paths,
-        baseline_rebuilt=forecast.rebuilt,
-        steps=forecast.steps,
-        paths=forecast.paths,
-        horizons=[
-            HorizonView(candles=n, model=_spread(m), baseline=_spread(b))
-            for n, (m, b) in forecast.summaries.items()
-        ],
         projection=_projection_view(analysis),
         levels=levels,
         patterns=analysis.patterns,
         candle_signals=analysis.candle_signals,
         context=analysis.context,
-        track_record=_track(record),
         plan=plan,
+        kronos_enabled=kronos_enabled,
+        kronos=None if kronos is None else _kronos_view(kronos, current),
     )

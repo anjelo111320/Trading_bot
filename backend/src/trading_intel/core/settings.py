@@ -52,6 +52,9 @@ class Settings(BaseSettings):
     session_lifetime_hours: int = Field(default=24, gt=0)
 
     manual_signals_dir: Path = REPOSITORY_ROOT / "data" / "signals"  # Analyst test plans, by hand.
+    # Kronos was retired by the owner on 2026-11-06 (D040): off the dashboard and out of
+    # re-analysis. Its code, stored runs and research commands stay.
+    kronos_enabled: bool = False
 
     max_risk_per_trade: Decimal = Decimal("0.01")
     max_daily_loss: Decimal = Decimal("0.03")

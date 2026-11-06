@@ -24,6 +24,7 @@ export type ForecastBand = Schemas["BandView"];
 export type ForecastSpread = Schemas["SpreadView"];
 export type ForecastProjection = Schemas["ProjectionView"];
 export type ForecastStrategy = Schemas["StrategyView"];
+export type ForecastKronos = Schemas["KronosView"];
 export type ForecastProposal = Schemas["ProposalView"];
 export type ChartPattern = Schemas["ChartPatternView"];
 export type CandleSignal = Schemas["CandleSignalView"];
