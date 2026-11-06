@@ -214,7 +214,7 @@ Under D007, everything runs first on the owner's MacBook Air, using Docker Compo
 |---|---|
 | 4.6 GB of 228 GB free | **Blocks Phase 1.** Free at least 20 GB first (T0.15). The local storage profile in [12-DATABASE-DESIGN.md](12-DATABASE-DESIGN.md) halves the database |
 | 8 GB memory | Cap PostgreSQL and Redis memory. Run the dashboard as a production build during long runs |
-| Sleep when lid closes or the machine idles | For long runs, stay plugged in with the lid open and sleep prevented, using `caffeinate -s` |
+| Sleep when lid closes or the machine idles | For long runs, stay plugged in with the lid open and sleep prevented, using `caffeinate -s`. OrbStack pauses PostgreSQL and Redis whenever the Mac sleeps, including Power Nap, while the ingestor itself may keep running. Nothing is stored until a full wake, as on the night of 2026-11-05 |
 | PostgreSQL 14 already on port 5432 | The project uses `127.0.0.1:55432` and `127.0.0.1:56379` |
 | OrbStack not running | `make up` checks for it and says so |
 
@@ -222,7 +222,7 @@ What happens to data while the computer is asleep or off:
 
 | Data | After waking |
 |---|---|
-| Candles | Repaired by REST |
+| Candles | Repaired by REST. Each repair also looks back 3 days for holes behind the newest candle, which a sweep during a short wake can leave |
 | Funding | Repaired by REST |
 | Open interest | Repaired at 5-minute resolution, up to one month back |
 | Instrument rules | Re-read. A change during sleep is dated at wake time |

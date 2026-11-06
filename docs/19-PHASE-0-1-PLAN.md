@@ -501,6 +501,7 @@ Work:
 
 Acceptance:
 - A simulated 10-minute outage is repaired with no manual action.
+- A hole behind the newest candle is repaired at the next recovery. Added 2026-11-06, after a sweep during a two-second wake stored candles past an overnight outage.
 - A candle whose closing frame was dropped is recovered by the sweep.
 - Every missing range appears in `market_gaps`.
 - A mismatch leaves an auditable record.

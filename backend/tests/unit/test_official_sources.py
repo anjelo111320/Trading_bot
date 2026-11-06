@@ -1,3 +1,4 @@
+import asyncio
 from datetime import UTC, datetime
 
 import httpx
@@ -5,6 +6,7 @@ import pytest
 import respx
 
 from trading_intel.core.clock import FixedClock
+from trading_intel.news_intelligence import official_sources
 from trading_intel.news_intelligence.official_sources import (
     FEEDS,
     FeedError,
@@ -73,6 +75,38 @@ async def test_one_bad_feed_does_not_stop_the_others() -> None:
     archive = MemoryArchive()
     collector = OfficialSourceCollector(archive, FixedClock(NOW))  # type: ignore[arg-type]
     assert await collector.poll_once() == 1
+
+
+class AwayArchive:
+    """The database has gone away, as it does while OrbStack is paused or restarting."""
+
+    def __init__(self) -> None:
+        self.calls = 0
+
+    async def store(self, items: list[FeedItem], now: datetime) -> int:
+        self.calls += 1
+        raise ConnectionRefusedError(61, "Connect call failed")
+
+
+@respx.mock
+async def test_a_database_outage_waits_for_the_next_poll(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Regression: on 2026-11-06 this error escaped and stopped the whole ingestor."""
+    for feed in FEEDS:
+        respx.get(feed).mock(return_value=httpx.Response(200, content=FEED))
+    archive = AwayArchive()
+    collector = OfficialSourceCollector(archive, FixedClock(NOW))  # type: ignore[arg-type]
+    polls = 0
+
+    async def sleep(seconds: float) -> None:
+        nonlocal polls
+        polls += 1
+        if polls == 2:
+            raise asyncio.CancelledError  # Stops the loop after its second poll.
+
+    monkeypatch.setattr(official_sources.asyncio, "sleep", sleep)
+    with pytest.raises(asyncio.CancelledError):
+        await collector.run()
+    assert archive.calls == 2
 
 
 @respx.mock

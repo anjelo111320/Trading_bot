@@ -66,6 +66,7 @@ OPEN_INTEREST_SECONDS = 60
 FUNDING_SECONDS = 600
 SETTLE_SECONDS = 10  # A candle that has just closed may still be in flight, or not yet final.
 FIRST_RUN_LOOKBACK = 10
+HOLE_LOOKBACK = timedelta(days=3)  # How far back a repair looks for holes behind the newest candle.
 LATENCY_SAMPLES = 5000
 OPEN_INTEREST_HISTORY = timedelta(days=29)
 OPEN_INTEREST_STEP = timedelta(minutes=5)
@@ -283,21 +284,33 @@ class Ingestor:
     # Repair ---------------------------------------------------------------------------------
 
     async def repair_to_now(self, cause: str = "ingest_failure") -> None:
-        """Repair every timeframe from its last stored candle to the latest closed one."""
+        """Repair every timeframe up to the latest closed candle, holes behind it included."""
         safe_now = self._clock.now() - timedelta(seconds=SETTLE_SECONDS)
         for subscription in self._plan.subscriptions:
             instrument, timeframe = subscription.instrument, subscription.timeframe
             end = timeframe.floor(safe_now)
-            latest = await self._candles.latest_open_time(
-                self._plan.provider_id, instrument.id, timeframe
-            )
-            start = (
-                timeframe.next_open(latest)
-                if latest is not None
-                else end - timeframe.delta * FIRST_RUN_LOOKBACK
-            )
+            start = await self._repair_start(instrument, timeframe, end)
             if start < end:
                 await self._repair.repair(instrument, timeframe, start, end, cause)
+
+    async def _repair_start(
+        self, instrument: Instrument, timeframe: Timeframe, end: datetime
+    ) -> datetime:
+        """The oldest stored candle of the last few days, so holes behind the newest are found.
+
+        A sweep during a short wake can store the newest candles past an outage. A repair that
+        starts from the newest candle then never sees the outage. Only stored candles bound the
+        search, so no history older than what was ever stored is requested.
+        """
+        latest = await self._candles.latest_open_time(
+            self._plan.provider_id, instrument.id, timeframe
+        )
+        if latest is None:
+            return end - timeframe.delta * FIRST_RUN_LOOKBACK
+        recent = await self._candles.open_times(
+            self._plan.provider_id, instrument.id, timeframe, end - HOLE_LOOKBACK, end
+        )
+        return recent[0] if recent else timeframe.next_open(latest)
 
     async def recover(self, reason: str, downtime: Downtime | None = None) -> None:
         """Repair in a fixed order, and report healthy only when repaired."""

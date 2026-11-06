@@ -133,6 +133,10 @@ class OfficialSourceCollector:
         return stored
 
     async def run(self) -> None:
+        """Poll forever. A failure, such as the database going away, waits for the next poll."""
         while True:
-            await self.poll_once()
+            try:
+                await self.poll_once()
+            except Exception as error:
+                log.warning("official_sources_failed", error=type(error).__name__)
             await asyncio.sleep(POLL_SECONDS)

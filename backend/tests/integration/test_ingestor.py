@@ -222,6 +222,23 @@ async def test_startup_repairs_from_the_last_stored_candle(
     assert ingestor.health.status().state is not FeedState.RECOVERING
 
 
+async def test_startup_repairs_a_hole_behind_the_newest_candle(
+    ingest_engine: AsyncEngine, redis: Redis
+) -> None:
+    """Regression: on 2026-11-06 a sweep during a two-second wake stored the newest candles
+    past an overnight outage, and repairs that started from the newest candle missed it."""
+    provider_id, instrument = await spot_btc(ingest_engine)
+    candles = CandleRepository(ingest_engine)
+    stored = [START + timedelta(minutes=m) for m in (*range(10), *range(20, 30))]
+    await candles.insert([make_candle(provider_id, instrument.id, Timeframe.M1, t) for t in stored])
+    clock = FixedClock(START + timedelta(minutes=30, seconds=10))
+    ingestor = build(
+        FakeProvider(provider_id), provider_id, instrument, ingest_engine, redis, clock
+    )
+    await ingestor.recover("startup")
+    assert await candles.count(provider_id, instrument.id, Timeframe.M1) == 30
+
+
 async def test_reconnect_triggers_a_repair_request(
     ingest_engine: AsyncEngine, redis: Redis
 ) -> None:
