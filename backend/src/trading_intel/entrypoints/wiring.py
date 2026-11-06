@@ -24,6 +24,11 @@ EARLIEST: Final[dict[tuple[str, str], datetime]] = {
     (BINANCE_SPOT, "ETHUSDT"): datetime(2017, 8, 17, tzinfo=UTC),
     (BINANCE_USDM, "BTCUSDT"): datetime(2019, 9, 8, tzinfo=UTC),
     (BINANCE_USDM, "ETHUSDT"): datetime(2019, 11, 27, tzinfo=UTC),
+    # First 1M candles, verified 2026-11-06 (D033).
+    (BINANCE_USDM, "XRPUSDT"): datetime(2020, 1, 6, tzinfo=UTC),
+    (BINANCE_USDM, "BNBUSDT"): datetime(2020, 2, 10, tzinfo=UTC),
+    (BINANCE_USDM, "DOGEUSDT"): datetime(2020, 7, 10, tzinfo=UTC),
+    (BINANCE_USDM, "SOLUSDT"): datetime(2020, 9, 14, tzinfo=UTC),
 }
 
 
