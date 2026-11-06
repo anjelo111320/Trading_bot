@@ -4,6 +4,8 @@
 Claude interprets validated market features and news.
 It does not replace the quantitative or risk engines.
 
+Python always calculates first. The strategies, the level catalogue and the risk engine produce the signal; Claude reviews it, picks level IDs (D009) and never sets a price. A manual analyst test saves Python's calculation beside the plan, and the dashboard shows Python's signal before Claude's plan, with a warning when Claude planned at a close where Python had no signal.
+
 ## Input
 - Instrument and current price.
 - Data timestamp and freshness.

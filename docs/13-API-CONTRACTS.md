@@ -87,7 +87,16 @@ It takes `provider` and `instrument_id`. The response is labelled `unvalidated m
 - The model's track record.
 - The newest manual analyst plan from `data/signals`, if any, replayed on the 15M candles that followed through the shared simulator.
 
-Forecast values are floats because they are model samples. Market prices stay strings. Kronos, the baseline and reach shares are anchored at the forecast's close (`as_of`). Levels, patterns and decisions are recomputed at the latest stored 1H close (`analysis_as_of`), so they move every hour. `baseline_rebuilt` says whether the redrawn baseline matched the stored one exactly.
+Forecast values are floats because they are model samples. Market prices stay strings.
+
+- **At the forecast's close (`as_of`):** Kronos and the baseline drawn beside it. `baseline_rebuilt` says whether the redrawn baseline matched the stored one exactly.
+- **At the latest stored 1H close (`analysis_as_of`), recomputed every hour:**
+  - Levels, patterns and decisions.
+  - `projection`: the baseline drawn again from this close with the forecast's settings. It is null when too few 1H candles are stored.
+  - Each strategy's decision, with Python's `proposal` prices when it says BUY or SELL.
+- **`forecast_current`** says whether the Kronos run is from the latest close.
+- **Reach shares** are measured from the latest close: `baseline` from the projection, and `model` only while `forecast_current` is true, otherwise null.
+- **A manual plan's `python_at_close`** lists Python's decisions at the plan's close, read from the context saved beside it. It is null when none was saved.
 
 `POST /forecasts/analyse` takes `provider` and `instrument_id`, and is the only write route besides authentication. It runs a forecast and stores it. Forecasts cannot reach orders (D040), and a regression test keeps the list of write routes fixed.
 

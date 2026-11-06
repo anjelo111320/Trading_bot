@@ -133,8 +133,8 @@ uv run python -m trading_intel.entrypoints.forecast report --write ../docs/repor
 
 The Forecast page (`/forecast`) draws the latest forecast over the candles, from `GET /api/v1/forecasts/latest` ([13-API-CONTRACTS.md](13-API-CONTRACTS.md)).
 
-- **Kronos:** its 30 paths as faint blue lines, with its 10th to 90th percentile band and middle line.
-- **Baseline:** the time machine's band in grey, with a dashed middle line.
+- **Baseline, the projection:** the time machine's band in grey, with a dashed middle line, drawn again by Python from the latest 1H close every hour. The shaded future area and the "next hours" figures start there, so the future always begins at the newest candle.
+- **Kronos:** its 30 paths as faint blue lines, with its 10th to 90th percentile band and middle line, from its own close. A run older than the latest close is drawn faded where it was made, labelled with its age, and left out of the "next hours" figures, the level reach shares and the price scale.
 - **Python levels:** solid lines for levels price has reacted at, dotted or dashed for calculated ones. Labels sit in an empty margin on the right, so none covers a candle or the forecast.
 - **The plan:** a position box, red between entry and stop and green toward the targets, across the time the plan was valid. Its status comes from the shared simulator on the 15M candles that followed.
 - **Patterns:** each chart pattern's turning points, measured-move targets and invalidation, in orange.
@@ -144,7 +144,11 @@ Every layer can be switched off from the legend. Candles switch between 15M, 1H,
 
 Colours were checked on the chart surface with the dataviz palette validator. Kronos blue against pattern orange separates by ΔE 26.8 under colour-blind simulation, and risk and reward always carry text labels.
 
-The chart is live while the ingestor runs. The forming candle updates over the WebSocket, and each closed candle reloads the view. Python's levels, patterns and decisions are computed at the latest stored 1H close, so they move on every hour without a button. Kronos and its baseline stay at the forecast's own close, and both times are shown above the chart.
+The chart is live while the ingestor runs. The forming candle updates over the WebSocket, and each closed candle reloads the view. Python's levels, patterns, decisions and the projection are computed at the latest stored 1H close, so they move on every hour without a button. Kronos stays at its own close, and both times are shown above the chart. The status says when prices stop arriving although the connection is open, and a warning appears when the latest 1H close is more than 2 hours old.
+
+The side panels start with **Python's signal**: each strategy's decision at the latest close, with Python's entry, stop and targets when it proposes a trade. A Claude plan follows it, showing Python's decisions at the plan's own close and warning when Claude planned while Python had no signal (D009, [07-CLAUDE-AI-ANALYST.md](07-CLAUDE-AI-ANALYST.md)).
+
+Until 2026-11-06 the chart anchored the future, the baseline and the "next hours" figures at the Kronos run's close, so with a 12-hour-old run nothing was drawn after the newest candle, and reach shares measured from an old price were shown beside distances from the current one.
 
 **Re-analyse** runs a new Kronos forecast from the latest stored 1H close, in the background, about 90 seconds. One analysis runs at a time. A second press gets a clear refusal, and a press at a close that was already analysed keeps the stored forecast. A file lock keeps Kronos to one run at a time across processes, so a study and the button never run it together.
 
@@ -166,6 +170,18 @@ One forecast a day for BTC and ETH, from the 1H close before each day: 104 forec
 Kronos was confident and often wrong. When it said about 99% of paths end higher, the price ended higher 54% of the time, and when it said about 6%, 43% of the time. 79 of 104 real closes fell in the outer tenths of its paths. In this configuration, it pulled its forecasts toward the average of the 400 input hours, with bands far too narrow.
 
 This meets D040's revisit condition. The configuration was fixed before the study and is not tuned on it: any other configuration must be fixed in advance and tested on days it has not seen.
+
+### Audit, 2026-11-06
+
+The owner asked whether the output was wrong. The call was checked against Kronos's own code: 30 copies of the series go through its batch prediction with one sample each, so paths are never averaged, and each window is normalised by Kronos itself. Across all 113 stored forecasts:
+
+| Measure | Kronos | Baseline | Prices |
+|---|---|---|---|
+| Share of the gap to the 400-hour mean closed within 24 hours, by regression | 45%, correlation 0.86 | −1% | 12%, correlation 0.19 |
+| Median width of the 10th to 90th percentile close band | 3.4 ATR | 8.6 ATR | Median absolute 24-hour move 2.3 ATR |
+| Median jump from the last close to the first sampled candle | −0.10 ATR, largest 1.24 | 0 | |
+
+The forecasts mostly say "back toward the average of the last 400 hours", with too much certainty. After the fall of 2026-11-05, the runs from 01:59 and 13:59 UTC on 2026-11-06 forecast rises of 3.8 and 5.2 ATR because the average sits far above the price, not because of new information. The 7 live forecasts from 2026-11-05 all missed falls of 8 to 11 ATR. The errors come from the model in this configuration, not from the wiring.
 
 ## Limits
 

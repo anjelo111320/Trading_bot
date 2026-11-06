@@ -409,3 +409,4 @@ Consequences:
 - Option B, or any effect on size, needs a new decision after live forecasts show "better than baseline".
 Revisit conditions: 100 resolved live forecasts, or a study showing Kronos worse than the baseline.
 Result, 2026-11-05: the study of 104 forecasts from 2025-09-10 to 2025-10-31 found Kronos **worse than the baseline** with 95% confidence: Brier 0.393 against 0.252, and its 80% close band held the real close 24% of the time. The revisit condition is met, and the owner's decision is pending. Until then Claude's context labels the track record as "worse than baseline". Details: [30-MODEL-FORECASTS.md](30-MODEL-FORECASTS.md).
+Audit, 2026-11-06: the call matches Kronos's own batch prediction, so the errors come from the model in this configuration, not the wiring. Its 24-hour middle moves 45% of the way back to the mean of its 400 input hours (correlation 0.86), where prices moved 12% (correlation 0.19).
