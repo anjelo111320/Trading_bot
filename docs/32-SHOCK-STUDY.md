@@ -1,7 +1,7 @@
 # Crash Warning Study
 
 Date: 2026-11-06
-Status: Pre-registered before any run. Results are added below once, without changing the rules.
+Status: Pre-registered before any run, then run once on 2026-11-06: the filter is **not adopted**. The results are below, with the rules unchanged.
 
 ## Why This Study
 
@@ -50,3 +50,26 @@ Otherwise the result is recorded and nothing changes.
 - Skipping a trade can let a later one happen in a backtest. That second-order effect is not simulated.
 - Liquidation bursts and open interest, which were the clearest signs on 2026-11-05, have no history before November 2026 and are not tested here. They can only be tested going forward.
 - Several studies have now used these years, so a borderline result is weak evidence.
+
+## Results
+
+Run once on 2026-11-06, with the rules above unchanged and committed before the run. Simulated results. Report: [shock-study.md](reports/shock-study.md).
+
+| Pooled, six coins, 2020 to 2025 | Value |
+|---|---|
+| 1H closes with a large fall ahead | 1.50% |
+| Down warnings | 3,084, about 7.6 per coin per month |
+| Warnings followed by a large fall | 5.8%, against 1.8% at the random benchmark's 95th percentile |
+| Lift | 3.8, and between 3.2 and 4.5 on every coin |
+| Large-fall episodes caught | 151 of 1,299, 12% |
+| Share of the fall still ahead at the warning | 81%, median |
+| Pattern longs a filter would skip | 10, mean -0.60R, against +0.10R for the rest |
+| Daily trend longs a filter would skip | None |
+
+What this says:
+
+- The warning carries information. After one, a large fall is about 3.8 times as likely as after a random hour, on every coin, and when it catches a fall most of the fall is still ahead.
+- It is not a crash detector. It misses 88% of large falls, and 94% of warnings are followed by no large fall.
+- As a trade filter it would rarely act: 10 pattern trades in six years, and none of the daily trend's, whose longs come at 20-day highs rather than after sharp drops.
+
+Decision: not adopted. The rule required the skipped longs to lose in both backtests, and the daily trend had none to skip. Trading does not change. Showing the warning on the dashboard as information, or a filter for the pattern strategy alone, would each be a new decision with its own forward test.

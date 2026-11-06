@@ -414,6 +414,16 @@ Consequences:
 - Live trades can differ from backtests where the account limits refuse a signal, and the refusal is stored with its reason.
 Revisit conditions: a strategy's forward results fall outside its backtest's range, or Railway replaces this computer.
 
+### D043: Crash warning filter, tested and not adopted
+Date: 2026-11-06.
+Status: Studied at the owner's request after the fall of 2026-11-05, and not adopted by its own pre-registered rule.
+Context: The owner asked whether the system can detect a fall like the one on 2026-11-05 before it happens.
+Decision: The study in [32-SHOCK-STUDY.md](32-SHOCK-STUDY.md) ran once on six coins from 2020 to 2025. A down warning made a large fall 3.8 times as likely as a random hour, but caught only 12% of large falls and was followed by none 94% of the time. As a 12-hour filter on new longs it would have skipped 10 pattern trades and no daily trend trades, so its rule was not met. Nothing changes in trading.
+Consequences:
+- `market_structure.shock.down_warnings` stays, with its tests, so a later decision can use it.
+- Liquidation bursts and open interest, which were the clearest signs on 2026-11-05, can only be studied forward from November 2026.
+Revisit conditions: the owner wants the warning shown as information, or six months of forward liquidation and open-interest data exist.
+
 ## Owner Decisions, 2026-11-05 Model Forecasts
 
 ### D040: Kronos forecasts are labelled evidence, never prices
