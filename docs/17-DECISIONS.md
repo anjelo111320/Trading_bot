@@ -315,7 +315,7 @@ Revisit conditions: a source's terms forbid this use, or the owner's key is not 
 
 ### D033: Coin universe with news-driven candidates
 Date: 2026-11-03.
-Status: Accepted by the owner on 2026-11-04. Not built yet: the core coins and the candidate screen come next.
+Status: Accepted by the owner on 2026-11-04. **SOLUSDT, XRPUSDT, BNBUSDT and DOGEUSDT were added on 2026-11-06** at the owner's request (migration 0008), each checked that day as a trading perpetual listed in 2020 and outside Binance Alpha. The candidate screen is not built yet.
 Context: The owner asked which coins people trade now, and for a way to add coins when news makes them relevant. Research is in [26-PATTERN-RESEARCH.md](26-PATTERN-RESEARCH.md), section 7.
 Options considered: a fixed list; automatic adds; screened suggestions that the owner approves.
 Proposal:
@@ -399,6 +399,20 @@ Consequences:
 - The code, tests and reports stay, so the result can be reproduced.
 - In this history, a reversal candle at a level inside a trend more often came before the level broke than before it held. Claude's reviews should not treat one as a reason to enter.
 Revisit conditions: none for this version. A changed version is a new trial with its own pre-registration.
+
+### D042: Automatic paper trading with the two tested strategies
+Date: 2026-11-06.
+Status: Accepted by the owner, who asked to start it with the Mac kept awake.
+Context: The two older strategies made small backtest profits that could be luck (docs/27, docs/29), and the holdout cannot settle that. Forward paper results are the evidence hindsight cannot reach.
+Decision:
+- The quant worker runs the 1H pattern breakout at every 1H close and the daily trend at every daily close, for every core perpetual, through the risk engine into the owner's single paper account. The 15M rule baseline no longer runs live.
+- Each strategy holds at most one position per coin, as in its backtest. The account's limits apply across both: at most 3 open positions and a 3% daily loss limit.
+- The daily trend's 10-day trailing exit tightens the stop at each daily close. Moves are stored once in `paper_stop_moves` and take effect from the next candle, so a replay after sleep gives the same fills.
+- The ingestor runs under `caffeinate` through `scripts/soak.sh`, so the Mac stays awake while it runs.
+Consequences:
+- Forward results per strategy come from the stored recommendations, which name their strategy.
+- Live trades can differ from backtests where the account limits refuse a signal, and the refusal is stored with its reason.
+Revisit conditions: a strategy's forward results fall outside its backtest's range, or Railway replaces this computer.
 
 ## Owner Decisions, 2026-11-05 Model Forecasts
 

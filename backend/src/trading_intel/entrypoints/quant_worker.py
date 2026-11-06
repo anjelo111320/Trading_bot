@@ -40,7 +40,6 @@ from trading_intel.technical_analysis.pipeline import (
     values_at,
 )
 from trading_intel.technical_analysis.series import CandleSeries
-from trading_intel.trade_signals.baseline import SETUP_TIMEFRAME
 from trading_intel.trade_signals.service import SignalService
 
 log = structlog.get_logger(__name__)
@@ -51,7 +50,8 @@ MINIMUM_CANDLES: Final = 30
 
 
 class TradingLoop:
-    """Signals on the setup timeframe, and paper fills on every minute (D008: perpetuals only)."""
+    """Paper fills on every minute, the pattern strategy at each 1H close, and the daily trend
+    strategy at each daily close, after tightening its open stops (D008: perpetuals only)."""
 
     def __init__(
         self,
@@ -77,11 +77,33 @@ class TradingLoop:
             return
         if timeframe is Timeframe.M1:
             await self._paper.sync(provider_id, instrument_id)
-        elif timeframe is SETUP_TIMEFRAME:
-            account = await self._accounts.ensure_account(self._owner_email)
-            if account is not None:
-                outcome = await self._signals.evaluate(provider_id, instrument, close_time, account)
-                log.info("signal_evaluated", action=outcome.action.value, reasons=outcome.reasons)
+            return
+        if timeframe not in (Timeframe.H1, Timeframe.D1):
+            return
+        account = await self._accounts.ensure_account(self._owner_email)
+        if account is None:
+            return
+        if timeframe is Timeframe.D1:
+            moved = await self._signals.trail_stops(provider_id, instrument, close_time)
+            outcome = await self._signals.evaluate_trend(
+                provider_id, instrument, close_time, account
+            )
+            strategy = "daily_trend"
+        else:
+            moved = 0
+            outcome = await self._signals.evaluate_pattern(
+                provider_id, instrument, close_time, account
+            )
+            strategy = "pattern_breakout"
+        log.info(
+            "signal_evaluated",
+            strategy=strategy,
+            instrument=instrument.symbol,
+            action=outcome.action.value,
+            approved=outcome.approved,
+            reasons=outcome.reasons,
+            stops_moved=moved,
+        )
 
 
 class QuantService:

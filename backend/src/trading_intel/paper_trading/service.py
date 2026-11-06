@@ -106,9 +106,13 @@ class PaperService:
         )
         simulator = TradeSimulator(build_order(trade))
         pending = list(funding)
+        moves = list(trade.stop_moves)
         added = 0
         state = trade.state
         for candle in candles:
+            # A stop decided at a close applies from the first candle after it, as in backtests.
+            while moves and moves[0][0] < candle.open_time:
+                simulator.move_stop(moves.pop(0)[1])
             while pending and pending[0][0] < candle.close_time:
                 at, rate, mark = pending.pop(0)
                 for fill in simulator.on_funding(at, rate, mark or candle.close):

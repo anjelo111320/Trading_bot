@@ -35,6 +35,9 @@ class OpenTrade:
     expires_at: datetime
     state: SignalState
     inputs: dict[str, Any]
+    strategy: str = ""  # The strategy configuration's name.
+    # Tightened stops, each effective from the first candle after its time (D039).
+    stop_moves: tuple[tuple[datetime, Decimal], ...] = ()
 
 
 class PaperRepository:
@@ -72,7 +75,11 @@ class PaperRepository:
             """SELECT p.id AS position_id, r.id AS recommendation_id, p.account_id, r.provider_id,
                       r.instrument_id, p.side::text AS side, r.entry_type::text AS entry_type,
                       r.entry_price, r.stop_loss, p.planned_quantity, r.created_at, r.expires_at,
-                      s.state::text AS state, a.inputs,
+                      s.state::text AS state, a.inputs, c.name AS strategy,
+                      (SELECT array_agg(m.effective_after ORDER BY m.effective_after)
+                       FROM paper_stop_moves m WHERE m.position_id = p.id) AS moved_at,
+                      (SELECT array_agg(m.stop_price ORDER BY m.effective_after)
+                       FROM paper_stop_moves m WHERE m.position_id = p.id) AS moved_to,
                       (SELECT array_agg(t.price ORDER BY t.target_no) FROM trade_targets t
                        WHERE t.recommendation_id = r.id) AS targets,
                       (SELECT array_agg(t.allocation_fraction ORDER BY t.target_no)
@@ -81,6 +88,7 @@ class PaperRepository:
                JOIN trade_recommendations r ON r.id = p.recommendation_id
                JOIN signal_current_state s ON s.recommendation_id = r.id
                JOIN risk_assessments a ON a.recommendation_id = r.id
+               JOIN strategy_configurations c ON c.id = r.strategy_configuration_id
                WHERE p.status IN ('pending_entry', 'open') AND r.provider_id = :provider
                  AND r.instrument_id = :instrument"""
         )
@@ -105,9 +113,27 @@ class PaperRepository:
                 expires_at=row["expires_at"],
                 state=SignalState(row["state"]),
                 inputs=row["inputs"],
+                strategy=row["strategy"],
+                stop_moves=tuple(zip(row["moved_at"] or (), row["moved_to"] or (), strict=True)),
             )
             for row in rows
         ]
+
+    async def record_stop_move(
+        self, position_id: UUID, after: datetime, stop: Decimal, reason: str
+    ) -> bool:
+        """A tighter stop from the first candle after `after`. False if already recorded."""
+        async with self._engine.begin() as connection:
+            result = await connection.execute(
+                text(
+                    """INSERT INTO paper_stop_moves (position_id, effective_after, stop_price,
+                         reason)
+                       VALUES (:position, :after, :stop, :reason)
+                       ON CONFLICT (position_id, effective_after) DO NOTHING"""
+                ),
+                {"position": position_id, "after": after, "stop": stop, "reason": reason},
+            )
+        return result.rowcount == 1
 
     async def record_fill(
         self, position_id: UUID, fill: Fill, reconstructed: bool, market_event: dict[str, Any]

@@ -29,10 +29,11 @@ from trading_intel.database.repositories.signals import Account, SignalRepositor
 from trading_intel.domain.base import DataOrigin
 from trading_intel.domain.candles import ClosedCandle, Timeframe
 from trading_intel.domain.instruments import Instrument, InstrumentRules
-from trading_intel.domain.signals import EntryType, Side
+from trading_intel.domain.signals import Action, EntryType, Side
 from trading_intel.paper_trading.service import PaperService
 from trading_intel.risk_management.models import TradeProposal
-from trading_intel.trade_signals.service import SignalService
+from trading_intel.trade_signals.baseline import BaselineDecision
+from trading_intel.trade_signals.service import SignalService, StrategyIdentity
 
 pytestmark = pytest.mark.integration
 
@@ -366,3 +367,111 @@ async def test_a_real_execution_flag_is_impossible(world: World) -> None:
             )
         ).scalar_one()
     assert columns >= 1
+
+
+TREND = StrategyIdentity("daily_trend", 1, {"test": True})
+
+
+def day(world: World, days_before: int, low: str, high: str) -> ClosedCandle:
+    """A daily candle that closed before NOW, rising as `days_before` falls."""
+    at = Timeframe.D1.floor(NOW) - timedelta(days=days_before)
+    base = candle(0, float(low), float(high), float(low), float(high), 1000.0, Timeframe.D1)
+    return base.model_copy(
+        update={
+            "provider_id": world.provider_id,
+            "instrument_id": world.instrument.id,
+            "open_time": at,
+            "close_time": Timeframe.D1.close_time(at),
+            "data_origin": DataOrigin.LIVE,
+        }
+    )
+
+
+async def open_trend(world: World) -> Any:
+    rules = await RuleRepository(world.signals._rules._engine).current(
+        world.provider_id, world.instrument.id
+    )
+    return await world.signals._assess(
+        world.provider_id,
+        world.instrument,
+        NOW,
+        world.account,
+        rules,
+        proposal(stop=D("50.00"), targets=(D("1000.00"),)),
+        D(1),
+        ("close beyond the 20-day range",),
+        strategy=TREND,
+        timeframe=Timeframe.D1,
+    )
+
+
+async def test_a_trailed_stop_takes_effect_from_the_next_candle(world: World) -> None:
+    """D039: a stop decided at a close applies from the next candle, never to that one."""
+    await approve(world)
+    [trade] = await world.paper_repository.active(world.provider_id, world.instrument.id)
+    after = Timeframe.M1.close_time(NOW + timedelta(minutes=1))
+    assert await world.paper_repository.record_stop_move(
+        trade.position_id, after, D("99.60"), "test"
+    )
+    assert not await world.paper_repository.record_stop_move(
+        trade.position_id, after, D("99.70"), "test"
+    ), "a move is recorded once"
+    await world.candles.insert(
+        [
+            bar(world, 1, "100", "100.5", "99.5", "100.2"),  # Before the move: no stop.
+            bar(world, 2, "100.2", "100.3", "99.5", "99.8"),  # After it: stopped at 99.60.
+        ]
+    )
+    world.clock.advance(240)
+    await world.paper.sync(world.provider_id, world.instrument.id)
+    fills = await rows("SELECT kind, executed_at FROM paper_executions ORDER BY executed_at")
+    assert [f["kind"] for f in fills] == ["entry", "stop"]
+    assert fills[1]["executed_at"] == Timeframe.M1.close_time(NOW + timedelta(minutes=2))
+    [outcome] = await rows("SELECT outcome FROM trade_outcomes")
+    assert outcome["outcome"] == "LOSS"
+
+
+async def test_each_strategy_holds_one_position_per_coin(world: World) -> None:
+    assert (await open_trend(world)).approved
+    rules = await RuleRepository(world.signals._rules._engine).current(
+        world.provider_id, world.instrument.id
+    )
+    assert rules is not None
+    decision = BaselineDecision(
+        Action.BUY, NOW, ("again",), proposal=proposal(entry=D("100.50")), setup_atr=D(1)
+    )
+    again = await world.signals._submit(
+        world.provider_id,
+        world.instrument,
+        NOW,
+        world.account,
+        rules,
+        decision,
+        TREND,
+        Timeframe.D1,
+    )
+    assert not again.approved and again.reasons == ("a position from this strategy is open",)
+    other = await world.signals._submit(
+        world.provider_id,
+        world.instrument,
+        NOW,
+        world.account,
+        rules,
+        decision,
+        StrategyIdentity("pattern_breakout", 1, {"test": True}),
+        Timeframe.H1,
+    )
+    assert other.recommendation_id is not None, "another strategy still reaches the risk engine"
+
+
+async def test_the_trend_stop_trails_the_10_day_low_once_per_close(world: World) -> None:
+    assert (await open_trend(world)).approved
+    await world.candles.insert(
+        [day(world, n, str(100 + (30 - n)), str(102 + (30 - n))) for n in range(30, 0, -1)]
+    )
+    last_close = Timeframe.D1.close_time(Timeframe.D1.floor(NOW) - timedelta(days=1))
+    assert await world.signals.trail_stops(world.provider_id, world.instrument, last_close) == 1
+    [trade] = await world.paper_repository.active(world.provider_id, world.instrument.id)
+    # The lowest low of the last 10 days: the candle 10 days back opened at 120.
+    assert trade.stop_moves == ((last_close, D("120.00")),)
+    assert await world.signals.trail_stops(world.provider_id, world.instrument, last_close) == 0
