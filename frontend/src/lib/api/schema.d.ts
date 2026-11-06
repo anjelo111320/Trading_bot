@@ -535,6 +535,8 @@ export interface components {
              * Format: date-time
              */
             created_at: string;
+            /** Forecast Current */
+            forecast_current: boolean;
             /** Horizons */
             horizons: components["schemas"]["HorizonView"][];
             /** Instrument Id */
@@ -556,6 +558,7 @@ export interface components {
             /** Patterns */
             patterns: components["schemas"]["ChartPatternView"][];
             plan: components["schemas"]["PlanView"] | null;
+            projection: components["schemas"]["ProjectionView"] | null;
             /** Provider */
             provider: string;
             /** Reason */
@@ -880,6 +883,8 @@ export interface components {
             note: string;
             /** Pre Mortem */
             pre_mortem: string;
+            /** Python At Close */
+            python_at_close: components["schemas"]["StrategyView"][] | null;
             /** Quantity */
             quantity: string | null;
             /** Rejection Codes */
@@ -949,14 +954,69 @@ export interface components {
             /** Stale */
             stale: boolean;
         };
-        /** ReachView */
+        /** ProjectionHorizonView */
+        ProjectionHorizonView: {
+            baseline: components["schemas"]["SpreadView"];
+            /** Candles */
+            candles: number;
+        };
+        /** ProjectionStepView */
+        ProjectionStepView: {
+            close: components["schemas"]["BandView"];
+            /**
+             * Open Time
+             * Format: date-time
+             */
+            open_time: string;
+        };
+        /**
+         * ProjectionView
+         * @description The baseline drawn again from the latest 1H close, so the chart's future starts now.
+         */
+        ProjectionView: {
+            /**
+             * As Of
+             * Format: date-time
+             */
+            as_of: string;
+            /** Atr */
+            atr: number;
+            /** Horizons */
+            horizons: components["schemas"]["ProjectionHorizonView"][];
+            /** Last Close */
+            last_close: string;
+            /** Paths */
+            paths: number;
+            /** Steps */
+            steps: components["schemas"]["ProjectionStepView"][];
+        };
+        /**
+         * ProposalView
+         * @description Prices Python calculated for a signal. Size and costs come from the risk engine.
+         */
+        ProposalView: {
+            /** Entry */
+            entry: string;
+            /** Entry Type */
+            entry_type: string | null;
+            /** Side */
+            side: string;
+            /** Stop */
+            stop: string;
+            /** Targets */
+            targets: string[];
+        };
+        /**
+         * ReachView
+         * @description Shares of paths that reach the level within this many candles of the latest close.
+         */
         ReachView: {
             /** Baseline */
-            baseline: number;
+            baseline: number | null;
             /** Candles */
             candles: number;
             /** Model */
-            model: number;
+            model: number | null;
         };
         /** SignalView */
         SignalView: {
@@ -1045,6 +1105,7 @@ export interface components {
             action: string;
             /** Name */
             name: string;
+            proposal?: components["schemas"]["ProposalView"] | null;
             /** Reasons */
             reasons: string[];
         };

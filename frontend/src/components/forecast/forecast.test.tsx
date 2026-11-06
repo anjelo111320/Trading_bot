@@ -2,16 +2,17 @@
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-import type { AnalysisJob, ForecastPlan, ForecastView } from "@/lib/api/client";
+import type { AnalysisJob, ForecastPlan, ForecastProjection, ForecastStrategy, ForecastView } from "@/lib/api/client";
 
 import { liveBar, signalMarkers } from "./ForecastChart";
-import { LiveStatus, ReanalyseButton, analysisText } from "./LiveControls";
+import { LiveStatus, ReanalyseButton, analysisText, duration } from "./LiveControls";
 import {
   CandleSignalsPanel,
   HoverReadout,
   LayerToggles,
   LevelsPanel,
   PlanPanel,
+  PythonSignalPanel,
   SummaryPanel,
   TrackRecordPanel,
 } from "./ForecastPanels";
@@ -43,6 +44,7 @@ const PLAN: ForecastPlan = {
   bear_case: "case against",
   pre_mortem: "pre-mortem",
   note: "",
+  python_at_close: null,
   status: {
     state: "waiting",
     exit_reason: null,
@@ -56,6 +58,20 @@ const PLAN: ForecastPlan = {
   },
 };
 
+const PROJECTION: ForecastProjection = {
+  as_of: "2026-11-05T02:59:59.999Z",
+  last_close: "80544.2",
+  atr: 523.73,
+  paths: 10000,
+  steps: [{ open_time: "2026-11-05T03:00:00Z", close: band(80247, 80543, 80813) }],
+  horizons: [
+    {
+      candles: 4,
+      baseline: { share_ending_higher: 0.49, highest: band(80607, 80848, 81445), lowest: band(79586, 80220, 80481), close: band(79900, 80534, 81157) },
+    },
+  ],
+};
+
 const VIEW: ForecastView = {
   label: "unvalidated model forecast",
   provider: "binance_usdm",
@@ -65,6 +81,7 @@ const VIEW: ForecastView = {
   as_of: "2026-11-05T02:59:59.999Z",
   analysis_as_of: "2026-11-05T02:59:59.999Z",
   analysis_close: "80544.2",
+  forecast_current: true,
   created_at: "2026-11-05T03:08:00Z",
   reason: "manual",
   model: "NeoQuasar/Kronos-small",
@@ -85,6 +102,7 @@ const VIEW: ForecastView = {
       baseline: { share_ending_higher: 0.49, highest: band(80607, 80848, 81445), lowest: band(79586, 80220, 80481), close: band(79900, 80534, 81157) },
     },
   ],
+  projection: PROJECTION,
   levels: [
     { id: "L3", price: "80982.5", kind: "resistance", position: "above", evidence: "test", distance_atr: 0.84, reach: [{ candles: 4, model: 0.42, baseline: 0.35 }] },
     { id: "L1", price: "80503.2", kind: "support", position: "below", evidence: "test", distance_atr: -0.08, reach: [{ candles: 4, model: 1, baseline: 0.93 }] },
@@ -109,14 +127,43 @@ const VIEW: ForecastView = {
   plan: PLAN,
 };
 
+/** Seven hours later: Python has moved on, and the Kronos run is still from 02:59. */
+const LATER: ForecastView = {
+  ...VIEW,
+  analysis_as_of: "2026-11-05T09:59:59.999Z",
+  analysis_close: "79100",
+  forecast_current: false,
+  projection: {
+    ...PROJECTION,
+    as_of: "2026-11-05T09:59:59.999Z",
+    last_close: "79100",
+    steps: [{ open_time: "2026-11-05T10:00:00Z", close: band(78800, 79090, 79400) }],
+    horizons: [
+      {
+        candles: 4,
+        baseline: { share_ending_higher: 0.47, highest: band(79200, 79500, 80100), lowest: band(78300, 78800, 79000), close: band(78600, 79080, 79600) },
+      },
+    ],
+  },
+  levels: VIEW.levels.map((level) => ({ ...level, reach: [{ candles: 4, model: null, baseline: 0.2 }] })),
+};
+
 afterEach(cleanup);
 
 describe("forecast panels", () => {
-  it("compares Kronos with the baseline for the chosen span", () => {
-    render(<SummaryPanel horizon={VIEW.horizons[0]!} lastClose={80544.2} atr={523.73} />);
-    expect(screen.getByText("Next 4 hours")).toBeTruthy();
+  it("compares a current Kronos run with the baseline from the latest close", () => {
+    render(<SummaryPanel view={VIEW} span={4} />);
+    expect(screen.getByText("Next 4 hours · from 02:59 UTC")).toBeTruthy();
     expect(screen.getByText("33%")).toBeTruthy();
     expect(screen.getByText("49%")).toBeTruthy();
+  });
+
+  it("projects from the latest close and leaves an old Kronos run out, saying how old", () => {
+    render(<SummaryPanel view={LATER} span={4} />);
+    expect(screen.getByText("Next 4 hours · from 09:59 UTC")).toBeTruthy();
+    expect(screen.getByText("47%")).toBeTruthy();
+    expect(screen.getAllByText("–")).toHaveLength(5);
+    expect(screen.getByText(/Kronos last ran from the 02:59 UTC close, 7h earlier/)).toBeTruthy();
   });
 
   it("labels the model unvalidated and says the baseline has been better", () => {
@@ -133,6 +180,33 @@ describe("forecast panels", () => {
     expect(screen.getByRole("status").textContent).toContain("Waiting for fill until 07:00 UTC");
   });
 
+  it("shows Python's own signal first, with Python's prices when it has one", () => {
+    const trend: ForecastStrategy = {
+      name: "Daily trend",
+      action: "BUY",
+      reasons: ["close beyond the 20-day range"],
+      proposal: { side: "LONG", entry_type: "MARKET", entry: "80544.2", stop: "79500", targets: ["90988.2"] },
+    };
+    const view: ForecastView = { ...VIEW, context: { ...VIEW.context, strategies: [VIEW.context.strategies[0]!, trend] } };
+    render(<PythonSignalPanel view={view} />);
+    expect(screen.getByText("Python signal · 02:59 UTC close")).toBeTruthy();
+    expect(screen.getByText("Buy market 80,544.2 · stop 79,500 · target 90,988.2")).toBeTruthy();
+    expect(screen.getByText(/Claude only reviews a Python signal and never sets a price/)).toBeTruthy();
+  });
+
+  it("says when Claude planned without a Python signal at that close", () => {
+    // Regression: the BTC plan of 2026-11-05 was made while both strategies said no trade.
+    const python: ForecastStrategy[] = [
+      { name: "1H pattern breakout", action: "NO_TRADE", reasons: ["no pattern breakout"], proposal: null },
+      { name: "Daily trend", action: "NO_TRADE", reasons: ["no 20-day breakout"], proposal: null },
+    ];
+    const { rerender } = render(<PlanPanel plan={{ ...PLAN, python_at_close: python }} />);
+    expect(screen.getByText(/Python first, at the 02:59 UTC close/)).toBeTruthy();
+    expect(screen.getByText(/Python had no signal at this close, so this plan was Claude's own idea/)).toBeTruthy();
+    rerender(<PlanPanel plan={PLAN} />);
+    expect(screen.getByText("No Python calculation was saved with this plan.")).toBeTruthy();
+  });
+
   it("marks the levels the plan uses and how often each source reaches them", () => {
     render(<LevelsPanel view={VIEW} span={4} />);
     expect(screen.getByText("entry")).toBeTruthy();
@@ -140,15 +214,35 @@ describe("forecast panels", () => {
     expect(screen.getByText("35%")).toBeTruthy();
   });
 
-  it("reads the forecast under the cursor, and the span summary otherwise", () => {
+  it("gives no Kronos reach for today's levels from an old run", () => {
+    render(<LevelsPanel view={LATER} span={4} />);
+    expect(screen.getAllByText("–")).toHaveLength(2);
+    expect(screen.getAllByText("20%")).toHaveLength(2);
+    expect(screen.getByText(/within 4h of the 09:59 UTC close/)).toBeTruthy();
+  });
+
+  it("reads the projection and Kronos under the cursor, and the span summary otherwise", () => {
     const { rerender } = render(
       <HoverReadout view={VIEW} hoverTime={Date.parse("2026-11-05T03:00:00Z") / 1000} span={4} barSeconds={3600} />,
     );
-    expect(screen.getByText(/03:00 UTC close/)).toBeTruthy();
+    expect(screen.getByText(/03:00 UTC candle · Baseline 80,543/)).toBeTruthy();
+    expect(screen.getByText(/Kronos 80,480/)).toBeTruthy();
     rerender(<HoverReadout view={VIEW} hoverTime={Date.parse("2026-11-05T00:00:00Z") / 1000} span={4} barSeconds={3600} />);
     expect(screen.getByText(/Shooting star/)).toBeTruthy();
     rerender(<HoverReadout view={VIEW} hoverTime={null} span={4} barSeconds={3600} />);
-    expect(screen.getByText(/Kronos 33% of paths end higher/)).toBeTruthy();
+    expect(screen.getByText(/Next 4h from the 02:59 UTC close: baseline 49% of paths end higher/)).toBeTruthy();
+    expect(screen.getByText(/Kronos 33%/)).toBeTruthy();
+  });
+
+  it("names an old Kronos run as old, and reads the future from the latest close", () => {
+    const { rerender } = render(<HoverReadout view={LATER} hoverTime={null} span={4} barSeconds={3600} />);
+    expect(screen.getByText(/Next 4h from the 09:59 UTC close: baseline 47%/)).toBeTruthy();
+    expect(screen.getByText(/Kronos run is 7h old/)).toBeTruthy();
+    rerender(<HoverReadout view={LATER} hoverTime={Date.parse("2026-11-05T10:00:00Z") / 1000} span={4} barSeconds={3600} />);
+    expect(screen.getByText(/10:00 UTC candle · Baseline 79,090/)).toBeTruthy();
+    expect(screen.queryByText(/Kronos/)).toBeNull();
+    rerender(<HoverReadout view={LATER} hoverTime={Date.parse("2026-11-05T03:00:00Z") / 1000} span={4} barSeconds={3600} />);
+    expect(screen.getByText(/Kronos run from 02:59 UTC: 80,480/)).toBeTruthy();
   });
 
   it("lists candle signals newest first, named, with their direction", () => {
@@ -231,13 +325,24 @@ describe("re-analysis", () => {
 });
 
 describe("live chart", () => {
+  const now = Date.parse("2026-11-06T01:46:00Z");
+
   it("says when the feed is live and shows the mid price", () => {
-    const { rerender } = render(
-      <LiveStatus connection="open" price={{ bid: "80600.1", ask: "80600.3", receivedAt: "" }} />,
-    );
+    const price = { bid: "80600.1", ask: "80600.3", receivedAt: "2026-11-06T01:45:50Z" };
+    const { rerender } = render(<LiveStatus connection="open" price={price} now={now} />);
     expect(screen.getByRole("status").textContent).toBe("●Live80,600.2");
-    rerender(<LiveStatus connection="connecting" price={null} />);
+    rerender(<LiveStatus connection="connecting" price={null} now={now} />);
     expect(screen.getByRole("status").textContent).toContain("Reconnecting");
+    rerender(<LiveStatus connection="open" price={null} now={now} />);
+    expect(screen.getByRole("status").textContent).toContain("waiting for prices");
+  });
+
+  it("says the feed has stopped when prices stop, though the socket stays open", () => {
+    // Regression: the page said Live through a night with no data, while the Mac slept.
+    const price = { bid: "80600.1", ask: "80600.3", receivedAt: "2026-11-05T15:41:00Z" };
+    render(<LiveStatus connection="open" price={price} now={now} />);
+    expect(screen.getByRole("status").textContent).toBe("●No new prices for 10 h");
+    expect(duration(90)).toBe("2 min");
   });
 
   it("draws the forming candle hollow and a closed one filled", () => {
@@ -266,5 +371,10 @@ describe("planRoles", () => {
 
   it("trusts the stop's level ID while the analysis is at the plan's close", () => {
     expect(planRoles(VIEW).get("L6")).toBe("stop beyond");
+  });
+
+  it("gives today's levels no roles from a finished plan", () => {
+    const expired = { ...PLAN, status: { ...PLAN.status, state: "not_filled" as const, exit_reason: "expiry" } };
+    expect(planRoles({ ...VIEW, plan: expired }).size).toBe(0);
   });
 });

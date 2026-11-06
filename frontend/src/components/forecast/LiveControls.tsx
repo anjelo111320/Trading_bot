@@ -60,23 +60,43 @@ export function ReanalyseButton({
   );
 }
 
-/** Whether the chart is streaming, and the live mid price when it is. */
+/** A price older than this means the feed has stopped, even while the socket stays open. */
+const STALE_SECONDS = 60;
+
+export function duration(seconds: number): string {
+  return seconds < 3600 ? `${Math.max(1, Math.round(seconds / 60))} min` : `${Math.round(seconds / 3600)} h`;
+}
+
+/** Whether new prices are arriving, and the live mid price while they are. */
 export function LiveStatus({
   connection,
   price,
+  now,
 }: {
   connection: ConnectionState;
   price: LivePrice | null;
+  now: number;
 }) {
-  const live = connection === "open";
+  const open = connection === "open";
+  const received = price ? Date.parse(price.receivedAt) : Number.NaN;
+  const age = Number.isFinite(received) ? Math.max(0, (now - received) / 1000) : null;
+  const stale = age !== null && age > STALE_SECONDS;
+  const fresh = open && price !== null && !stale;
+  const text = !open
+    ? "Reconnecting…"
+    : price === null
+      ? "Live · waiting for prices"
+      : stale
+        ? `No new prices for ${duration(age ?? 0)}`
+        : "Live";
   const mid = price ? (Number(price.bid) + Number(price.ask)) / 2 : null;
   return (
     <span className="flex items-center gap-1.5 text-xs" role="status">
-      <span aria-hidden="true" className={live ? "text-good" : "text-warn"}>
+      <span aria-hidden="true" className={fresh ? "text-good" : "text-warn"}>
         ●
       </span>
-      <span className={live ? "text-ink" : "text-warn"}>{live ? "Live" : "Reconnecting…"}</span>
-      {live && mid !== null ? <span className="text-muted">{formatNumber(mid.toFixed(2))}</span> : null}
+      <span className={fresh ? "text-ink" : "text-warn"}>{text}</span>
+      {fresh && mid !== null ? <span className="text-muted">{formatNumber(mid.toFixed(2))}</span> : null}
     </span>
   );
 }

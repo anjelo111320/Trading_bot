@@ -137,26 +137,28 @@ export function ForecastChart({ candles, live, timeframe, view, layers, span, on
   }, []);
 
   const step = STEP_SECONDS[timeframe];
-  const asOf = toSeconds(view.as_of);
+  // The chart is anchored at the latest close, where the projection starts. Kronos may be older.
+  const now = toSeconds(view.analysis_as_of);
+  const horizon = Math.max(view.projection?.steps.length ?? 0, view.steps.length);
   const bars = useMemo(() => candles.map(closedBar), [candles]);
   const slots = useMemo(() => {
-    const lastOpen = bars.length > 0 ? Number(bars[bars.length - 1]!.time) : floorTo(asOf, step);
-    // Room for the whole forecast and the label column, for either span.
+    const lastOpen = bars.length > 0 ? Number(bars[bars.length - 1]!.time) : floorTo(now, step);
+    // Room for the whole projection and the label column, for either span.
     const until = Math.max(
-      floorTo(asOf + view.steps.length * 3600, step) + 3 * step,
-      visibleWindow(asOf, 4, timeframe).to,
-      visibleWindow(asOf, 24, timeframe).to,
+      floorTo(now + horizon * 3600, step) + 3 * step,
+      visibleWindow(now, 4, timeframe).to,
+      visibleWindow(now, 24, timeframe).to,
     );
     const future = futureSlots(lastOpen, step, until);
     return { future, all: [...bars.map((bar) => Number(bar.time)), ...future] };
-  }, [bars, asOf, step, timeframe, view.steps.length]);
+  }, [bars, now, step, timeframe, horizon]);
 
   useEffect(() => {
     seriesRef.current?.setData(bars);
     slotsRef.current?.setData(slots.future.map((time) => ({ time: time as UTCTimestamp })));
     newest.current = bars.length > 0 ? Number(bars[bars.length - 1]!.time) : 0;
-    overlayRef.current?.setState({ view, layers, span, slots: slots.all });
-  }, [bars, slots, view, layers, span]);
+    overlayRef.current?.setState({ view, layers, span, slots: slots.all, barSeconds: step });
+  }, [bars, slots, view, layers, span, step]);
 
   useEffect(() => {
     const series = seriesRef.current;
@@ -175,23 +177,24 @@ export function ForecastChart({ candles, live, timeframe, view, layers, span, on
     markersRef.current?.setMarkers(layers.signals ? signalMarkers(view.candle_signals, step) : []);
   }, [view.candle_signals, layers.signals, step]);
 
+  // Reframed when Python moves to a new close, so the latest candles and their future stay in view.
   const hasBars = bars.length > 0;
   useEffect(() => {
     if (!hasBars) {
       return;
     }
-    const range = visibleWindow(asOf, span, timeframe);
+    const range = visibleWindow(now, span, timeframe);
     chartRef.current
       ?.timeScale()
       .setVisibleRange({ from: range.from as UTCTimestamp, to: range.to as UTCTimestamp });
-  }, [asOf, span, timeframe, hasBars]);
+  }, [now, span, timeframe, hasBars]);
 
   return (
     <div
       ref={container}
       className="h-full w-full"
       role="img"
-      aria-label="Candles with the Kronos forecast, the baseline, Python's levels and the plan. The same values are listed in the panels beside the chart."
+      aria-label="Candles with the baseline projected from the latest close, the Kronos forecast, Python's levels and the plan. The same values are listed in the panels beside the chart."
     />
   );
 }

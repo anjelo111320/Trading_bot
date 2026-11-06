@@ -22,15 +22,18 @@ import {
   LayerToggles,
   LevelsPanel,
   PlanPanel,
+  PythonSignalPanel,
   SummaryPanel,
   TrackRecordPanel,
 } from "./ForecastPanels";
-import { STEP_SECONDS, type Span } from "./geometry";
+import { STEP_SECONDS, hoursBetween, type Span } from "./geometry";
 import { LiveStatus, ReanalyseButton } from "./LiveControls";
 import { ALL_LAYERS, type Layers } from "./overlay";
 
 const TIMEFRAMES: Timeframe[] = ["15m", "1h", "4h", "1d"];
 const SPANS: Span[] = [4, 24];
+/** A latest 1H close older than this means the data feed has stopped, as when the Mac sleeps. */
+const BEHIND_HOURS = 2;
 
 function Choice<T extends string | number>({
   label,
@@ -107,7 +110,7 @@ export function ForecastScreen({ instruments }: { instruments: Instrument[] }) {
   };
   const candles = useMemo(() => recent.data?.items ?? [], [recent.data]);
   const view = forecast.data;
-  const horizon = view?.horizons.find((h) => h.candles === span) ?? view?.horizons[0];
+  const behind = view ? (now - Date.parse(view.analysis_as_of)) / 3_600_000 : 0;
 
   const missing = forecast.error instanceof ApiError && forecast.error.status === 404;
 
@@ -147,7 +150,7 @@ export function ForecastScreen({ instruments }: { instruments: Instrument[] }) {
         <p role="alert" className="p-6 text-sm text-bad">
           The forecast could not be loaded.
         </p>
-      ) : !view || !horizon ? (
+      ) : !view ? (
         <p className="p-6 text-sm text-muted">Loading the forecast…</p>
       ) : (
         <div className="flex flex-col gap-3 p-3 xl:min-h-0 xl:flex-1 xl:flex-row">
@@ -157,8 +160,14 @@ export function ForecastScreen({ instruments }: { instruments: Instrument[] }) {
               <div className="flex flex-wrap items-center gap-3">
                 <span className="text-xs text-muted">
                   Python {view.analysis_as_of.slice(11, 16)} UTC close · Kronos {view.as_of.slice(11, 16)} UTC close
+                  {view.forecast_current ? "" : `, ${hoursBetween(view.as_of, view.analysis_as_of)}h old`}
                 </span>
-                <LiveStatus connection={live.connection} price={live.price} />
+                {behind > BEHIND_HOURS ? (
+                  <span role="alert" className="text-xs text-warn">
+                    No new 1H close for {Math.floor(behind)}h: the data feed may be stopped
+                  </span>
+                ) : null}
+                <LiveStatus connection={live.connection} price={live.price} now={now} />
               </div>
             </div>
             <div className="min-h-0 flex-1">
@@ -173,7 +182,8 @@ export function ForecastScreen({ instruments }: { instruments: Instrument[] }) {
               />
             </div>
             <p className="border-t border-line px-3 py-2 text-xs text-muted">
-              {view.label}: Kronos ({view.model_paths} paths) beside the no-edge baseline ({view.baseline_paths.toLocaleString("en-US")} paths)
+              {view.label}: Kronos ({view.model_paths} paths) from the {view.as_of.slice(11, 16)} UTC close, and the no-edge baseline (
+              {(view.projection?.paths ?? view.baseline_paths).toLocaleString("en-US")} paths) from the latest close
               {view.baseline_rebuilt ? "" : ", baseline redrawn from changed candles"}. Prices to trade come only from Python&apos;s levels and the
               risk engine. Times in UTC. Chart by{" "}
               <a className="underline" href="https://www.tradingview.com/" rel="noreferrer" target="_blank">
@@ -183,8 +193,10 @@ export function ForecastScreen({ instruments }: { instruments: Instrument[] }) {
             </p>
           </main>
           <aside className="flex w-full shrink-0 flex-col gap-3 xl:w-96 xl:overflow-y-auto">
+            {/* Python's signal comes first; Claude's plan, when there is one, follows it. */}
+            <PythonSignalPanel view={view} />
             {view.plan ? <PlanPanel plan={view.plan} /> : null}
-            <SummaryPanel horizon={horizon} lastClose={Number(view.last_close)} atr={view.atr} />
+            <SummaryPanel view={view} span={span} />
             <TrackRecordPanel view={view} />
             <LevelsPanel view={view} span={span} />
             <CandleSignalsPanel view={view} />

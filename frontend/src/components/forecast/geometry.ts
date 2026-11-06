@@ -85,6 +85,25 @@ export function interpolateX(
   return xFrom + ((xTo - xFrom) * (time - from)) / (to - from);
 }
 
+/**
+ * The x coordinate of an exact moment, such as a close. A bar is drawn centred on its open
+ * time and covers one bar of time, so a moment sits half a bar before its slot position.
+ * A 1H close then lands on the right edge of the bar that holds it, on any timeframe.
+ */
+export function momentX(
+  time: number,
+  barSeconds: number,
+  slots: readonly number[],
+  xOf: (slot: number) => number | null,
+): number | null {
+  return interpolateX(time - barSeconds / 2, slots, xOf);
+}
+
+/** Whole hours from one close to a later one. */
+export function hoursBetween(from: string, to: string): number {
+  return Math.max(0, Math.round((toSeconds(to) - toSeconds(from)) / 3600));
+}
+
 /** Move labels apart so none overlap, keeping their order and staying inside the pane. */
 export function spreadLabels(ys: readonly number[], gap: number, top: number, bottom: number): number[] {
   const order = ys.map((y, index) => ({ y, index })).sort((a, b) => a.y - b.y);

@@ -1,7 +1,7 @@
 /**
- * Drawings on top of the candles: Kronos's paths and band, the baseline band, Python's
- * levels, the plan's position box and chart patterns. Positions come from the chart's own
- * scales, so they follow every zoom and scroll.
+ * Drawings on top of the candles: the baseline projected from the latest close, Kronos's
+ * paths and band from its own close, Python's levels, the plan's position box and chart
+ * patterns. Positions come from the chart's own scales, so they follow every zoom and scroll.
  */
 
 import type {
@@ -11,20 +11,23 @@ import type {
   IPrimitivePaneView,
   ISeriesApi,
   ISeriesPrimitive,
+  Logical,
   PrimitivePaneViewZOrder,
   SeriesAttachedParameter,
   SeriesType,
   Time,
 } from "lightweight-charts";
 
-import type { ForecastView } from "@/lib/api/client";
+import type { ForecastPlan, ForecastView } from "@/lib/api/client";
 
-import { interpolateX, levelStyle, spreadLabels, toSeconds, type Span } from "./geometry";
+import { hoursBetween, interpolateX, levelStyle, momentX, spreadLabels, toSeconds, type Span } from "./geometry";
 
 type Target = Parameters<IPrimitivePaneRenderer["draw"]>[0];
 type Context = CanvasRenderingContext2D;
 type Point = { x: number; y: number };
 type Row = { price: number; text: string; color: string; dash: number[]; strong: boolean };
+/** A fan of paths: where it starts, and the close moment of each later candle. */
+type Fan = { start: Point; times: number[] };
 
 export type Layers = {
   paths: boolean;
@@ -41,6 +44,10 @@ export const COLORS = {
   kronos: "#3987e5",
   kronosFill: "rgba(57, 135, 229, 0.20)",
   kronosPath: "rgba(57, 135, 229, 0.32)",
+  // An older run keeps its hue, faded, and is named as old in its label.
+  kronosOld: "rgba(57, 135, 229, 0.6)",
+  kronosOldFill: "rgba(57, 135, 229, 0.10)",
+  kronosOldPath: "rgba(57, 135, 229, 0.16)",
   baseline: "#94a3b8",
   baselineFill: "rgba(148, 163, 184, 0.12)",
   pattern: "#d95926",
@@ -71,17 +78,28 @@ const BOLD = "600 11px ui-sans-serif, system-ui, -apple-system, 'Segoe UI', sans
 const LABEL_GAP = 15;
 const HOUR = 3600;
 
-export type OverlayState = { view: ForecastView | null; layers: Layers; span: Span; slots: number[] };
+export type OverlayState = {
+  view: ForecastView | null;
+  layers: Layers;
+  span: Span;
+  slots: number[];
+  barSeconds: number;
+};
+
+/** A plan still waiting for its fill or holding a position. A finished plan is history. */
+export function planActive(plan: ForecastPlan): boolean {
+  return plan.status.state === "waiting" || plan.status.state === "open";
+}
 
 /**
- * Which current levels the plan uses. Catalogue IDs are renumbered at every analysis, so
- * levels are matched to the plan by price. The stop sits beyond its level, so its ID is
+ * Which current levels an active plan uses. Catalogue IDs are renumbered at every analysis,
+ * so levels are matched to the plan by price. The stop sits beyond its level, so its ID is
  * trusted only while the analysis is still at the plan's own close.
  */
 export function planRoles(view: ForecastView): Map<string, string> {
   const roles = new Map<string, string>();
   const plan = view.plan;
-  if (!plan) return roles;
+  if (!plan || !planActive(plan)) return roles;
   for (const level of view.levels) {
     const price = Number(level.price);
     if (price === Number(plan.entry)) roles.set(level.id, "entry");
@@ -158,11 +176,27 @@ function polyline(context: Context, points: Point[]) {
   );
 }
 
+function verticalLine(context: Context, x: number, height: number, color: string) {
+  context.strokeStyle = color;
+  context.lineWidth = 1;
+  context.setLineDash([3, 3]);
+  context.beginPath();
+  context.moveTo(x, 0);
+  context.lineTo(x, height);
+  context.stroke();
+  context.setLineDash([]);
+}
+
+/** The close moment of a forecast candle, an hour after it opens. */
+function closeOf(step: { open_time: string }): number {
+  return toSeconds(step.open_time) + HOUR;
+}
+
 export class ForecastOverlay implements ISeriesPrimitive<Time> {
   private chart: IChartApiBase<Time> | null = null;
   private series: ISeriesApi<SeriesType, Time> | null = null;
   private requestUpdate: (() => void) | null = null;
-  private state: OverlayState = { view: null, layers: ALL_LAYERS, span: 4, slots: [] };
+  private state: OverlayState = { view: null, layers: ALL_LAYERS, span: 4, slots: [], barSeconds: HOUR };
   private readonly views: readonly IPrimitivePaneView[] = [
     new View("bottom", new Renderer((c, w, h) => this.paintBehind(c, w, h))),
     new View("top", new Renderer((c, w, h) => this.paintAbove(c, w, h))),
@@ -189,26 +223,45 @@ export class ForecastOverlay implements ISeriesPrimitive<Time> {
     this.requestUpdate?.();
   }
 
-  /** Keep the forecast and the plan inside the price scale, not only the candles. */
-  autoscaleInfo(): AutoscaleInfo | null {
-    const { view, layers, span } = this.state;
-    if (!view) {
+  /**
+   * Keep what matters now inside the price scale: the projection, a current Kronos run and
+   * an active plan, when they are in view. An old run or a finished plan never stretches
+   * the scale away from today's candles.
+   */
+  autoscaleInfo(start: Logical, end: Logical): AutoscaleInfo | null {
+    const { view, layers, span, slots } = this.state;
+    if (!view || slots.length === 0) {
       return null;
     }
-    const values = [Number(view.last_close)];
-    for (const step of view.steps.slice(0, span)) {
-      if (layers.band) values.push(step.model.p10, step.model.p90);
-      if (layers.baseline) values.push(step.baseline.p10, step.baseline.p90);
+    const slot = (index: number) => slots[Math.min(Math.max(index, 0), slots.length - 1)]!;
+    const from = slot(Math.floor(Number(start)));
+    const to = slot(Math.ceil(Number(end)));
+    const inView = (first: number, last: number) => last >= from && first <= to;
+    const values: number[] = [];
+    const projection = view.projection;
+    const projected = projection?.steps.slice(0, span) ?? [];
+    if (projection && layers.baseline && projected.length > 0) {
+      if (inView(toSeconds(projection.as_of), closeOf(projected[projected.length - 1]!))) {
+        values.push(Number(projection.last_close));
+        for (const step of projected) values.push(step.close.p10, step.close.p90);
+      }
     }
-    if (layers.paths) {
-      for (const path of view.paths) values.push(...path.slice(0, span));
+    const steps = view.steps.slice(0, span);
+    if (view.forecast_current && steps.length > 0 && inView(toSeconds(view.as_of), closeOf(steps[steps.length - 1]!))) {
+      if (layers.band) for (const step of steps) values.push(step.model.p10, step.model.p90);
+      if (layers.paths) for (const path of view.paths) values.push(...path.slice(0, span));
     }
-    if (layers.plan && view.plan) {
-      values.push(Number(view.plan.entry), Number(view.plan.stop), ...view.plan.targets.map(Number));
+    const plan = view.plan;
+    if (layers.plan && plan && planActive(plan) && inView(toSeconds(plan.created_at), toSeconds(plan.expires_at))) {
+      values.push(Number(plan.entry), Number(plan.stop), ...plan.targets.map(Number));
+    }
+    if (values.length === 0) {
+      return null;
     }
     return { priceRange: { minValue: Math.min(...values), maxValue: Math.max(...values) } };
   }
 
+  /** The x coordinate of a bar's open time, between slots when bars are longer than 1H. */
   private x(seconds: number): number | null {
     const scale = this.chart?.timeScale();
     if (!scale) {
@@ -217,41 +270,63 @@ export class ForecastOverlay implements ISeriesPrimitive<Time> {
     return interpolateX(seconds, this.state.slots, (slot) => scale.timeToCoordinate(slot as Time));
   }
 
+  /** The x coordinate of an exact moment, such as a close. */
+  private at(seconds: number): number | null {
+    const scale = this.chart?.timeScale();
+    if (!scale) {
+      return null;
+    }
+    return momentX(seconds, this.state.barSeconds, this.state.slots, (slot) =>
+      scale.timeToCoordinate(slot as Time),
+    );
+  }
+
   private y(price: number): number | null {
     return this.series?.priceToCoordinate(price) ?? null;
   }
 
-  /** The last closed 1H candle, where every forecast path starts. */
-  private anchor(view: ForecastView): Point | null {
-    const x = this.x(Math.floor(toSeconds(view.as_of) / HOUR) * HOUR);
-    const y = this.y(Number(view.last_close));
+  private point(moment: number, price: number): Point | null {
+    const x = this.at(moment);
+    const y = this.y(price);
     return x === null || y === null ? null : { x, y };
   }
 
-  private line(values: number[], times: number[], start: Point): Point[] {
-    const points = [start];
+  /** A fan starting at a close, with one point per later 1H close. */
+  private fan(asOf: string, lastClose: string, steps: { open_time: string }[]): Fan | null {
+    const start = this.point(toSeconds(asOf), Number(lastClose));
+    return start ? { start, times: steps.map(closeOf) } : null;
+  }
+
+  private line(values: number[], fan: Fan): Point[] {
+    const points = [fan.start];
     values.forEach((value, index) => {
-      const x = this.x(times[index]!);
-      const y = this.y(value);
-      if (x !== null && y !== null) points.push({ x, y });
+      const point = this.point(fan.times[index]!, value);
+      if (point) points.push(point);
     });
     return points;
   }
 
-  private bounds(view: ForecastView): { start: number; end: number } | null {
-    const anchor = this.anchor(view);
-    const first = view.steps[0];
-    const last = view.steps[Math.min(this.state.span, view.steps.length) - 1];
-    if (!anchor || !first || !last) {
+  private projected(view: ForecastView): { fan: Fan | null; steps: NonNullable<ForecastView["projection"]>["steps"] } {
+    const projection = view.projection;
+    if (!projection) return { fan: null, steps: [] };
+    const steps = projection.steps.slice(0, this.state.span);
+    return { fan: this.fan(projection.as_of, projection.last_close, steps), steps };
+  }
+
+  private kronos(view: ForecastView): { fan: Fan | null; steps: ForecastView["steps"] } {
+    const steps = view.steps.slice(0, this.state.span);
+    return { fan: this.fan(view.as_of, view.last_close, steps), steps };
+  }
+
+  /** The future from the latest close, shaded, so it is clear where "now" ends. */
+  private window(view: ForecastView): { start: number; end: number } | null {
+    const { fan, steps } = view.projection ? this.projected(view) : view.forecast_current ? this.kronos(view) : { fan: null, steps: [] };
+    const last = steps[steps.length - 1];
+    if (!fan || !last) {
       return null;
     }
-    const firstX = this.x(toSeconds(first.open_time));
-    const lastX = this.x(toSeconds(last.open_time));
-    if (firstX === null || lastX === null) {
-      return null;
-    }
-    const half = (firstX - anchor.x) / 2;
-    return { start: anchor.x + half, end: lastX + half };
+    const end = this.at(closeOf(last));
+    return end === null ? null : { start: fan.start.x, end };
   }
 
   private band(context: Context, upper: Point[], lower: Point[], fill: string) {
@@ -262,27 +337,26 @@ export class ForecastOverlay implements ISeriesPrimitive<Time> {
   }
 
   private paintBehind(context: Context, width: number, height: number): void {
-    const { view, layers, span } = this.state;
-    const anchor = view ? this.anchor(view) : null;
-    if (!view || !anchor) {
+    const { view, layers } = this.state;
+    if (!view) {
       return;
     }
-    const steps = view.steps.slice(0, span);
-    const times = steps.map((step) => toSeconds(step.open_time));
-    const window = this.bounds(view);
+    const window = this.window(view);
     if (window) {
       context.fillStyle = COLORS.window;
       context.fillRect(window.start, 0, window.end - window.start, height);
     }
-    if (layers.baseline) {
-      const upper = this.line(steps.map((s) => s.baseline.p90), times, anchor);
-      const lower = this.line(steps.map((s) => s.baseline.p10), times, anchor);
+    const ahead = this.projected(view);
+    if (layers.baseline && ahead.fan) {
+      const upper = this.line(ahead.steps.map((s) => s.close.p90), ahead.fan);
+      const lower = this.line(ahead.steps.map((s) => s.close.p10), ahead.fan);
       this.band(context, upper, lower, COLORS.baselineFill);
     }
-    if (layers.band) {
-      const upper = this.line(steps.map((s) => s.model.p90), times, anchor);
-      const lower = this.line(steps.map((s) => s.model.p10), times, anchor);
-      this.band(context, upper, lower, COLORS.kronosFill);
+    const kronos = this.kronos(view);
+    if (layers.band && kronos.fan) {
+      const upper = this.line(kronos.steps.map((s) => s.model.p90), kronos.fan);
+      const lower = this.line(kronos.steps.map((s) => s.model.p10), kronos.fan);
+      this.band(context, upper, lower, view.forecast_current ? COLORS.kronosFill : COLORS.kronosOldFill);
     }
     if (layers.zones) {
       context.lineWidth = 1;
@@ -300,8 +374,8 @@ export class ForecastOverlay implements ISeriesPrimitive<Time> {
     }
     const plan = view.plan;
     if (layers.plan && plan) {
-      const left = this.x(toSeconds(plan.created_at));
-      const right = this.x(toSeconds(plan.expires_at));
+      const left = this.at(toSeconds(plan.created_at));
+      const right = this.at(toSeconds(plan.expires_at));
       const entry = this.y(Number(plan.entry));
       const stop = this.y(Number(plan.stop));
       const targets = plan.targets.map((t) => this.y(Number(t)));
@@ -321,46 +395,45 @@ export class ForecastOverlay implements ISeriesPrimitive<Time> {
 
   private paintAbove(context: Context, width: number, height: number): void {
     const { view, layers, span } = this.state;
-    const anchor = view ? this.anchor(view) : null;
-    if (!view || !anchor) {
+    if (!view) {
       return;
     }
-    const steps = view.steps.slice(0, span);
-    const times = steps.map((step) => toSeconds(step.open_time));
-    const window = this.bounds(view);
+    const current = view.forecast_current;
+    const kronos = this.kronos(view);
+    const ahead = this.projected(view);
+    const window = this.window(view);
 
-    if (layers.paths) {
+    if (layers.paths && kronos.fan) {
       context.lineWidth = 1;
-      context.strokeStyle = COLORS.kronosPath;
+      context.strokeStyle = current ? COLORS.kronosPath : COLORS.kronosOldPath;
       for (const path of view.paths) {
-        polyline(context, this.line(path.slice(0, span), times, anchor));
+        polyline(context, this.line(path.slice(0, span), kronos.fan));
         context.stroke();
       }
     }
-    if (layers.baseline) {
+    if (layers.baseline && ahead.fan) {
       context.lineWidth = 1.5;
       context.strokeStyle = COLORS.baseline;
       context.setLineDash([5, 4]);
-      polyline(context, this.line(steps.map((s) => s.baseline.p50), times, anchor));
+      polyline(context, this.line(ahead.steps.map((s) => s.close.p50), ahead.fan));
       context.stroke();
       context.setLineDash([]);
     }
-    if (layers.band) {
-      context.lineWidth = 2;
-      context.strokeStyle = COLORS.kronos;
-      polyline(context, this.line(steps.map((s) => s.model.p50), times, anchor));
+    if (layers.band && kronos.fan) {
+      context.lineWidth = current ? 2 : 1.5;
+      context.strokeStyle = current ? COLORS.kronos : COLORS.kronosOld;
+      polyline(context, this.line(kronos.steps.map((s) => s.model.p50), kronos.fan));
       context.stroke();
     }
     if (window) {
-      context.strokeStyle = COLORS.muted;
-      context.lineWidth = 1;
-      context.setLineDash([3, 3]);
-      context.beginPath();
-      context.moveTo(window.start, 0);
-      context.lineTo(window.start, height);
-      context.stroke();
-      context.setLineDash([]);
-      label(context, `Forecast from ${view.as_of.slice(11, 16)} UTC · next ${span}h →`, window.start - 4, 12, COLORS.muted, "right");
+      verticalLine(context, window.start, height, COLORS.muted);
+      label(context, `From the ${view.analysis_as_of.slice(11, 16)} UTC close · next ${span}h →`, window.start - 4, 12, COLORS.muted, "right");
+    }
+    if (!current && kronos.fan && (layers.paths || layers.band)) {
+      // Where the older run started, so it reads as history rather than as the forecast.
+      verticalLine(context, kronos.fan.start.x, height, COLORS.kronosOld);
+      const age = hoursBetween(view.as_of, view.analysis_as_of);
+      label(context, `Kronos run from ${view.as_of.slice(11, 16)} UTC · ${age}h old`, kronos.fan.start.x + 4, 30, COLORS.kronos, "left");
     }
 
     if (layers.patterns) {
@@ -450,11 +523,14 @@ export class ForecastOverlay implements ISeriesPrimitive<Time> {
     ];
   }
 
-  /** The position box's lines and status, in the window the plan was valid. */
+  /**
+   * The position box's lines and status, in the window the plan was valid. An active plan's
+   * prices are also labelled in the right-hand column; a finished one's are in the panel.
+   */
   private paintPlan(context: Context, view: ForecastView): void {
     const plan = view.plan!;
-    const left = this.x(toSeconds(plan.created_at));
-    const right = this.x(toSeconds(plan.expires_at));
+    const left = this.at(toSeconds(plan.created_at));
+    const right = this.at(toSeconds(plan.expires_at));
     if (left === null || right === null) return;
     const rows = this.planRows(view);
     context.lineWidth = 1.5;
@@ -479,7 +555,7 @@ export class ForecastOverlay implements ISeriesPrimitive<Time> {
     ];
     for (const mark of marks) {
       if (!mark.time || !mark.price) continue;
-      const x = this.x(toSeconds(mark.time));
+      const x = this.at(toSeconds(mark.time));
       const y = this.y(Number(mark.price));
       if (x === null || y === null) continue;
       context.fillStyle = mark.color;
@@ -490,13 +566,13 @@ export class ForecastOverlay implements ISeriesPrimitive<Time> {
   }
 
   /**
-   * One column of labels on the right, in the room kept free of candles: the plan's prices
-   * first, then Python's levels. Labels are spaced so none overlap, and a short tick joins a
-   * moved label to its price.
+   * One column of labels on the right, in the room kept free of candles: an active plan's
+   * prices first, then Python's levels. Labels are spaced so none overlap, and a short tick
+   * joins a moved label to its price.
    */
   private paintLabels(context: Context, view: ForecastView, width: number, height: number): void {
     const { layers } = this.state;
-    const plan = layers.plan ? view.plan : null;
+    const plan = layers.plan && view.plan && planActive(view.plan) ? view.plan : null;
     const covered = new Set(
       [...planRoles(view)].filter(([, role]) => role !== "stop beyond").map(([id]) => id),
     );
@@ -518,7 +594,7 @@ export class ForecastOverlay implements ISeriesPrimitive<Time> {
       .map((row) => ({ row, y: this.y(row.price) }))
       .filter((item): item is { row: Row; y: number } => item.y !== null && item.y > 0 && item.y < height);
     const placed = spreadLabels(visible.map((item) => item.y), LABEL_GAP, 9, height - 9);
-    const planRight = plan ? this.x(toSeconds(plan.expires_at)) : null;
+    const planRight = plan ? this.at(toSeconds(plan.expires_at)) : null;
     visible.forEach((item, index) => {
       const y = placed[index]!;
       context.font = item.row.strong ? BOLD : FONT;

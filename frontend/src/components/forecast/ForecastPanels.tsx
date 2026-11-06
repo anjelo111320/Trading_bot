@@ -1,9 +1,9 @@
 import type { ReactNode } from "react";
 
-import type { ForecastBand, ForecastHorizon, ForecastPlan, ForecastView } from "@/lib/api/client";
+import type { ForecastBand, ForecastPlan, ForecastProposal, ForecastStrategy, ForecastView } from "@/lib/api/client";
 import { formatUtc } from "@/lib/format";
 
-import { atrDistance, floorTo, levelStyle, toSeconds, type Span } from "./geometry";
+import { atrDistance, floorTo, hoursBetween, levelStyle, toSeconds, type Span } from "./geometry";
 import { COLORS, formatNumber, planRoles, planState, type Layers } from "./overlay";
 
 function Panel({ title, children }: { title: string; children: ReactNode }) {
@@ -21,6 +21,60 @@ function percent(value: number): string {
 
 function range(band: ForecastBand): string {
   return `${formatNumber(band.p10.toFixed(1))} – ${formatNumber(band.p90.toFixed(1))}`;
+}
+
+function horizonOf<T extends { candles: number }>(items: T[], span: Span): T | undefined {
+  return items.find((item) => item.candles === span) ?? items[0];
+}
+
+/** How long ago Kronos last ran, counted from the latest close. */
+function kronosAge(view: ForecastView): string {
+  return `${hoursBetween(view.as_of, view.analysis_as_of)}h`;
+}
+
+/** Python's prices for a signal, in words. */
+export function proposalText(proposal: ForecastProposal): string {
+  const side = proposal.side === "SHORT" ? "Sell" : "Buy";
+  const how = proposal.entry_type ? ` ${proposal.entry_type.toLowerCase()}` : "";
+  const targets = proposal.targets.map(formatNumber).join(" / ");
+  return `${side}${how} ${formatNumber(proposal.entry)} · stop ${formatNumber(proposal.stop)} · target${proposal.targets.length > 1 ? "s" : ""} ${targets}`;
+}
+
+function hasSignal(strategies: ForecastStrategy[]): boolean {
+  return strategies.some((strategy) => strategy.action !== "NO_TRADE");
+}
+
+function StrategyList({ strategies }: { strategies: ForecastStrategy[] }) {
+  return (
+    <ul className="space-y-1 text-xs">
+      {strategies.map((strategy) => (
+        <li key={strategy.name}>
+          <span className="text-muted">{strategy.name}: </span>
+          <span className={strategy.action === "NO_TRADE" ? "" : "font-semibold"}>
+            {strategy.action === "NO_TRADE" ? "no trade" : strategy.action}
+          </span>
+          <span className="text-muted"> · {strategy.reasons.join("; ")}</span>
+          {strategy.proposal ? <span className="block">{proposalText(strategy.proposal)}</span> : null}
+        </li>
+      ))}
+    </ul>
+  );
+}
+
+/** Python's own signal at the latest close. Python calculates first; Claude only reviews. */
+export function PythonSignalPanel({ view }: { view: ForecastView }) {
+  const strategies = view.context.strategies;
+  return (
+    <Panel title={`Python signal · ${view.analysis_as_of.slice(11, 16)} UTC close`}>
+      <StrategyList strategies={strategies} />
+      <p className="mt-2 text-xs text-muted">
+        {hasSignal(strategies)
+          ? "Prices come from Python's levels, and the risk engine sizes the trade."
+          : "No strategy has a setup at this close, so there is nothing for Claude to review."}{" "}
+        Python calculates every signal first. Claude only reviews a Python signal and never sets a price.
+      </p>
+    </Panel>
+  );
 }
 
 const LAYER_ITEMS: { key: keyof Layers; label: string; swatch: ReactNode }[] = [
@@ -69,7 +123,10 @@ function Arrow({ direction }: { direction: string }) {
   );
 }
 
-/** Values under the cursor: the forecast at that hour, or the candle signals on that bar. */
+/**
+ * Values under the cursor: the projection and a current Kronos run at that hour, an older
+ * run over the candles that followed it, or the candle signals on that bar.
+ */
 export function HoverReadout({
   view,
   hoverTime,
@@ -81,24 +138,42 @@ export function HoverReadout({
   span: Span;
   barSeconds: number;
 }) {
-  const horizon = view.horizons.find((h) => h.candles === span) ?? view.horizons[0];
+  const hour = hoverTime === null ? null : Math.floor(hoverTime / 3600);
+  const atHour = <T extends { open_time: string }>(steps: T[]): T | undefined =>
+    hour === null
+      ? undefined
+      : steps.slice(0, span).find((s) => Math.floor(Date.parse(s.open_time) / 3_600_000) === hour);
+  const projected = atHour(view.projection?.steps ?? []);
+  const kronos = atHour(view.steps);
   const signals =
     hoverTime === null
       ? []
       : view.candle_signals.filter((s) => floorTo(toSeconds(s.open_time), barSeconds) === hoverTime);
-  const step =
-    hoverTime === null
-      ? undefined
-      : view.steps
-          .slice(0, span)
-          .find((s) => Math.floor(Date.parse(s.open_time) / 3_600_000) === Math.floor(hoverTime / 3600));
-  if (step) {
+  if (projected) {
     return (
       <p className="text-xs">
-        <span className="text-muted">{step.open_time.slice(11, 16)} UTC close · </span>
-        <span style={{ color: COLORS.kronos }}>Kronos {formatNumber(step.model.p50.toFixed(1))}</span>
-        <span className="text-muted"> ({range(step.model)}) · </span>
-        <span className="text-muted">Baseline {formatNumber(step.baseline.p50.toFixed(1))} ({range(step.baseline)})</span>
+        <span className="text-muted">
+          {projected.open_time.slice(11, 16)} UTC candle · Baseline {formatNumber(projected.close.p50.toFixed(1))} (
+          {range(projected.close)})
+        </span>
+        {view.forecast_current && kronos ? (
+          <>
+            <span className="text-muted"> · </span>
+            <span style={{ color: COLORS.kronos }}>Kronos {formatNumber(kronos.model.p50.toFixed(1))}</span>
+            <span className="text-muted"> ({range(kronos.model)})</span>
+          </>
+        ) : null}
+      </p>
+    );
+  }
+  if (kronos) {
+    return (
+      <p className="text-xs">
+        <span className="text-muted">{kronos.open_time.slice(11, 16)} UTC candle · </span>
+        <span style={{ color: COLORS.kronos }}>
+          Kronos run from {view.as_of.slice(11, 16)} UTC: {formatNumber(kronos.model.p50.toFixed(1))}
+        </span>
+        <span className="text-muted"> ({range(kronos.model)})</span>
       </p>
     );
   }
@@ -114,28 +189,49 @@ export function HoverReadout({
       </p>
     );
   }
-  if (!horizon) {
-    return null;
-  }
+  const baseline = horizonOf(view.projection?.horizons ?? [], span);
+  const model = view.forecast_current ? horizonOf(view.horizons, span) : undefined;
   return (
     <p className="text-xs">
-      <span className="text-muted">Next {horizon.candles}h: </span>
-      <span style={{ color: COLORS.kronos }}>Kronos {percent(horizon.model.share_ending_higher)} of paths end higher</span>
-      <span className="text-muted"> · baseline {percent(horizon.baseline.share_ending_higher)}</span>
+      <span className="text-muted">
+        Next {baseline?.candles ?? span}h from the {view.analysis_as_of.slice(11, 16)} UTC close:{" "}
+        {baseline
+          ? `baseline ${percent(baseline.baseline.share_ending_higher)} of paths end higher`
+          : "too few candles for the baseline"}
+      </span>
+      {model ? (
+        <span style={{ color: COLORS.kronos }}> · Kronos {percent(model.model.share_ending_higher)}</span>
+      ) : (
+        <span className="text-muted"> · Kronos run is {kronosAge(view)} old</span>
+      )}
     </p>
   );
 }
 
-export function SummaryPanel({ horizon, lastClose, atr }: { horizon: ForecastHorizon; lastClose: number; atr: number }) {
+/** The next hours from the latest close. Kronos joins only when its run is from that close. */
+export function SummaryPanel({ view, span }: { view: ForecastView; span: Span }) {
+  const projection = view.projection;
+  const horizon = projection ? horizonOf(projection.horizons, span) : undefined;
+  if (!projection || !horizon) {
+    return (
+      <Panel title={`Next ${span} hours`}>
+        <p className="text-xs text-muted">Too few 1H candles are stored to project from the latest close.</p>
+      </Panel>
+    );
+  }
+  const close = Number(projection.last_close);
+  const atr = projection.atr;
+  const base = horizon.baseline;
+  const model = view.forecast_current ? horizonOf(view.horizons, span)?.model : undefined;
   const rows: { label: string; model: string; baseline: string }[] = [
-    { label: "Paths ending higher", model: percent(horizon.model.share_ending_higher), baseline: percent(horizon.baseline.share_ending_higher) },
-    { label: "Close, middle", model: formatNumber(horizon.model.close.p50.toFixed(1)), baseline: formatNumber(horizon.baseline.close.p50.toFixed(1)) },
-    { label: "Close, 10–90%", model: range(horizon.model.close), baseline: range(horizon.baseline.close) },
-    { label: "Highest, middle", model: atrDistance(horizon.model.highest.p50, lastClose, atr), baseline: atrDistance(horizon.baseline.highest.p50, lastClose, atr) },
-    { label: "Lowest, middle", model: atrDistance(horizon.model.lowest.p50, lastClose, atr), baseline: atrDistance(horizon.baseline.lowest.p50, lastClose, atr) },
+    { label: "Paths ending higher", model: model ? percent(model.share_ending_higher) : "–", baseline: percent(base.share_ending_higher) },
+    { label: "Close, middle", model: model ? formatNumber(model.close.p50.toFixed(1)) : "–", baseline: formatNumber(base.close.p50.toFixed(1)) },
+    { label: "Close, 10–90%", model: model ? range(model.close) : "–", baseline: range(base.close) },
+    { label: "Highest, middle", model: model ? atrDistance(model.highest.p50, close, atr) : "–", baseline: atrDistance(base.highest.p50, close, atr) },
+    { label: "Lowest, middle", model: model ? atrDistance(model.lowest.p50, close, atr) : "–", baseline: atrDistance(base.lowest.p50, close, atr) },
   ];
   return (
-    <Panel title={`Next ${horizon.candles} hours`}>
+    <Panel title={`Next ${horizon.candles} hours · from ${projection.as_of.slice(11, 16)} UTC`}>
       <table className="w-full text-xs">
         <thead>
           <tr className="text-muted">
@@ -155,7 +251,10 @@ export function SummaryPanel({ horizon, lastClose, atr }: { horizon: ForecastHor
         </tbody>
       </table>
       <p className="mt-2 text-xs text-muted">
-        The baseline replays this coin&apos;s own last 60 days with no view on direction. Kronos says something only where it differs.
+        The baseline replays this coin&apos;s own last 60 days from the latest close, with no view on direction.{" "}
+        {model
+          ? "Kronos says something only where it differs."
+          : `Kronos last ran from the ${view.as_of.slice(11, 16)} UTC close, ${kronosAge(view)} earlier, so it is left out. Re-analyse runs it from the latest close.`}
       </p>
     </Panel>
   );
@@ -211,11 +310,26 @@ export function PlanPanel({ plan }: { plan: ForecastPlan }) {
     ["Size", `${plan.quantity ?? "–"} · max loss ${plan.max_loss ?? "–"} USDT`],
     ["Grade", `${plan.grade} · risk engine ${plan.approved ? "approved" : `rejected (${plan.rejection_codes.join(", ")})`}`],
   ];
+  const python = plan.python_at_close;
   return (
-    <Panel title="Analyst plan">
+    <Panel title="Claude's plan">
       <p className="mb-2 rounded border border-line px-2 py-1 text-xs text-muted">
         {plan.source}. Paper only. Level IDs are from the {plan.as_of.slice(11, 16)} UTC catalogue.
       </p>
+      <div className="mb-2">
+        <p className="mb-1 text-xs text-muted">Python first, at the {plan.as_of.slice(11, 16)} UTC close:</p>
+        {python ? (
+          <StrategyList strategies={python} />
+        ) : (
+          <p className="text-xs text-warn">No Python calculation was saved with this plan.</p>
+        )}
+        {python && !hasSignal(python) ? (
+          <p className="mt-1 flex items-start gap-1.5 text-xs text-warn">
+            <span aria-hidden="true">⚠</span>
+            <span>Python had no signal at this close, so this plan was Claude&apos;s own idea, not a review of a Python signal.</span>
+          </p>
+        ) : null}
+      </div>
       <dl className="space-y-1 text-xs">
         {rows.map(([name, value, id]) => (
           <div key={name} className="flex justify-between gap-2">
@@ -274,14 +388,19 @@ export function LevelsPanel({ view, span }: { view: ForecastView; span: Span }) 
                   {formatNumber(level.price)}
                   <span className="block text-muted">{level.distance_atr >= 0 ? "+" : ""}{level.distance_atr.toFixed(2)} ATR</span>
                 </td>
-                <td className="py-1 text-right">{reach ? percent(reach.model) : "–"}</td>
-                <td className="py-1 text-right text-muted">{reach ? percent(reach.baseline) : "–"}</td>
+                <td className="py-1 text-right">{reach && reach.model !== null ? percent(reach.model) : "–"}</td>
+                <td className="py-1 text-right text-muted">
+                  {reach && reach.baseline !== null ? percent(reach.baseline) : "–"}
+                </td>
               </tr>
             );
           })}
         </tbody>
       </table>
-      <p className="mt-2 text-xs text-muted">Shares of paths that touch each level, from each source&apos;s percentiles.</p>
+      <p className="mt-2 text-xs text-muted">
+        Shares of paths that touch each level within {span}h of the {view.analysis_as_of.slice(11, 16)} UTC close. Kronos is shown only
+        when its run is from that close.
+      </p>
     </Panel>
   );
 }
@@ -304,15 +423,6 @@ export function ContextPanel({ view }: { view: ForecastView }) {
           </div>
         ))}
       </dl>
-      <ul className="mt-2 space-y-1 text-xs">
-        {context.strategies.map((strategy) => (
-          <li key={strategy.name}>
-            <span className="text-muted">{strategy.name}: </span>
-            {strategy.action === "NO_TRADE" ? "no trade" : strategy.action}
-            <span className="text-muted"> · {strategy.reasons.join("; ")}</span>
-          </li>
-        ))}
-      </ul>
     </Panel>
   );
 }

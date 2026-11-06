@@ -3,8 +3,10 @@ import { describe, expect, it } from "vitest";
 import {
   atrDistance,
   futureSlots,
+  hoursBetween,
   interpolateX,
   levelStyle,
+  momentX,
   spreadLabels,
   visibleWindow,
 } from "./geometry";
@@ -30,6 +32,33 @@ describe("interpolateX", () => {
   it("has no position before the first slot or off screen", () => {
     expect(interpolateX(-1, slots, xOf)).toBeNull();
     expect(interpolateX(2 * HOUR, slots, (slot) => (slot === 0 ? null : 1))).toBeNull();
+  });
+});
+
+describe("momentX", () => {
+  const xOf = (slot: number) => slot / 900; // One pixel per 15 minutes, bars centred on their open.
+
+  it("puts a 1H close on the right edge of the last 15M bar of the hour", () => {
+    const quarters = [0, 900, 1800, 2700, 3600, 4500];
+    // Regression: the close was drawn at the hour's first 15M bar, three bars early.
+    expect(momentX(HOUR, 900, quarters, xOf)).toBeCloseTo(3.5);
+  });
+
+  it("puts a 1H close on the right edge of its 1H bar", () => {
+    const hours = [0, HOUR, 2 * HOUR];
+    expect(momentX(HOUR, HOUR, hours, (slot) => slot / HOUR)).toBeCloseTo(0.5);
+  });
+
+  it("puts a close in the middle of a 4H bar where it falls", () => {
+    const fours = [0, 4 * HOUR, 8 * HOUR];
+    expect(momentX(2 * HOUR, 4 * HOUR, fours, (slot) => slot / (4 * HOUR))).toBeCloseTo(0);
+  });
+});
+
+describe("hoursBetween", () => {
+  it("counts whole hours between two closes", () => {
+    expect(hoursBetween("2026-11-05T13:59:59.999Z", "2026-11-06T01:59:59.999Z")).toBe(12);
+    expect(hoursBetween("2026-11-05T13:59:59.999Z", "2026-11-05T13:59:59.999Z")).toBe(0);
   });
 });
 
