@@ -38,9 +38,11 @@ class HorizonView(BaseModel):
 
 
 class ReachView(BaseModel):
+    """Shares of paths that reach the level within this many candles of the latest close."""
+
     candles: int
-    model: float  # Share of paths that reach the level within this many candles.
-    baseline: float
+    model: float | None  # Kronos, only while its forecast is from the latest close.
+    baseline: float | None  # The projection. None when too few candles are stored.
 
 
 class LevelView(BaseModel):
@@ -50,7 +52,28 @@ class LevelView(BaseModel):
     position: Literal["above", "below"]
     evidence: str
     distance_atr: float  # From the latest close, in its 1H ATR.
-    reach: list[ReachView]  # Shares of the forecast's paths, from the forecast's close.
+    reach: list[ReachView]
+
+
+class ProjectionStepView(BaseModel):
+    open_time: UtcDatetime
+    close: BandView  # Percentiles of the close across the baseline's paths at this candle.
+
+
+class ProjectionHorizonView(BaseModel):
+    candles: int
+    baseline: SpreadView
+
+
+class ProjectionView(BaseModel):
+    """The baseline drawn again from the latest 1H close, so the chart's future starts now."""
+
+    as_of: UtcDatetime
+    last_close: str
+    atr: float  # 1H ATR at the latest close.
+    paths: int
+    steps: list[ProjectionStepView]
+    horizons: list[ProjectionHorizonView]
 
 
 class PatternPointView(BaseModel):
@@ -77,10 +100,21 @@ class CandleSignalView(BaseModel):
     open_time: UtcDatetime
 
 
+class ProposalView(BaseModel):
+    """Prices Python calculated for a signal. Size and costs come from the risk engine."""
+
+    side: str
+    entry_type: str | None  # None in plans saved before it was recorded.
+    entry: str
+    stop: str
+    targets: list[str]
+
+
 class StrategyView(BaseModel):
     name: str
     action: str
     reasons: list[str]
+    proposal: ProposalView | None = None  # Only with a BUY or SELL.
 
 
 class MarketContextView(BaseModel):
@@ -141,6 +175,9 @@ class PlanView(BaseModel):
     pre_mortem: str
     note: str
     status: PlanStatusView
+    # Python's signal at the plan's close, calculated before Claude planned. None when the
+    # calculation was not saved beside the plan.
+    python_at_close: list[StrategyView] | None
 
 
 class ForecastView(BaseModel):
@@ -149,9 +186,10 @@ class ForecastView(BaseModel):
     instrument_id: int
     symbol: str
     timeframe: Timeframe
-    as_of: UtcDatetime  # The forecast's close: Kronos, the baseline and reach shares.
-    analysis_as_of: UtcDatetime  # The latest 1H close: levels, patterns and decisions.
+    as_of: UtcDatetime  # The forecast's close: Kronos and the baseline drawn beside it.
+    analysis_as_of: UtcDatetime  # The latest 1H close: levels, patterns, the projection.
     analysis_close: str
+    forecast_current: bool  # The Kronos forecast is from the latest 1H close.
     created_at: UtcDatetime
     reason: str
     model: str
@@ -164,6 +202,7 @@ class ForecastView(BaseModel):
     steps: list[ForecastStepView]
     paths: list[list[float]]  # Kronos's sampled closes, one list per path.
     horizons: list[HorizonView]
+    projection: ProjectionView | None  # None when too few 1H candles are stored.
     levels: list[LevelView]
     patterns: list[ChartPatternView]
     candle_signals: list[CandleSignalView]

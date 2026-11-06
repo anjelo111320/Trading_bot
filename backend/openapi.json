@@ -624,6 +624,10 @@
             "title": "Created At",
             "type": "string"
           },
+          "forecast_current": {
+            "title": "Forecast Current",
+            "type": "boolean"
+          },
           "horizons": {
             "items": {
               "$ref": "#/components/schemas/HorizonView"
@@ -689,6 +693,16 @@
               }
             ]
           },
+          "projection": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ProjectionView"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "provider": {
             "title": "Provider",
             "type": "string"
@@ -724,6 +738,7 @@
           "as_of",
           "analysis_as_of",
           "analysis_close",
+          "forecast_current",
           "created_at",
           "reason",
           "model",
@@ -736,6 +751,7 @@
           "steps",
           "paths",
           "horizons",
+          "projection",
           "levels",
           "patterns",
           "candle_signals",
@@ -1653,6 +1669,20 @@
             "title": "Pre Mortem",
             "type": "string"
           },
+          "python_at_close": {
+            "anyOf": [
+              {
+                "items": {
+                  "$ref": "#/components/schemas/StrategyView"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Python At Close"
+          },
           "quantity": {
             "anyOf": [
               {
@@ -1743,7 +1773,8 @@
           "bear_case",
           "pre_mortem",
           "note",
-          "status"
+          "status",
+          "python_at_close"
         ],
         "title": "PlanView",
         "type": "object"
@@ -1946,19 +1977,159 @@
         "title": "PriceView",
         "type": "object"
       },
-      "ReachView": {
+      "ProjectionHorizonView": {
         "properties": {
           "baseline": {
-            "title": "Baseline",
+            "$ref": "#/components/schemas/SpreadView"
+          },
+          "candles": {
+            "title": "Candles",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "candles",
+          "baseline"
+        ],
+        "title": "ProjectionHorizonView",
+        "type": "object"
+      },
+      "ProjectionStepView": {
+        "properties": {
+          "close": {
+            "$ref": "#/components/schemas/BandView"
+          },
+          "open_time": {
+            "format": "date-time",
+            "title": "Open Time",
+            "type": "string"
+          }
+        },
+        "required": [
+          "open_time",
+          "close"
+        ],
+        "title": "ProjectionStepView",
+        "type": "object"
+      },
+      "ProjectionView": {
+        "description": "The baseline drawn again from the latest 1H close, so the chart's future starts now.",
+        "properties": {
+          "as_of": {
+            "format": "date-time",
+            "title": "As Of",
+            "type": "string"
+          },
+          "atr": {
+            "title": "Atr",
             "type": "number"
+          },
+          "horizons": {
+            "items": {
+              "$ref": "#/components/schemas/ProjectionHorizonView"
+            },
+            "title": "Horizons",
+            "type": "array"
+          },
+          "last_close": {
+            "title": "Last Close",
+            "type": "string"
+          },
+          "paths": {
+            "title": "Paths",
+            "type": "integer"
+          },
+          "steps": {
+            "items": {
+              "$ref": "#/components/schemas/ProjectionStepView"
+            },
+            "title": "Steps",
+            "type": "array"
+          }
+        },
+        "required": [
+          "as_of",
+          "last_close",
+          "atr",
+          "paths",
+          "steps",
+          "horizons"
+        ],
+        "title": "ProjectionView",
+        "type": "object"
+      },
+      "ProposalView": {
+        "description": "Prices Python calculated for a signal. Size and costs come from the risk engine.",
+        "properties": {
+          "entry": {
+            "title": "Entry",
+            "type": "string"
+          },
+          "entry_type": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Entry Type"
+          },
+          "side": {
+            "title": "Side",
+            "type": "string"
+          },
+          "stop": {
+            "title": "Stop",
+            "type": "string"
+          },
+          "targets": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Targets",
+            "type": "array"
+          }
+        },
+        "required": [
+          "side",
+          "entry_type",
+          "entry",
+          "stop",
+          "targets"
+        ],
+        "title": "ProposalView",
+        "type": "object"
+      },
+      "ReachView": {
+        "description": "Shares of paths that reach the level within this many candles of the latest close.",
+        "properties": {
+          "baseline": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Baseline"
           },
           "candles": {
             "title": "Candles",
             "type": "integer"
           },
           "model": {
-            "title": "Model",
-            "type": "number"
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Model"
           }
         },
         "required": [
@@ -2247,6 +2418,16 @@
           "name": {
             "title": "Name",
             "type": "string"
+          },
+          "proposal": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ProposalView"
+              },
+              {
+                "type": "null"
+              }
+            ]
           },
           "reasons": {
             "items": {

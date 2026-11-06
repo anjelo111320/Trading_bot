@@ -25,6 +25,7 @@ from trading_intel.api.forecast_view import (
     load_manual_plan,
     plan_status,
     plan_view,
+    stored_parameters,
 )
 from trading_intel.api.schemas.forecasts import (
     AnalyseRequest,
@@ -53,8 +54,11 @@ REASONS: Final = ("setup", "manual", "study")
 CACHE_SIZE: Final = 16
 
 # Both parts are fixed once computed: a forecast never changes, and neither do closed candles.
+# The analysis also depends on the baseline settings, so the projection matches the forecast.
 _forecast_parts: OrderedDict[UUID, ForecastPart] = OrderedDict()
-_analysis_parts: OrderedDict[tuple[int, datetime], AnalysisPart] = OrderedDict()
+_analysis_parts: OrderedDict[tuple[int, datetime, TimeMachineParameters, int], AnalysisPart] = (
+    OrderedDict()
+)
 
 
 def _remember[K, V](cache: OrderedDict[K, V], key: K, value: V) -> V:
@@ -103,7 +107,8 @@ async def latest_forecast(
         )
         forecast = _remember(_forecast_parts, stored.id, computed)
 
-    analysis_key = (instrument_id, SETUP.close_time(latest))
+    parameters, horizon = stored_parameters(stored), stored.key.horizon_candles
+    analysis_key = (instrument_id, SETUP.close_time(latest), parameters, horizon)
     analysis = _analysis_parts.get(analysis_key)
     if analysis is None:
         as_of = analysis_key[1]
@@ -119,7 +124,9 @@ async def latest_forecast(
         if not market.hours or not market.fours or not market.days:
             raise NotFoundError("The candles behind this analysis are not stored.")
         analysis = _remember(
-            _analysis_parts, analysis_key, await asyncio.to_thread(analysis_part, market)
+            _analysis_parts,
+            analysis_key,
+            await asyncio.to_thread(analysis_part, market, parameters, horizon),
         )
 
     rows = await services.forecasts.resolved(

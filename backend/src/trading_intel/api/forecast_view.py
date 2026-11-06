@@ -1,9 +1,10 @@
 """Assemble the forecast view: what Kronos and its baseline say, beside what Python sees.
 
-Read-only. Python's levels, patterns and decisions are computed at the latest stored 1H
-close, so they move on every hour. Kronos and its baseline stay at the forecast's own close
-until the next re-analysis. A manual analyst plan, when one exists, is replayed through the
-shared execution simulator on the candles that followed.
+Read-only. Python's levels, patterns, decisions and the projection, the baseline drawn
+again from the latest close, are computed at the latest stored 1H close, so they move on
+every hour. Kronos and the baseline drawn beside it stay at the forecast's own close until
+the next re-analysis. A manual analyst plan, when one exists, is replayed through the shared
+execution simulator on the candles that followed.
 """
 
 import json
@@ -28,6 +29,10 @@ from trading_intel.api.schemas.forecasts import (
     PatternPointView,
     PlanStatusView,
     PlanView,
+    ProjectionHorizonView,
+    ProjectionStepView,
+    ProjectionView,
+    ProposalView,
     ReachView,
     SpreadView,
     StrategyView,
@@ -54,7 +59,7 @@ from trading_intel.paper_trading.simulator import (
 )
 from trading_intel.pattern_detection.describe import describe
 from trading_intel.risk_management.calculators.linear import scaled_allocation
-from trading_intel.risk_management.models import RiskProfile
+from trading_intel.risk_management.models import RiskProfile, TradeProposal
 from trading_intel.technical_analysis.momentum import rsi
 from trading_intel.technical_analysis.series import CandleSeries, FloatArray
 from trading_intel.trade_signals.catalogue import CatalogueLevel, build_catalogue
@@ -67,6 +72,13 @@ SIGNAL_HOURS: Final = 24
 LEVELS_PER_SIDE: Final = 5
 CATALOGUE_CANDLES: Final = 400
 SETUP: Final = Timeframe.H1
+PATTERN_STRATEGY: Final = "1H pattern breakout"
+TREND_STRATEGY: Final = "Daily trend"
+# Where a saved context records each strategy's decision at the plan's close.
+SAVED_DECISIONS: Final = (
+    ("pattern_strategy_now", PATTERN_STRATEGY),
+    ("trend_strategy_now", TREND_STRATEGY),
+)
 PlanState = Literal["waiting", "open", "closed", "not_filled"]
 STATES: Final[dict[OrderStatus, PlanState]] = {
     OrderStatus.PENDING: "waiting",
@@ -89,6 +101,7 @@ class MarketInputs:
 class ManualPlan:
     signal: dict[str, Any]
     atr: float | None  # From the context the analyst read, when it was saved beside the plan.
+    python: list[StrategyView] | None  # Python's signal at the plan's close, from that context.
 
 
 def _price(value: Decimal | str) -> str:
@@ -96,8 +109,42 @@ def _price(value: Decimal | str) -> str:
     return plain(Decimal(value).normalize())
 
 
+def _proposal(proposal: TradeProposal | None) -> ProposalView | None:
+    if proposal is None:
+        return None
+    return ProposalView(
+        side=proposal.side.value,
+        entry_type=proposal.entry_type.value,
+        entry=_price(proposal.entry),
+        stop=_price(proposal.stop),
+        targets=[_price(target) for target in proposal.targets],
+    )
+
+
+def _saved_strategy(name: str, decision: dict[str, Any]) -> StrategyView:
+    saved = decision.get("proposal")
+    return StrategyView(
+        name=name,
+        action=decision["action"],
+        reasons=list(decision["reasons"]),
+        proposal=None
+        if saved is None
+        else ProposalView(
+            side=saved["side"],
+            entry_type=saved.get("entry_type"),
+            entry=_price(saved["entry"]),
+            stop=_price(saved["stop"]),
+            targets=[_price(target) for target in saved["targets"]],
+        ),
+    )
+
+
 def load_manual_plan(directory: Path, symbol: str) -> ManualPlan | None:
-    """The newest saved plan for a symbol. File names come from a fixed pattern only."""
+    """The newest saved plan for a symbol. File names come from a fixed pattern only.
+
+    The context saved beside a plan is what Python calculated before the analyst read it,
+    including each strategy's own signal at that close.
+    """
     if not symbol.isalnum() or not directory.is_dir():
         return None
     files = sorted(directory.glob(f"{symbol}-*-signal.json"))
@@ -105,10 +152,13 @@ def load_manual_plan(directory: Path, symbol: str) -> ManualPlan | None:
         return None
     signal = json.loads(files[-1].read_text())
     context_file = files[-1].with_name(files[-1].name.replace("-signal.json", "-context.json"))
-    atr = None
-    if context_file.exists():
-        atr = float(json.loads(context_file.read_text())["snapshot"]["atr_1h"])
-    return ManualPlan(signal, atr)
+    if not context_file.exists():
+        return ManualPlan(signal, None, None)
+    snapshot = json.loads(context_file.read_text())["snapshot"]
+    python = [
+        _saved_strategy(name, snapshot[key]) for key, name in SAVED_DECISIONS if key in snapshot
+    ]
+    return ManualPlan(signal, float(snapshot["atr_1h"]), python or None)
 
 
 def _band(values: FloatArray) -> BandView:
@@ -135,6 +185,19 @@ def _cut(paths: SampledPaths, candles: int) -> PathSummary:
         SampledPaths(
             paths.source, paths.timeframe, paths.as_of, paths.last_close, paths.candles[:, :candles]
         )
+    )
+
+
+def _starts(as_of: datetime, horizon: int) -> list[datetime]:
+    """Open times of the candles after a close."""
+    first = SETUP.next_open(SETUP.floor(as_of))
+    return [first + SETUP.delta * i for i in range(horizon)]
+
+
+def stored_parameters(stored: StoredForecast) -> TimeMachineParameters:
+    """The baseline settings the forecast was stored with."""
+    return TimeMachineParameters(
+        **{k: v for k, v in stored.baseline["parameters"].items() if k != "version"}
     )
 
 
@@ -214,12 +277,16 @@ def _context(
 
     strategies = [
         StrategyView(
-            name="1H pattern breakout",
+            name=PATTERN_STRATEGY,
             action=pattern_now.action.value,
             reasons=list(pattern_now.reasons),
+            proposal=_proposal(pattern_now.proposal),
         ),
         StrategyView(
-            name="Daily trend", action=trend_now.action.value, reasons=list(trend_now.reasons)
+            name=TREND_STRATEGY,
+            action=trend_now.action.value,
+            reasons=list(trend_now.reasons),
+            proposal=_proposal(trend_now.proposal),
         ),
     ]
     return MarketContextView(
@@ -318,6 +385,7 @@ def plan_view(plan: ManualPlan, status: PlanStatusView) -> PlanView:
         pre_mortem=analyst["pre_mortem"],
         note=analyst.get("analyst_note", ""),
         status=status,
+        python_at_close=plan.python,
     )
 
 
@@ -334,6 +402,15 @@ class ForecastPart:
 
 
 @dataclass(frozen=True)
+class ProjectionPart:
+    """The baseline drawn again from the latest close: how far price usually travels from here."""
+
+    steps: list[ProjectionStepView]
+    summaries: dict[int, PathSummary]  # Candles: summary.
+    paths: int
+
+
+@dataclass(frozen=True)
 class AnalysisPart:
     """What Python sees at the latest 1H close. It changes once an hour."""
 
@@ -344,6 +421,7 @@ class AnalysisPart:
     patterns: list[ChartPatternView]
     candle_signals: list[CandleSignalView]
     context: MarketContextView
+    projection: ProjectionPart | None  # None when too few 1H candles are stored.
 
 
 def forecast_part(
@@ -352,13 +430,9 @@ def forecast_part(
     key = stored.key
     as_of, last_close = key.as_of, float(stored.last_close)
     model = SampledPaths(key.model, key.timeframe, as_of, last_close, np.array(paths, dtype=float))
-    parameters = TimeMachineParameters(
-        **{k: v for k, v in stored.baseline["parameters"].items() if k != "version"}
+    baseline = time_machine(
+        CandleSeries.of(baseline_history), key.horizon_candles, stored_parameters(stored)
     )
-    baseline = time_machine(CandleSeries.of(baseline_history), key.horizon_candles, parameters)
-    starts = [
-        SETUP.next_open(SETUP.floor(as_of)) + SETUP.delta * i for i in range(key.horizon_candles)
-    ]
     return ForecastPart(
         steps=[
             ForecastStepView(
@@ -366,7 +440,7 @@ def forecast_part(
                 model=_band(model.candles[:, i, CLOSE]),
                 baseline=_band(baseline.candles[:, i, CLOSE]),
             )
-            for i, start in enumerate(starts)
+            for i, start in enumerate(_starts(as_of, key.horizon_candles))
         ],
         paths=[[float(f"{v:.8g}") for v in path] for path in model.candles[:, :, CLOSE]],
         summaries={
@@ -379,7 +453,26 @@ def forecast_part(
     )
 
 
-def analysis_part(market: MarketInputs) -> AnalysisPart:
+def projection_part(
+    series: CandleSeries, parameters: TimeMachineParameters, horizon: int
+) -> ProjectionPart | None:
+    """The forecast's baseline settings, applied at the latest close."""
+    if len(series) < parameters.lookback:
+        return None
+    paths = time_machine(series, horizon, parameters)
+    return ProjectionPart(
+        steps=[
+            ProjectionStepView(open_time=start, close=_band(paths.candles[:, i, CLOSE]))
+            for i, start in enumerate(_starts(paths.as_of, horizon))
+        ],
+        summaries={n: _cut(paths, n) for n in sorted({SHORT_HORIZON, horizon})},
+        paths=paths.count,
+    )
+
+
+def analysis_part(
+    market: MarketInputs, baseline: TimeMachineParameters, horizon: int
+) -> AnalysisPart:
     strategy = PatternStrategy(market.hours, market.fours, market.days, market.tick)
     series = strategy.series
     as_of = series.close_time[-1]
@@ -402,6 +495,24 @@ def analysis_part(market: MarketInputs) -> AnalysisPart:
         context=_context(
             strategy, DailyTrendStrategy(market.days, market.tick), market.fours, as_of
         ),
+        projection=projection_part(series, baseline, horizon),
+    )
+
+
+def _projection_view(analysis: AnalysisPart) -> ProjectionView | None:
+    projection = analysis.projection
+    if projection is None:
+        return None
+    return ProjectionView(
+        as_of=analysis.as_of,
+        last_close=_price(analysis.close),
+        atr=analysis.atr,
+        paths=projection.paths,
+        steps=projection.steps,
+        horizons=[
+            ProjectionHorizonView(candles=n, baseline=_spread(summary))
+            for n, summary in projection.summaries.items()
+        ],
     )
 
 
@@ -415,9 +526,15 @@ def assemble(
     record: TrackRecord,
     plan: PlanView | None,
 ) -> ForecastView:
-    """Join the two parts. Reach shares measure the forecast's paths against today's levels."""
+    """Join the two parts. Reach shares are measured from the latest close.
+
+    Kronos's paths start at its own close, so its shares are given only while that is the
+    latest close. Measured from an older close, they would describe a market that has moved.
+    """
     key = stored.key
     last_close, close = float(stored.last_close), float(analysis.close)
+    current = key.as_of == analysis.as_of
+    projected = analysis.projection.summaries if analysis.projection else {}
     levels = [
         LevelView(
             id=level.id,
@@ -429,10 +546,14 @@ def assemble(
             reach=[
                 ReachView(
                     candles=n,
-                    model=round(reach_share(m, float(level.price), last_close), 3),
-                    baseline=round(reach_share(b, float(level.price), last_close), 3),
+                    model=round(reach_share(m, float(level.price), last_close), 3)
+                    if current
+                    else None,
+                    baseline=round(reach_share(projected[n], float(level.price), close), 3)
+                    if n in projected
+                    else None,
                 )
-                for n, (m, b) in forecast.summaries.items()
+                for n, (m, _) in forecast.summaries.items()
             ],
         )
         for level in analysis.levels
@@ -446,6 +567,7 @@ def assemble(
         as_of=key.as_of,
         analysis_as_of=analysis.as_of,
         analysis_close=_price(analysis.close),
+        forecast_current=current,
         created_at=stored.created_at,
         reason=stored.reason,
         model=key.model,
@@ -461,6 +583,7 @@ def assemble(
             HorizonView(candles=n, model=_spread(m), baseline=_spread(b))
             for n, (m, b) in forecast.summaries.items()
         ],
+        projection=_projection_view(analysis),
         levels=levels,
         patterns=analysis.patterns,
         candle_signals=analysis.candle_signals,

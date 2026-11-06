@@ -187,12 +187,22 @@ def test_the_view_holds_the_forecast_levels_patterns_and_a_waiting_plan(
         (last.open_time + timedelta(hours=1)).strftime("%Y-%m-%dT%H")
     )
     assert [h["candles"] for h in view["horizons"]] == [4]
+    assert view["forecast_current"] is True
+    projection = view["projection"]
+    assert projection["as_of"] == view["analysis_as_of"]
+    assert projection["last_close"] == view["last_close"] and projection["paths"] == 200
+    assert [s["open_time"] for s in projection["steps"]] == [s["open_time"] for s in view["steps"]]
+    # At the forecast's own close, the projection is the forecast's baseline, drawn again.
+    assert projection["horizons"][0]["baseline"] == view["horizons"][0]["baseline"]
     assert view["levels"], "the catalogue should have levels"
     for level in view["levels"]:
         assert level["position"] in ("above", "below")
         assert [r["candles"] for r in level["reach"]] == [4]
+        assert all(r["model"] is not None and r["baseline"] is not None for r in level["reach"])
         assert "0000000" not in level["price"]
     assert view["context"]["strategies"][0]["name"] == "1H pattern breakout"
+    for strategy in view["context"]["strategies"]:
+        assert (strategy["proposal"] is None) == (strategy["action"] == "NO_TRADE")
     assert view["track_record"] == {
         "resolved": 0,
         "status": "too few forecasts",
@@ -205,6 +215,49 @@ def test_the_view_holds_the_forecast_levels_patterns_and_a_waiting_plan(
     assert plan["source"].startswith("manual analyst test")
     assert plan["side"] == "SHORT" and plan["grade"] == "B"
     assert plan["status"]["state"] == "waiting"
+    assert plan["python_at_close"] is None, "no Python calculation was saved beside this plan"
+
+
+def test_a_plan_shows_the_python_signal_calculated_before_it(
+    api: TestClient, tmp_path: Path
+) -> None:
+    """Python's own signal at the plan's close travels with the plan, so the order shows."""
+    _, instrument, symbol, last = asyncio.run(seed())
+    write_plan(tmp_path, symbol, last)
+    context = {
+        "snapshot": {
+            "atr_1h": "1.5",
+            "pattern_strategy_now": {
+                "action": "NO_TRADE",
+                "reasons": ["no pattern breakout"],
+                "proposal": None,
+            },
+            "trend_strategy_now": {
+                "action": "SELL",
+                "reasons": ["close beyond the 20-day range"],
+                "proposal": {
+                    "side": "SHORT",
+                    "entry": "100.50",
+                    "stop": "103.00",
+                    "targets": ["75.000"],
+                },
+            },
+        }
+    }
+    (tmp_path / f"{symbol}-2026-01-01T0000-context.json").write_text(json.dumps(context))
+    python = api.get(url(instrument)).json()["plan"]["python_at_close"]
+    assert [(s["name"], s["action"]) for s in python] == [
+        ("1H pattern breakout", "NO_TRADE"),
+        ("Daily trend", "SELL"),
+    ]
+    assert python[0]["proposal"] is None
+    assert python[1]["proposal"] == {
+        "side": "SHORT",
+        "entry_type": None,
+        "entry": "100.5",
+        "stop": "103",
+        "targets": ["75"],
+    }
 
 
 def test_a_plan_is_replayed_on_the_candles_that_followed(api: TestClient, tmp_path: Path) -> None:
@@ -266,6 +319,30 @@ def test_python_follows_the_latest_close_while_kronos_stays_put(api: TestClient)
     assert view["as_of"].startswith(last.close_time.strftime("%Y-%m-%dT%H:%M"))
     assert view["analysis_as_of"].startswith(later[-1].close_time.strftime("%Y-%m-%dT%H:%M"))
     assert D(view["analysis_close"]) == later[-1].close.normalize()
+    assert view["forecast_current"] is False
+
+
+def test_the_projection_starts_at_the_latest_close_when_kronos_is_old(api: TestClient) -> None:
+    """Regression: the chart's future was drawn from the forecast's close, hours in the past."""
+    provider, instrument, _, last = asyncio.run(seed())
+    later = [
+        c.model_copy(update={"provider_id": provider, "instrument_id": instrument})
+        for c in walk(Timeframe.H1, HOURS + 3, provider, instrument)[HOURS:]
+    ]
+    asyncio.run(seed_quarters(provider, instrument, later))
+    view = api.get(url(instrument)).json()
+    projection = view["projection"]
+    assert projection["as_of"] == view["analysis_as_of"]
+    assert D(projection["last_close"]) == later[-1].close.normalize()
+    first = projection["steps"][0]["open_time"]
+    assert first.startswith((later[-1].open_time + timedelta(hours=1)).strftime("%Y-%m-%dT%H"))
+    assert view["steps"][0]["open_time"].startswith(
+        (last.open_time + timedelta(hours=1)).strftime("%Y-%m-%dT%H")
+    )
+    for level in view["levels"]:
+        for reach in level["reach"]:
+            assert reach["model"] is None, "an old Kronos forecast must not price today's levels"
+            assert reach["baseline"] is not None
 
 
 class GatedModel(StandInModel):

@@ -142,6 +142,7 @@ def _decision(decision: Any) -> dict[str, Any]:
         if proposal is None
         else {
             "side": proposal.side.value,
+            "entry_type": proposal.entry_type.value,
             "entry": str(proposal.entry),
             "stop": str(proposal.stop),
             "targets": [str(t) for t in proposal.targets],
