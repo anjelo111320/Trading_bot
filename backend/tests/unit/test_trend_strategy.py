@@ -64,6 +64,16 @@ def test_a_close_below_the_range_is_a_sell() -> None:
     assert decision.action is Action.SELL
 
 
+def test_a_short_cap_never_goes_below_the_lowest_price() -> None:
+    """Regression: on a cheap, volatile coin a short's 10R cap fell below zero (2026-11-07)."""
+    swings = daily([10.0 + (3.0 if i % 2 else -3.0) for i in range(25)] + [6.0])
+    decision = DailyTrendStrategy(swings, TICK).decide(swings[-1].close_time)
+    proposal = decision.proposal
+    assert decision.action is Action.SELL and proposal is not None
+    assert proposal.entry - 10 * (proposal.stop - proposal.entry) < 0
+    assert proposal.targets == (TICK,)
+
+
 def test_the_stop_trails_the_10_day_extreme_and_never_loosens() -> None:
     strategy = DailyTrendStrategy(DAYS, TICK)
     peak = DAYS[39].close_time

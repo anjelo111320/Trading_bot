@@ -87,6 +87,22 @@ class TradingLoop:
         if timeframe is Timeframe.M1:
             await self._paper.sync(provider_id, instrument_id)
             return
+        try:
+            await self._decide(instrument, provider_id, timeframe, close_time)
+        except Exception as error:
+            # One bad signal must not stop paper trading for every coin. The failure is
+            # logged with its cause, and the next close is decided as usual.
+            log.error(
+                "signal_failed",
+                instrument=instrument.symbol,
+                timeframe=timeframe.value,
+                error=type(error).__name__,
+                detail=str(error)[:300],
+            )
+
+    async def _decide(
+        self, instrument: Instrument, provider_id: int, timeframe: Timeframe, close_time: datetime
+    ) -> None:
         fresh = FRESH.get(timeframe)
         if fresh is None:
             return

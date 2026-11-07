@@ -18,7 +18,7 @@ The Turtle traders' System 1, unchanged, on daily candles of BTC and ETH perpetu
 | Entry | A daily close above the highest high, or below the lowest low, of the previous 20 days. Market order at the next open |
 | Stop | 2 × ATR(20) from the entry |
 | Exit | A trailing stop at the lowest low (for longs) or highest high (for shorts) of the last 10 days, moved at each daily close and never loosened |
-| Profit cap | 10R. It exists so the 2:1 rule can read the trade, and exits are expected to come from the trailing stop |
+| Profit cap | 10R. It exists so the 2:1 rule can read the trade, and exits are expected to come from the trailing stop. For a short whose 10R would pass zero, as on cheap, volatile coins, the cap is the lowest price, one tick. Added 2026-11-07; it never applied to BTC or ETH |
 | Positions | One per coin. Signals during an open trade are ignored |
 | Risk and costs | 1% risk, leverage 1, the same fees, spread, slippage and real funding as the pattern strategy. Fills on 15M candles |
 

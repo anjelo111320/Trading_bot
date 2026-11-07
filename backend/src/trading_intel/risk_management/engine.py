@@ -121,7 +121,8 @@ def _level_checks(proposal: TradeProposal, market: MarketState) -> list[Code]:
     if not proposal.targets:
         codes.append(Code.NO_TARGET)
         return codes
-    wrong = [t for t in proposal.targets if sign * (t - proposal.entry) <= 0]
+    # A target at or below zero is on no side of a real market.
+    wrong = [t for t in proposal.targets if t <= 0 or sign * (t - proposal.entry) <= 0]
     if wrong:
         codes.append(Code.TARGET_WRONG_SIDE)
     if not stop_ok and len(wrong) == len(proposal.targets):

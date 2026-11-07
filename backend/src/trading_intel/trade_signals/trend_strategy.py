@@ -95,6 +95,10 @@ class DailyTrendStrategy:
         if risk <= 0 or stop <= 0:
             return BaselineDecision(Action.NO_TRADE, moment, ("stop is out of range",))
         cap = to_tick(entry + side.sign * Decimal(str(params.profit_cap_r)) * risk, tick)
+        # A short's 10R can reach past zero on a cheap, volatile coin. Price cannot, so the cap
+        # stops at the lowest price instead. It is far away either way, and exits still come
+        # from the trailing stop (found on DOGE-like prices on 2026-11-07).
+        cap = max(cap, tick)
         return BaselineDecision(
             action=Action.BUY if side is Side.LONG else Action.SELL,
             as_of=moment,

@@ -109,6 +109,17 @@ def codes(result: RiskAssessment) -> set[Code]:
     return set(result.codes)
 
 
+def test_a_target_at_or_below_zero_is_refused() -> None:
+    """Regression: a short's profit cap below zero reached the database on 2026-11-07."""
+    short = proposal(
+        side=Side.SHORT,
+        stop=D("102.00"),
+        targets=(D("90.00"), D("-0.06")),
+        invalidation_conditions=("close above 102",),
+    )
+    assert Code.TARGET_WRONG_SIDE in codes(assess(request(proposal=short)))
+
+
 def test_example_a_is_approved_with_the_documented_numbers() -> None:
     result = assess(request())
     sizing = result.sizing

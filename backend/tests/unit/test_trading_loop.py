@@ -80,3 +80,17 @@ async def test_other_timeframes_and_coins_do_nothing() -> None:
     recorder = Recorder()
     await loop(recorder).on_closed(PROVIDER, 999, Timeframe.H1, NOW)
     assert recorder.calls == []
+
+
+class Failing(Recorder):
+    async def evaluate_trend(self, *args: Any) -> SignalOutcome:
+        raise ValueError("a bad signal")
+
+
+async def test_one_failing_signal_does_not_stop_the_loop() -> None:
+    """Regression: one bad daily signal stopped paper trading for every coin (2026-11-07)."""
+    recorder = Failing()
+    await loop(recorder).on_closed(
+        PROVIDER, INSTRUMENT.id, Timeframe.D1, NOW - timedelta(seconds=5)
+    )
+    assert recorder.calls == ["trail"]
