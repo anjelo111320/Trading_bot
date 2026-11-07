@@ -475,3 +475,28 @@ async def test_the_trend_stop_trails_the_10_day_low_once_per_close(world: World)
     # The lowest low of the last 10 days: the candle 10 days back opened at 120.
     assert trade.stop_moves == ((last_close, D("120.00")),)
     assert await world.signals.trail_stops(world.provider_id, world.instrument, last_close) == 0
+
+
+async def test_a_book_from_the_minute_just_finished_counts_as_fresh(world: World) -> None:
+    """Regression: books are stored per finished minute, so their start is always over a
+    minute old, and every live signal was refused as stale (2026-11-07)."""
+    world.clock.advance(65)  # One minute and five seconds after NOW.
+    await SnapshotRepository(world.candles._engine).upsert(
+        SnapshotRow(
+            provider_id=world.provider_id,
+            instrument_id=world.instrument.id,
+            minute_start=NOW,  # The minute that has just finished.
+            best_bid=D("99.99"),
+            best_ask=D("100.01"),
+            spread_min=None,
+            spread_mean=None,
+            spread_max=None,
+            spread_last=None,
+            sample_count=1,
+            crossed_book_count=0,
+            data_origin=DataOrigin.LIVE,
+            received_at=NOW + timedelta(seconds=61),
+        )
+    )
+    outcome = await approve(world)
+    assert outcome.approved, outcome.reasons

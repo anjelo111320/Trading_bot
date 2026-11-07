@@ -6,6 +6,7 @@ Delivery is at-least-once, and every write is idempotent, so a repeat changes no
 import argparse
 import asyncio
 import signal
+from collections.abc import Awaitable, Callable
 from datetime import datetime, timedelta
 from typing import Final
 
@@ -48,6 +49,9 @@ GROUP: Final = "quant"
 # Strategies act only on fresh closes. After sleep, or a backlog in the stream, older closes
 # are skipped: trading them late would act on a market that has moved. Paper fills still
 # replay every minute, which is safe because each fill is recorded once.
+# A close is decided this long after it, so the ingestor has written the minute's order book
+# and the other timeframes' candles. Without it, a decision could read a book a minute old.
+SETTLE: Final = timedelta(seconds=10)
 FRESH: Final[dict[Timeframe, timedelta]] = {
     Timeframe.H1: timedelta(minutes=15),
     Timeframe.D1: timedelta(hours=1),
@@ -69,8 +73,10 @@ class TradingLoop:
         provider_id: int,
         instruments: dict[int, Instrument],
         clock: Clock,
+        sleep: Callable[[float], Awaitable[None]] = asyncio.sleep,
     ) -> None:
         self._clock = clock
+        self._sleep = sleep
         self._signals = signals
         self._paper = paper
         self._accounts = accounts
@@ -114,6 +120,9 @@ class TradingLoop:
                 close_time=close_time.isoformat(),
             )
             return
+        wait = (close_time + SETTLE - self._clock.now()).total_seconds()
+        if wait > 0:
+            await self._sleep(wait)
         account = await self._accounts.ensure_account(self._owner_email)
         if account is None:
             return

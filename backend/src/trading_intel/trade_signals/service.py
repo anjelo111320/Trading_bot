@@ -249,6 +249,10 @@ class SignalService:
         if book is None or minutes is None:
             return SignalOutcome(Action.NO_TRADE, None, False, ("no recent book",))
         book_minute, bid, ask = book
+        # A minute row holds the last bid and ask seen in that minute, so it is as fresh as the
+        # minute's end. Its start is always over a minute old, which once made every live
+        # signal stale (2026-11-07).
+        book_seen = min(now, Timeframe.M1.close_time(book_minute))
         minute_atr = Decimal(str(float(atr(minutes)[-1])))
         if minute_atr.is_nan():
             minute_atr = Decimal(0)
@@ -271,7 +275,7 @@ class SignalService:
             setup_atr=setup_atr,
             funding_rate=rate,
             funding_intervals=HOLD_FUNDING_INTERVALS,
-            data_age_seconds=int((now - book_minute).total_seconds()),
+            data_age_seconds=int((now - book_seen).total_seconds()),
             has_open_gaps=bool(unresolved),
         )
         key = dedupe_key(

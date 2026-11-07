@@ -40,6 +40,9 @@ class Recorder:
 
 
 def loop(recorder: Recorder) -> TradingLoop:
+    async def sleep(seconds: float) -> None:
+        recorder.calls.append(f"wait {seconds:g}s")
+
     return TradingLoop(
         recorder,  # type: ignore[arg-type]
         recorder,  # type: ignore[arg-type]
@@ -48,6 +51,7 @@ def loop(recorder: Recorder) -> TradingLoop:
         PROVIDER,
         {INSTRUMENT.id: INSTRUMENT},
         FixedClock(NOW),
+        sleep,
     )
 
 
@@ -58,11 +62,11 @@ async def closed(timeframe: Timeframe, age: timedelta) -> list[str]:
 
 
 async def test_a_fresh_1h_close_runs_the_pattern_strategy() -> None:
-    assert await closed(Timeframe.H1, timedelta(seconds=5)) == ["pattern"]
+    assert await closed(Timeframe.H1, timedelta(seconds=15)) == ["pattern"]
 
 
 async def test_a_fresh_daily_close_trails_stops_then_runs_the_trend_strategy() -> None:
-    assert await closed(Timeframe.D1, timedelta(seconds=5)) == ["trail", "trend"]
+    assert await closed(Timeframe.D1, timedelta(seconds=15)) == ["trail", "trend"]
 
 
 async def test_a_stale_close_never_trades() -> None:
@@ -91,6 +95,11 @@ async def test_one_failing_signal_does_not_stop_the_loop() -> None:
     """Regression: one bad daily signal stopped paper trading for every coin (2026-11-07)."""
     recorder = Failing()
     await loop(recorder).on_closed(
-        PROVIDER, INSTRUMENT.id, Timeframe.D1, NOW - timedelta(seconds=5)
+        PROVIDER, INSTRUMENT.id, Timeframe.D1, NOW - timedelta(seconds=15)
     )
     assert recorder.calls == ["trail"]
+
+
+async def test_a_just_closed_candle_waits_for_the_order_book_to_settle() -> None:
+    """Regression: a decision two seconds after a close could read a book a minute old."""
+    assert await closed(Timeframe.H1, timedelta(seconds=4)) == ["wait 6s", "pattern"]
