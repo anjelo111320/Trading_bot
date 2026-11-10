@@ -19,6 +19,7 @@ const STRATEGY_LABEL: Record<string, string> = {
   daily_trend: "Daily trend",
   pattern_breakout: "1H pattern",
   trend_break_baseline: "15M rule",
+  fvg_choch: "4H gap + 15M CHoCH",
 };
 // Every bot account risks at most 1% of equity per trade, before the money plan's share.
 const RISK_PER_TRADE = 1;
@@ -109,6 +110,26 @@ export function openPnl(trade: Trade, mid: number | null): number | null {
     return null;
   }
   return sign(trade) * (mid - Number(trade.average_entry)) * Number(trade.open_quantity);
+}
+
+/**
+ * USDT the position holds at its entry price: what is still open, or what was entered once
+ * the trade closed. Null before a fill. Paper trades use leverage 1, so this is also the margin.
+ */
+export function inTrade(trade: Trade): number | null {
+  if (trade.average_entry === null) {
+    return null;
+  }
+  const quantity =
+    trade.status === "open"
+      ? Number(trade.open_quantity)
+      : trade.fills.filter((fill) => fill.kind === "entry").reduce((sum, fill) => sum + Number(fill.quantity), 0);
+  return quantity * Number(trade.average_entry);
+}
+
+/** USDT held across the open trades. */
+export function inOpenTrades(trades: Trade[]): number {
+  return trades.filter(isOpen).reduce((sum, trade) => sum + (inTrade(trade) ?? 0), 0);
 }
 
 /** Realized profit after every cost paid so far: fees, spread, slippage and funding. */

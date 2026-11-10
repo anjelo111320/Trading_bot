@@ -100,4 +100,25 @@ Fixed before the run:
 
 ## Results
 
-Not run yet.
+Run once on 2026-11-10, from 14:28 to 14:31 UTC, with `uv run python -m trading_intel.entrypoints.fvg_choch_backtest` in `backend/`. The rules above were committed first, as `bd6090f`, and nothing was tuned. Simulated results. A profitable backtest is not proof of future profitability. Full tables: [fvg-choch.md](reports/fvg-choch.md).
+
+| 2020 to 2025-11-01, expectancy in R | Result |
+|---|---|
+| Six coins pooled, normal costs | +0.020, 95% interval -0.18 to +0.23, 255 trades, profit factor 1.03 |
+| Six coins at 1.5× and 2× costs | -0.065 and -0.144 |
+| SOL, XRP, BNB and DOGE pooled | -0.012 |
+| By coin | BTC +0.55 (26 trades), BNB +0.26, SOL +0.23, DOGE -0.05, ETH -0.13, XRP -0.43 |
+| Longs, shorts | +0.17, -0.13 |
+| Walk-forward test folds | 103 trades, +0.10R, 4 of 6 positive |
+| Random 15M entries with the 4H trend and the same exits | mean -0.075R, 95th percentile +0.089R |
+
+The decision rule gives a **half share**. The pooled mean is above zero, so the strategy joins the money plan; the interval includes zero and the 2× cost mean is negative, so it does not get the full share. No coin lost with 95% confidence, so none is left out.
+
+What this says:
+
+- The setup made almost nothing after costs. +0.02R a trade is indistinguishable from zero, and it turned negative at 1.5× costs. It did beat random with-trend entries with the same exits, so the gap and CHoCH filter picked better moments than chance, but not enough to pay well.
+- Most trades ended at the stop: 187 of 255.
+- Most CHoCH events were refused before any gap check: 22,152 went against the 4H trend, and 16,405 did not pull back into an open 4H gap.
+- The rule was followed as written. It joins at half share because its rule says so, not because the evidence is strong. Forward paper results decide its future.
+
+Decision: it joins the money plan's `Portfolio` account at a half share from 2026-11-10 (D049). Binance demo trading sends market entries only for now, so its limit orders are refused there with that reason.

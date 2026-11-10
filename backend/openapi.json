@@ -484,6 +484,349 @@
         "title": "ErrorResponse",
         "type": "object"
       },
+      "ExchangeOpenOrderView": {
+        "description": "A stop or take-profit Binance holds. A stop closes the whole position.",
+        "properties": {
+          "close_position": {
+            "title": "Close Position",
+            "type": "boolean"
+          },
+          "quantity": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Quantity"
+          },
+          "side": {
+            "title": "Side",
+            "type": "string"
+          },
+          "symbol": {
+            "title": "Symbol",
+            "type": "string"
+          },
+          "trigger": {
+            "title": "Trigger",
+            "type": "string"
+          },
+          "type": {
+            "title": "Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "symbol",
+          "type",
+          "side",
+          "trigger",
+          "quantity",
+          "close_position"
+        ],
+        "title": "ExchangeOpenOrderView",
+        "type": "object"
+      },
+      "ExchangeOrderView": {
+        "description": "One request sent to Binance and its outcome.",
+        "properties": {
+          "average_price": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Average Price"
+          },
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "error": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error"
+          },
+          "executed": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Executed"
+          },
+          "kind": {
+            "title": "Kind",
+            "type": "string"
+          },
+          "outcome": {
+            "enum": [
+              "accepted",
+              "refused",
+              "no reply"
+            ],
+            "title": "Outcome",
+            "type": "string"
+          },
+          "quantity": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Quantity"
+          },
+          "side": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Side"
+          },
+          "symbol": {
+            "title": "Symbol",
+            "type": "string"
+          },
+          "trigger": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Trigger"
+          },
+          "type": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Type"
+          }
+        },
+        "required": [
+          "created_at",
+          "symbol",
+          "kind",
+          "side",
+          "type",
+          "quantity",
+          "trigger",
+          "executed",
+          "average_price",
+          "outcome",
+          "error"
+        ],
+        "title": "ExchangeOrderView",
+        "type": "object"
+      },
+      "ExchangePositionView": {
+        "properties": {
+          "entry_price": {
+            "title": "Entry Price",
+            "type": "string"
+          },
+          "liquidation": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Liquidation"
+          },
+          "margin": {
+            "title": "Margin",
+            "type": "string"
+          },
+          "mark_price": {
+            "title": "Mark Price",
+            "type": "string"
+          },
+          "notional": {
+            "title": "Notional",
+            "type": "string"
+          },
+          "quantity": {
+            "title": "Quantity",
+            "type": "string"
+          },
+          "side": {
+            "title": "Side",
+            "type": "string"
+          },
+          "symbol": {
+            "title": "Symbol",
+            "type": "string"
+          },
+          "unrealized": {
+            "title": "Unrealized",
+            "type": "string"
+          }
+        },
+        "required": [
+          "symbol",
+          "side",
+          "quantity",
+          "entry_price",
+          "mark_price",
+          "notional",
+          "margin",
+          "unrealized",
+          "liquidation"
+        ],
+        "title": "ExchangePositionView",
+        "type": "object"
+      },
+      "ExchangeStatusView": {
+        "properties": {
+          "age_seconds": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Age Seconds"
+          },
+          "available": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Available"
+          },
+          "binance_available": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Binance Available"
+          },
+          "binance_equity": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Binance Equity"
+          },
+          "capital": {
+            "title": "Capital",
+            "type": "string"
+          },
+          "connected": {
+            "title": "Connected",
+            "type": "boolean"
+          },
+          "day_start_equity": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Day Start Equity"
+          },
+          "equity": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Equity"
+          },
+          "orders": {
+            "default": [],
+            "items": {
+              "$ref": "#/components/schemas/ExchangeOpenOrderView"
+            },
+            "title": "Orders",
+            "type": "array"
+          },
+          "positions": {
+            "default": [],
+            "items": {
+              "$ref": "#/components/schemas/ExchangePositionView"
+            },
+            "title": "Positions",
+            "type": "array"
+          },
+          "taken_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Taken At"
+          },
+          "test_funds": {
+            "const": true,
+            "default": true,
+            "title": "Test Funds",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "connected",
+          "capital"
+        ],
+        "title": "ExchangeStatusView",
+        "type": "object"
+      },
       "FeedStatusView": {
         "properties": {
           "clock_skew_ms": {
@@ -3162,6 +3505,86 @@
         ]
       }
     },
+    "/api/v1/exchange-demo/orders": {
+      "get": {
+        "operationId": "orders_api_v1_exchange_demo_orders_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 50,
+              "maximum": 200,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/ExchangeOrderView"
+                  },
+                  "title": "Response Orders Api V1 Exchange Demo Orders Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Default Response"
+          }
+        },
+        "summary": "Orders",
+        "tags": [
+          "exchange-demo"
+        ]
+      }
+    },
+    "/api/v1/exchange-demo/status": {
+      "get": {
+        "operationId": "status_api_v1_exchange_demo_status_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ExchangeStatusView"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Default Response"
+          }
+        },
+        "summary": "Status",
+        "tags": [
+          "exchange-demo"
+        ]
+      }
+    },
     "/api/v1/forecasts/analyse": {
       "get": {
         "operationId": "analysis_status_api_v1_forecasts_analyse_get",
@@ -3921,7 +4344,8 @@
               "enum": [
                 "paper",
                 "demo",
-                "portfolio"
+                "portfolio",
+                "binance"
               ],
               "title": "Account",
               "type": "string"

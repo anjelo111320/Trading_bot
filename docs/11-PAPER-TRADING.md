@@ -53,6 +53,25 @@ A decision waits 10 seconds after its close so the minute's order book is stored
 
 The dashboard's Bot page (`/bot`) switches between the money plan account and the demo account, and shows one coin at a time on a live candle chart. An arrow marks each entry, BUY below the bar and SELL above it. A dot marks each exit, green at a target and red at the stop. Lines mark the open trade's entry, current stop and the targets still ahead. Beside the chart are the account (profit in USDT and as a share of its start), the open trade with its strategy, risk and live profit, and Python's latest setups with the risk engine's decision. Each setup also shows its signal score in words, such as "Score weak, 2 of 4 against", labelled as recorded to test on live results and never changing a trade's size (D046). For the money plan the account also shows today's profit against the +3% stop and the risk in open trades against its 3% limit. The trade history table lists every coin with its strategy and the USDT it risked. All of it is labelled simulated, and the demo's strategy is labelled untested.
 
+Since 2026-11-10, at the owner's request, the Bot page also shows the Forecast page's analysis for the coin on the chart. It is Python's view at the latest 1H close, from the same `/forecasts/latest` endpoint:
+
+- On the chart, with switches to turn each part off: Python's levels with their labels, chart patterns, the baseline's 10–90% range for the next 4 hours, Claude's plan when one exists, and candle signals. Candle signals are drawn as squares, because arrows on this chart are trade entries. The chart keeps empty bars on the right for the labels and the range.
+- A Trades and Analysis switch above the side panels. Analysis shows Python's signal first, then Claude's plan when one exists, the next 4 hours, Python's levels, what Python sees and the candle signals of the last 24 hours.
+
+The analysis is information only. It never changes a bot trade, which still comes from the strategies and the risk engine. The Forecast page is unchanged.
+
+The Bot page also shows the USDT held in trades: each open trade's size at its entry price, and what it loses at the stop; the account's total in open trades and what is left; and an "In trade USDT" column in the history. Paper trades use leverage 1, so that size is also the margin they hold.
+
+The Binance demo account (D048) trades on Binance, not in this simulator. The Bot page's third account, "Binance demo, 100 USDT", shows it from the snapshot the quant worker saves each minute:
+
+- The budget, equity, profit and free margin.
+- Each open position, with the stop and targets Binance holds, drawn on the chart.
+- Entries Binance filled, as arrows.
+- Every order sent, with what Binance did with it.
+- Python's decisions for the account.
+
+A position Binance closes at its stop or a target is not reported back yet, so it shows as the position and its lines disappearing.
+
 ## Safety
 Paper trading is the default.
 No real broker order placement in initial release.

@@ -21,6 +21,9 @@ from trading_intel.core.errors import NotFoundError
 from trading_intel.database.repositories.signals import (
     DEMO_ACCOUNT,
     DEMO_BALANCE,
+    EXCHANGE_DEMO_ACCOUNT,
+    EXCHANGE_DEMO_BUDGET,
+    EXCHANGE_DEMO_MODE,
     PAPER_ACCOUNT,
     PORTFOLIO_ACCOUNT,
     PORTFOLIO_BALANCE,
@@ -38,16 +41,19 @@ Services = Annotated[Container, Depends(get_container)]
 # The tested strategies' account, the demo bot's 100 USDT account (D044), or the money
 # plan's 1,000 USDT account (D045). Whichever side creates an account gives it its limits.
 AccountName = Annotated[Literal["paper", "demo", "portfolio"], Query()]
-ACCOUNTS: Final[dict[str, tuple[str, Decimal, RiskProfile | None]]] = {
-    "paper": (PAPER_ACCOUNT, STARTING_BALANCE, None),
-    "demo": (DEMO_ACCOUNT, DEMO_BALANCE, None),
-    "portfolio": (PORTFOLIO_ACCOUNT, PORTFOLIO_BALANCE, PLAN_PROFILE),
+# Signals also exist for the Binance demo account (D048). Its positions live on Binance.
+SignalAccountName = Annotated[Literal["paper", "demo", "portfolio", "binance"], Query()]
+ACCOUNTS: Final[dict[str, tuple[str, Decimal, RiskProfile | None, str]]] = {
+    "paper": (PAPER_ACCOUNT, STARTING_BALANCE, None, "paper"),
+    "demo": (DEMO_ACCOUNT, DEMO_BALANCE, None, "paper"),
+    "portfolio": (PORTFOLIO_ACCOUNT, PORTFOLIO_BALANCE, PLAN_PROFILE, "paper"),
+    "binance": (EXCHANGE_DEMO_ACCOUNT, EXCHANGE_DEMO_BUDGET, PLAN_PROFILE, EXCHANGE_DEMO_MODE),
 }
 
 
 async def _account(owner: Owner, services: Services, which: str) -> Account:
-    name, balance, limits = ACCOUNTS[which]
-    account = await services.signals.ensure_account(owner.email, name, balance, limits)
+    name, balance, limits, mode = ACCOUNTS[which]
+    account = await services.signals.ensure_account(owner.email, name, balance, limits, mode=mode)
     if account is None:
         raise NotFoundError("No paper account.")
     return account
@@ -101,7 +107,7 @@ async def signals(
     owner: Owner,
     services: Services,
     limit: Annotated[int, Query(ge=1, le=200)] = 50,
-    account: AccountName = "paper",
+    account: SignalAccountName = "paper",
 ) -> list[SignalView]:
     chosen = await _account(owner, services, account)
     return [_signal(row) for row in await services.signals.recent(chosen.id, limit)]

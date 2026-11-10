@@ -32,6 +32,10 @@ export type ForecastProposal = Schemas["ProposalView"];
 export type ChartPattern = Schemas["ChartPatternView"];
 export type CandleSignal = Schemas["CandleSignalView"];
 export type AnalysisJob = Schemas["AnalysisJobView"];
+export type ExchangeStatus = Schemas["ExchangeStatusView"];
+export type ExchangePosition = Schemas["ExchangePositionView"];
+export type ExchangeOpenOrder = Schemas["ExchangeOpenOrderView"];
+export type ExchangeOrder = Schemas["ExchangeOrderView"];
 
 export class ApiError extends Error {
   constructor(

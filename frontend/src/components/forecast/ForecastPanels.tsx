@@ -93,16 +93,23 @@ const LAYER_ITEMS: { key: keyof Layers; label: string; swatch: ReactNode }[] = [
  * The legend doubles as the layer switches, so every colour on the chart is named. Kronos's
  * switches show only while a Kronos run is on the chart (D040).
  */
+const SQUARE_SIGNAL = <span className="text-[10px] leading-none text-down">■</span>;
+
 export function LayerToggles({
   layers,
   onChange,
   kronos = false,
+  squareSignals = false,
 }: {
   layers: Layers;
   onChange: (layers: Layers) => void;
   kronos?: boolean;
+  /** The Bot chart marks candle signals with squares, because its arrows are trade entries. */
+  squareSignals?: boolean;
 }) {
-  const items = kronos ? LAYER_ITEMS : LAYER_ITEMS.filter((item) => !KRONOS_LAYERS.includes(item.key));
+  const items = (kronos ? LAYER_ITEMS : LAYER_ITEMS.filter((item) => !KRONOS_LAYERS.includes(item.key))).map(
+    (item) => (squareSignals && item.key === "signals" ? { ...item, swatch: SQUARE_SIGNAL } : item),
+  );
   return (
     <div role="group" aria-label="Chart layers" className="flex flex-wrap gap-1">
       {items.map((item) => (

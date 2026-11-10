@@ -53,7 +53,7 @@ class PatternParameters:
         return asdict(self)
 
 
-class _TrendView:
+class TrendView:
     """A higher timeframe's swing trend as known at a moment: its last closed candle."""
 
     def __init__(self, candles: Sequence[ClosedCandle]) -> None:
@@ -92,8 +92,8 @@ class PatternStrategy:
         self.series = CandleSeries.of(setup)
         self.tick = tick
         self.atr = atr(self.series)
-        self.middle = _TrendView(middle)
-        self.higher = _TrendView(higher)
+        self.middle = TrendView(middle)
+        self.higher = TrendView(higher)
         self.regimes = RegimeView(CandleSeries.of(higher))
         self.index_of = {moment: i for i, moment in enumerate(self.series.close_time)}
         found = chart_patterns(self.series, self.atr, relative_volume(self.series.volume))

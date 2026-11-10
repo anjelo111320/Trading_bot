@@ -81,6 +81,23 @@ def test_limit_fills_only_when_price_trades_through() -> None:
     assert through.fills[0].fee == D("0.0002") * D("99.00") * 10
 
 
+def test_a_target_in_the_candle_a_limit_fills_is_not_counted() -> None:
+    limit = order(
+        entry_type=EntryType.LIMIT, entry=D("99.00"), targets=(D("101.00"),), allocation=(D(1),)
+    )
+    sim = run(TradeSimulator(limit), bar(0, "100", "101.50", "98.90", "99.50"))
+    assert sim.status is OrderStatus.OPEN
+    assert [f.kind for f in sim.fills] == ["entry"]
+    run(sim, bar(1, "99.50", "101.50", "99.40", "101.20"))
+    assert [f.kind for f in sim.fills] == ["entry", "tp1"]
+
+
+def test_the_stop_still_counts_in_the_candle_a_limit_fills() -> None:
+    limit = order(entry_type=EntryType.LIMIT, entry=D("99.00"))
+    sim = run(TradeSimulator(limit), bar(0, "100", "105", "97.50", "98.00"))
+    assert [f.kind for f in sim.fills] == ["entry", "stop"]
+
+
 def test_short_limit_mirrors_the_rule() -> None:
     limit = order(
         side=Side.SHORT,

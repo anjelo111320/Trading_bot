@@ -62,10 +62,22 @@ def test_settings_have_no_trading_mode_field() -> None:
     assert not any("trading_mode" in name for name in Settings.model_fields)
 
 
-def test_no_exchange_credential_setting_exists() -> None:
-    fields = " ".join(Settings.model_fields).lower()
-    assert "binance_api_key" not in fields
-    assert "api_secret" not in fields
+def test_the_only_exchange_credentials_are_for_demo_trading() -> None:
+    """D016, amended by D048: keys exist only for Binance demo trading, whose host is fixed."""
+    secret = ("key", "secret")
+    exchange = [
+        name
+        for name in Settings.model_fields
+        if name.startswith("binance") and any(word in name for word in secret)
+    ]
+    assert exchange == [
+        "binance_demo_api_key",
+        "binance_demo_api_secret",
+        "binance_demo_private_key_file",
+    ]
+    assert not any("demo" in name and "url" in name for name in Settings.model_fields), (
+        "the demo order host must not be configurable"
+    )
 
 
 def test_missing_required_setting_gives_a_clear_error(

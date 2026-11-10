@@ -10,6 +10,7 @@ import {
   type IPriceLine,
   type ISeriesApi,
   type ISeriesMarkersPluginApi,
+  type ISeriesPrimitive,
   type SeriesMarker,
   type Time,
 } from "lightweight-charts";
@@ -30,6 +31,10 @@ type Props = {
   onHover: (time: number | null) => void;
   markers?: SeriesMarker<Time>[];
   levels?: PriceLevel[];
+  /** Extra drawings on the candles, such as Python's analysis on the Bot page. */
+  primitive?: ISeriesPrimitive<Time> | null;
+  /** Empty bars kept on the right, for drawings that reach past the last candle. */
+  rightOffset?: number;
 };
 
 const NO_MARKERS: SeriesMarker<Time>[] = [];
@@ -44,6 +49,8 @@ export function CandleChart({
   onHover,
   markers = NO_MARKERS,
   levels = NO_LEVELS,
+  primitive = null,
+  rightOffset = 0,
 }: Props) {
   const container = useRef<HTMLDivElement>(null);
   const chartRef = useRef<IChartApi | null>(null);
@@ -103,6 +110,19 @@ export function CandleChart({
       linesRef.current = [];
     };
   }, []);
+
+  useEffect(() => {
+    const series = seriesRef.current;
+    if (!series || !primitive) {
+      return;
+    }
+    series.attachPrimitive(primitive);
+    return () => seriesRef.current?.detachPrimitive(primitive);
+  }, [primitive]);
+
+  useEffect(() => {
+    chartRef.current?.applyOptions({ timeScale: { rightOffset } });
+  }, [rightOffset]);
 
   useEffect(() => {
     markersRef.current?.setMarkers(markers);

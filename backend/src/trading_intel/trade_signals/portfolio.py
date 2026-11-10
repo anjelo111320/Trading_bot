@@ -12,6 +12,7 @@ from trading_intel.domain.candles import Timeframe
 from trading_intel.risk_management.allocation import FULL_SHARE, HALF_SHARE, QUARTER_SHARE
 from trading_intel.risk_management.models import RiskProfile
 from trading_intel.trade_signals.baseline import STRATEGY_NAME as BASELINE_NAME
+from trading_intel.trade_signals.fvg_choch_strategy import STRATEGY_NAME as FVG_NAME
 from trading_intel.trade_signals.pattern_strategy import STRATEGY_NAME as PATTERN_NAME
 from trading_intel.trade_signals.trend_strategy import STRATEGY_NAME as TREND_NAME
 
@@ -23,11 +24,13 @@ PLAN_PROFILE: Final = RiskProfile(
     daily_profit_stop_fraction=Decimal("0.03"),
 )
 
-# Set once by the study's pre-registered rule, run on 2026-11-09 (docs/33).
+# Set once by the study's pre-registered rule, run on 2026-11-09 (docs/33). The 4H gap and 15M
+# CHoCH strategy took its share by the same rule in its own study, run on 2026-11-10 (docs/35).
 EVIDENCE_SHARES: Final[dict[str, Decimal]] = {
     TREND_NAME: FULL_SHARE,
     PATTERN_NAME: HALF_SHARE,
     BASELINE_NAME: QUARTER_SHARE,
+    FVG_NAME: HALF_SHARE,
 }
 # Strategy and coin pairs that lost with 95% confidence in the study. None did.
 LEFT_OUT: Final[frozenset[tuple[str, str]]] = frozenset()

@@ -33,7 +33,7 @@ Status: Updated 2026-11-02. Requirements: [brief section 17](21-PROJECT-BRIEF.md
 | Licensed provider data | Redistribution could breach terms |
 | User credentials and sessions | Control of the platform |
 
-There are no exchange credentials, and no real money is reachable from the platform. This is the most important security property, so it must stay true.
+No real money is reachable from the platform. This is the most important security property, so it must stay true. Since D048 the only exchange credentials are Binance **demo trading** keys, which hold test funds, and the code that uses them can only reach `https://demo-fapi.binance.com`.
 
 ### Trust Boundaries
 
@@ -53,7 +53,7 @@ There are no exchange credentials, and no real money is reachable from the platf
 | Secret committed | `.gitignore`, gitleaks in CI and pre-commit | Fake key fails the check | 0 |
 | Secret in logs | Redacting settings type, log filter | Test asserts absence | 0 |
 | Secret in browser | Backend holds all keys. Only public API URL in frontend config | Bundle scan | 0 |
-| Hidden live trading path | No exchange keys, `TradingMode` has one value, GET-only allow-list, database CHECK on `mode` | Tests fail on signed requests, order paths or a second mode | 0, 1 |
+| Hidden live trading path | Only demo trading keys, a gateway fixed to the demo host, `TradingMode` has one value, a GET-only allow-list for market data, a database CHECK allowing only `paper` and `exchange_demo` accounts, and import contracts keeping Claude, news, forecasts and the API away from `execution` | Tests fail on any other host, any other credential setting, or a `live` account | 0, 1 |
 | Stolen session | HttpOnly, Secure, SameSite cookies, short expiry, login rate limit | Auth tests | 1 |
 | Cross-site WebSocket hijack | Origin check plus short-lived ticket, since browsers cannot set auth headers | WebSocket tests | 1 |
 | SQL injection | Parameterised queries only, no dynamic SQL | Injection tests, lint rule | 1 |
@@ -84,7 +84,7 @@ Secrets come from the environment locally and a secret manager in production. `.
 | News provider keys | `news-worker` only | News phase |
 | `TELEGRAM_BOT_TOKEN` | `notifier` only | Risk phase |
 
-Exchange keys are deliberately absent. Each process receives only the secrets it needs.
+Real exchange keys are deliberately absent. Demo trading keys are read only by the quant worker and the `binance_demo` command, are filtered from logs, need no withdrawal permission and must never have it. A self-generated Ed25519 private key lives in `~/.config/trading-intel/` with mode 0600, outside the repository, and is never replaced by `keygen`. Each process receives only the secrets it needs.
 
 ### Authentication and Authorization
 
@@ -139,7 +139,7 @@ Full design: [07-CLAUDE-AI-ANALYST.md](07-CLAUDE-AI-ANALYST.md).
 
 The initial release contains no way to place a real order. These checks run in CI:
 
-- No exchange credentials in settings.
+- No exchange credentials in settings except the two demo trading keys (D048).
 - No HMAC signing code in `data_providers`.
 - No request to order, account or user-data endpoints.
 - `TradingMode` has exactly one member.

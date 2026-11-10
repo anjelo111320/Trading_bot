@@ -4,6 +4,7 @@ import { formatPrice, formatUtc } from "@/lib/format";
 import {
   actionOf,
   averageExit,
+  inTrade,
   openPnl,
   percentOf,
   realizedPnl,
@@ -14,21 +15,21 @@ import {
   today,
 } from "./trades";
 
-function usdt(value: number): string {
+export function usdt(value: number): string {
   return `${value >= 0 ? "+" : ""}${value.toFixed(2)}`;
 }
 
-function percent(value: number): string {
+export function percent(value: number): string {
   return `${value >= 0 ? "+" : ""}${value.toFixed(2)}%`;
 }
 
-function tone(value: number): string {
+export function tone(value: number): string {
   if (value > 0) return "text-good";
   if (value < 0) return "text-bad";
   return "text-ink";
 }
 
-function Stat({ label, value, className = "" }: { label: string; value: string; className?: string }) {
+export function Stat({ label, value, className = "" }: { label: string; value: string; className?: string }) {
   return (
     <div>
       <dt className="text-xs text-muted">{label}</dt>
@@ -81,7 +82,16 @@ function Today({ summary }: { summary: PaperSummary }) {
   );
 }
 
-export function BotAccount({ summary, title }: { summary: PaperSummary; title: string }) {
+export function BotAccount({
+  summary,
+  title,
+  inTrades,
+}: {
+  summary: PaperSummary;
+  title: string;
+  /** USDT held in this account's open trades, at their entry prices. */
+  inTrades: number;
+}) {
   const equity = Number(summary.equity);
   const change = equity - Number(summary.starting_balance);
   const winRate =
@@ -102,10 +112,13 @@ export function BotAccount({ summary, title }: { summary: PaperSummary; title: s
         <Stat label="Win rate" value={winRate} />
         <Stat label="Open trades" value={String(summary.open_positions)} />
         <Stat label="Costs paid" value={`${Number(summary.costs).toFixed(2)} USDT`} />
+        <Stat label="In open trades" value={`${inTrades.toFixed(2)} USDT`} />
+        <Stat label="Not in a trade" value={`${Math.max(equity - inTrades, 0).toFixed(2)} USDT`} />
       </dl>
       <p className="mt-2 text-xs text-muted">
         Equity counts open trades at the latest price. Profit is after fees, spread, slippage and
-        funding.
+        funding. &quot;In open trades&quot; is each position at its entry price; paper trades use
+        leverage 1, so that is also the margin they hold.
       </p>
       <Today summary={summary} />
     </section>
@@ -116,6 +129,7 @@ type OpenProps = { trade: Trade; mid: number | null; tickSize: string | null; ba
 
 export function OpenTrade({ trade, mid, tickSize, balance }: OpenProps) {
   const open = openPnl(trade, mid);
+  const held = inTrade(trade);
   const entry = trade.average_entry ?? trade.planned_entry;
   return (
     <section aria-label={`Open ${trade.symbol} trade`} className="rounded border border-line bg-panel p-3">
@@ -134,7 +148,14 @@ export function OpenTrade({ trade, mid, tickSize, balance }: OpenProps) {
           value={trade.targets.map((price) => formatPrice(price, tickSize)).join(" / ")}
           className="text-good"
         />
-        <Stat label="Size" value={trade.open_quantity} />
+        {/* The stored quantity carries 18 decimal places; trailing zeros say nothing. */}
+        <Stat label="Size" value={String(Number(trade.open_quantity))} />
+        <Stat label="In the trade" value={held === null ? "–" : `${held.toFixed(2)} USDT`} />
+        <Stat
+          label="Lost at the stop"
+          value={trade.max_account_risk === null ? "–" : `${Number(trade.max_account_risk).toFixed(2)} USDT`}
+          className="text-bad"
+        />
         <Stat
           label="Open profit, live"
           value={open === null ? "Waiting for price" : `${usdt(open)} USDT`}
@@ -210,6 +231,7 @@ export function TradeHistory({ trades, balance, ticks }: HistoryProps) {
             <th scope="col" className="p-2">Coin</th>
             <th scope="col" className="p-2">Strategy</th>
             <th scope="col" className="p-2">Side</th>
+            <th scope="col" className="p-2 text-right">In trade USDT</th>
             <th scope="col" className="p-2 text-right">Risked USDT</th>
             <th scope="col" className="p-2 text-right">Entry</th>
             <th scope="col" className="p-2 text-right">Exit</th>
@@ -224,6 +246,7 @@ export function TradeHistory({ trades, balance, ticks }: HistoryProps) {
             const exit = averageExit(trade);
             const pnl = realizedPnl(trade);
             const done = trade.status === "closed";
+            const held = inTrade(trade);
             return (
               <tr key={trade.id} className="border-t border-line">
                 <td className="p-2 whitespace-nowrap">{formatUtc(trade.created_at)}</td>
@@ -232,6 +255,7 @@ export function TradeHistory({ trades, balance, ticks }: HistoryProps) {
                 <td className="p-2">
                   <Side trade={trade} />
                 </td>
+                <td className="p-2 text-right">{held === null ? "–" : held.toFixed(2)}</td>
                 <td className="p-2 text-right" title={risk(trade.risk_share) ?? undefined}>
                   {trade.max_account_risk === null ? "–" : Number(trade.max_account_risk).toFixed(2)}
                 </td>

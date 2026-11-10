@@ -94,10 +94,15 @@ class TradeSimulator:
         if self.is_finished or not self._reaches(candle):
             return []
         start = len(self.fills)
-        if self.status is OrderStatus.PENDING:
+        pending = self.status is OrderStatus.PENDING
+        if pending:
             self._try_entry(candle)
         if self.status is OrderStatus.OPEN:
-            self._try_exits(candle, stop_only=candle.open_time < self.order.placed_at)
+            # A limit fills on a move against the trade, and a target in the same candle may
+            # have traded before it. Only the stop counts in that candle (docs/10).
+            limit_filled = pending and self.order.entry_type is EntryType.LIMIT
+            early = candle.open_time < self.order.placed_at
+            self._try_exits(candle, stop_only=limit_filled or early)
         return self.fills[start:]
 
     def _reaches(self, candle: ClosedCandle) -> bool:

@@ -72,6 +72,40 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/exchange-demo/orders": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Orders */
+        get: operations["orders_api_v1_exchange_demo_orders_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/exchange-demo/status": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Status */
+        get: operations["status_api_v1_exchange_demo_status_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/forecasts/analyse": {
         parameters: {
             query?: never;
@@ -496,6 +530,116 @@ export interface components {
         /** ErrorResponse */
         ErrorResponse: {
             error: components["schemas"]["ErrorBody"];
+        };
+        /**
+         * ExchangeOpenOrderView
+         * @description A stop or take-profit Binance holds. A stop closes the whole position.
+         */
+        ExchangeOpenOrderView: {
+            /** Close Position */
+            close_position: boolean;
+            /** Quantity */
+            quantity: string | null;
+            /** Side */
+            side: string;
+            /** Symbol */
+            symbol: string;
+            /** Trigger */
+            trigger: string;
+            /** Type */
+            type: string;
+        };
+        /**
+         * ExchangeOrderView
+         * @description One request sent to Binance and its outcome.
+         */
+        ExchangeOrderView: {
+            /** Average Price */
+            average_price: string | null;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /** Error */
+            error: string | null;
+            /** Executed */
+            executed: string | null;
+            /** Kind */
+            kind: string;
+            /**
+             * Outcome
+             * @enum {string}
+             */
+            outcome: "accepted" | "refused" | "no reply";
+            /** Quantity */
+            quantity: string | null;
+            /** Side */
+            side: string | null;
+            /** Symbol */
+            symbol: string;
+            /** Trigger */
+            trigger: string | null;
+            /** Type */
+            type: string | null;
+        };
+        /** ExchangePositionView */
+        ExchangePositionView: {
+            /** Entry Price */
+            entry_price: string;
+            /** Liquidation */
+            liquidation: string | null;
+            /** Margin */
+            margin: string;
+            /** Mark Price */
+            mark_price: string;
+            /** Notional */
+            notional: string;
+            /** Quantity */
+            quantity: string;
+            /** Side */
+            side: string;
+            /** Symbol */
+            symbol: string;
+            /** Unrealized */
+            unrealized: string;
+        };
+        /** ExchangeStatusView */
+        ExchangeStatusView: {
+            /** Age Seconds */
+            age_seconds?: number | null;
+            /** Available */
+            available?: string | null;
+            /** Binance Available */
+            binance_available?: string | null;
+            /** Binance Equity */
+            binance_equity?: string | null;
+            /** Capital */
+            capital: string;
+            /** Connected */
+            connected: boolean;
+            /** Day Start Equity */
+            day_start_equity?: string | null;
+            /** Equity */
+            equity?: string | null;
+            /**
+             * Orders
+             * @default []
+             */
+            orders: components["schemas"]["ExchangeOpenOrderView"][];
+            /**
+             * Positions
+             * @default []
+             */
+            positions: components["schemas"]["ExchangePositionView"][];
+            /** Taken At */
+            taken_at?: string | null;
+            /**
+             * Test Funds
+             * @default true
+             * @constant
+             */
+            test_funds: true;
         };
         /** FeedStatusView */
         FeedStatusView: {
@@ -1441,6 +1585,66 @@ export interface operations {
             };
         };
     };
+    orders_api_v1_exchange_demo_orders_get: {
+        parameters: {
+            query?: {
+                limit?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ExchangeOrderView"][];
+                };
+            };
+            /** @description Default Response */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    status_api_v1_exchange_demo_status_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ExchangeStatusView"];
+                };
+            };
+            /** @description Default Response */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
     analysis_status_api_v1_forecasts_analyse_get: {
         parameters: {
             query?: never;
@@ -1884,7 +2088,7 @@ export interface operations {
         parameters: {
             query?: {
                 limit?: number;
-                account?: "paper" | "demo" | "portfolio";
+                account?: "paper" | "demo" | "portfolio" | "binance";
             };
             header?: never;
             path?: never;

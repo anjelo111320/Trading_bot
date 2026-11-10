@@ -12,19 +12,28 @@ from trading_intel.technical_analysis.series import CandleSeries, FloatArray
 ORDER_BLOCK_LOOKBACK: Final = 10
 
 
+def gap_at(series: CandleSeries, index: int) -> tuple[Direction, float, float] | None:
+    """The gap whose third candle is at `index`, as direction, low and high (docs/25)."""
+    if index < 2:
+        return None
+    first_high = float(series.high[index - 2])
+    first_low = float(series.low[index - 2])
+    third_high = float(series.high[index])
+    third_low = float(series.low[index])
+    if third_low > first_high:
+        return Direction.BULLISH, first_high, third_low
+    if third_high < first_low:
+        return Direction.BEARISH, third_high, first_low
+    return None
+
+
 def fair_value_gaps(series: CandleSeries, atr: FloatArray) -> list[DetectedPattern]:
     found: list[DetectedPattern] = []
     for index in range(2, len(series)):
-        first_high = float(series.high[index - 2])
-        first_low = float(series.low[index - 2])
-        third_high = float(series.high[index])
-        third_low = float(series.low[index])
-        if third_low > first_high:
-            direction, low, high = Direction.BULLISH, first_high, third_low
-        elif third_high < first_low:
-            direction, low, high = Direction.BEARISH, third_high, first_low
-        else:
+        gap = gap_at(series, index)
+        if gap is None:
             continue
+        direction, low, high = gap
         unit = float(atr[index])
         score = (high - low) / unit * 50 if not np.isnan(unit) and unit > 0 else 0.0
         pattern = DetectedPattern(

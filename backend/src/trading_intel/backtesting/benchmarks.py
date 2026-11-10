@@ -5,17 +5,40 @@ from collections.abc import Sequence
 from dataclasses import dataclass
 from datetime import datetime
 from decimal import Decimal
-from typing import Final
+from typing import Final, Protocol
 
 from trading_intel.domain.candles import ClosedCandle, Timeframe
 from trading_intel.domain.signals import Action, EntryType, Side
+from trading_intel.market_structure.structure import Trend
 from trading_intel.risk_management.models import TradeProposal
+from trading_intel.technical_analysis.series import CandleSeries, FloatArray
 from trading_intel.trade_signals.baseline import BaselineDecision
 from trading_intel.trade_signals.catalogue import to_tick
-from trading_intel.trade_signals.pattern_strategy import PatternStrategy
 from trading_intel.trade_signals.trend_strategy import DailyTrendStrategy, TrendParameters
 
 ZERO: Final = Decimal(0)
+
+
+class _Expiring(Protocol):
+    @property
+    def expiry_candles(self) -> int: ...
+
+
+class TrendSetups(Protocol):
+    """What the random benchmark reads from a strategy: its setup candles and trend filter."""
+
+    series: CandleSeries
+    atr: FloatArray
+    tick: Decimal
+    index_of: dict[datetime, int]
+
+    @property
+    def timeframe(self) -> Timeframe: ...
+
+    @property
+    def parameters(self) -> _Expiring: ...
+
+    def trends_at(self, moment: datetime) -> tuple[Trend, Trend]: ...
 
 
 @dataclass(frozen=True)
@@ -45,7 +68,7 @@ class RandomTrendEntries:
 
     def __init__(
         self,
-        base: PatternStrategy,
+        base: TrendSetups,
         templates: Sequence[ExitTemplate],
         count: int,
         seed: int,

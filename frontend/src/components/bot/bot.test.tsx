@@ -4,9 +4,11 @@ import { afterEach, describe, expect, it } from "vitest";
 
 import type { PaperSummary, Signal, Trade } from "@/lib/api/client";
 
-import { BotAccount, Decisions, TradeHistory } from "./BotPanels";
+import { BotAccount, Decisions, OpenTrade, TradeHistory } from "./BotPanels";
 import {
   averageExit,
+  inOpenTrades,
+  inTrade,
   openLines,
   openPnl,
   percentOf,
@@ -147,7 +149,7 @@ describe("demo bot trades", () => {
   });
 
   it("shows the account's profit on its 100 USDT start", () => {
-    render(<BotAccount summary={SUMMARY} title="Demo account" />);
+    render(<BotAccount summary={SUMMARY} title="Demo account" inTrades={20} />);
     expect(screen.getByText("100.00 USDT")).toBeTruthy();
     expect(screen.getByText("-0.50 USDT")).toBeTruthy();
     expect(screen.getByText("-0.50%")).toBeTruthy();
@@ -162,7 +164,7 @@ describe("demo bot trades", () => {
     expect(day.riskLimit).toBeCloseTo(30.45);
     expect(today({ ...PLAN, equity: "990" }).progress).toBe(0);
     expect(today({ ...PLAN, equity: "1040" }).progress).toBe(1);
-    render(<BotAccount summary={PLAN} title="Money plan account" />);
+    render(<BotAccount summary={PLAN} title="Money plan account" inTrades={0} />);
     expect(screen.getByText("+15.00 USDT, +1.50%")).toBeTruthy();
     expect(screen.getByRole("progressbar").getAttribute("aria-valuenow")).toBe("50");
     expect(screen.getByText(/12\.50 of 30\.45 USDT allowed/)).toBeTruthy();
@@ -232,5 +234,42 @@ describe("demo bot trades", () => {
     render(<Decisions signals={[signal]} symbols={new Map([[3, "SOLUSDT"]])} />);
     expect(screen.getByText(/^Score weak, 2 of 4 against/)).toBeTruthy();
     expect(screen.getByText(/never changes a trade's size/)).toBeTruthy();
+  });
+});
+
+describe("open trade", () => {
+  it("shows the size without the stored trailing zeros", () => {
+    const trade = { ...OPEN, open_quantity: "0.003000000000000000" };
+    render(<OpenTrade trade={trade} mid={null} tickSize="0.01" balance="1000" />);
+    expect(screen.getByText("0.003")).toBeTruthy();
+    expect(screen.queryByText("0.003000000000000000")).toBeNull();
+  });
+});
+
+describe("USDT in trades", () => {
+  it("counts what is still open at the entry price, and what was entered once closed", () => {
+    // OPEN entered 0.40 at 100.03 and took 0.20 off at TP1, so 0.20 is still in the trade.
+    expect(inTrade(OPEN)).toBeCloseTo(0.2 * 100.03, 6);
+    expect(inTrade(STOPPED)).toBeCloseTo(0.4 * 100.03, 6);
+    expect(inTrade({ ...OPEN, average_entry: null, status: "pending" })).toBeNull();
+    expect(inOpenTrades([OPEN, STOPPED])).toBeCloseTo(0.2 * 100.03, 6);
+  });
+
+  it("shows the account's USDT in open trades and what is left", () => {
+    render(<BotAccount summary={SUMMARY} title="Demo account" inTrades={20} />);
+    expect(screen.getByText("20.00 USDT")).toBeTruthy();
+    expect(screen.getByText("79.50 USDT")).toBeTruthy();
+  });
+
+  it("shows each open trade's USDT and what the stop would lose", () => {
+    render(<OpenTrade trade={OPEN} mid={null} tickSize="0.01" balance="100" />);
+    expect(screen.getByText("20.01 USDT")).toBeTruthy();
+    expect(screen.getByText("0.98 USDT")).toBeTruthy();
+  });
+
+  it("adds an In trade column to the history", () => {
+    render(<TradeHistory trades={[OPEN, STOPPED]} balance="100" ticks={new Map([[3, "0.01"]])} />);
+    expect(screen.getByRole("columnheader", { name: "In trade USDT" })).toBeTruthy();
+    expect(screen.getByText("40.01")).toBeTruthy();
   });
 });

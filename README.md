@@ -21,8 +21,9 @@ An AI-powered live market analysis and trading research platform.
 2. Historical research.
 3. Live analysis.
 4. Paper trading.
+5. Binance demo trading, with test funds only (D048). It is off until demo keys are set; see [docs/36](docs/36-BINANCE-FUTURES-EXECUTION.md#setting-it-up).
 
-Live execution is excluded from the initial release.
+Live execution with real money is excluded from the initial release.
 
 ## Running It
 

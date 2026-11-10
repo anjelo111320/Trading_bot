@@ -7,7 +7,9 @@ import argparse
 import asyncio
 import signal
 from collections.abc import Awaitable, Callable
+from dataclasses import dataclass
 from datetime import datetime, timedelta
+from pathlib import Path
 from typing import Final
 
 import structlog
@@ -15,11 +17,13 @@ from redis.asyncio import Redis
 from sqlalchemy.ext.asyncio import AsyncEngine
 
 from trading_intel.core.clock import Clock, SystemClock
+from trading_intel.core.errors import ConfigurationError
 from trading_intel.core.logging import configure_logging
 from trading_intel.core.settings import load_settings
 from trading_intel.database.engine import create_engine
 from trading_intel.database.repositories.analysis import AnalysisRepository
 from trading_intel.database.repositories.candles import CandleRepository
+from trading_intel.database.repositories.exchange import ExchangeRepository
 from trading_intel.database.repositories.operations import (
     GapRepository,
     MarketRepository,
@@ -31,14 +35,24 @@ from trading_intel.database.repositories.reference import ReferenceRepository
 from trading_intel.database.repositories.signals import (
     DEMO_ACCOUNT,
     DEMO_BALANCE,
+    EXCHANGE_DEMO_ACCOUNT,
+    EXCHANGE_DEMO_BUDGET,
+    EXCHANGE_DEMO_MODE,
     PORTFOLIO_ACCOUNT,
     PORTFOLIO_BALANCE,
+    Account,
     SignalRepository,
 )
 from trading_intel.domain.candles import Timeframe
 from trading_intel.domain.events import EventEnvelope, MarketCandlePayload
 from trading_intel.domain.instruments import Instrument
 from trading_intel.events.redis_transport import ClosedCandleConsumer
+from trading_intel.execution.binance_futures import (
+    BinanceError,
+    BinanceFuturesGateway,
+    signer_for,
+)
+from trading_intel.execution.trader import Budget, FuturesTrader, describe
 from trading_intel.paper_trading.service import PaperService
 from trading_intel.pattern_detection.pipeline import detect_patterns
 from trading_intel.technical_analysis.pipeline import (
@@ -70,6 +84,14 @@ MINIMUM_CANDLES: Final = 30
 BITCOIN: Final = "BTCUSDT"
 
 
+@dataclass(frozen=True)
+class ExchangeLink:
+    """Binance demo trading, present only when its keys are set (D048)."""
+
+    trader: FuturesTrader
+    orders: ExchangeRepository
+
+
 class TradingLoop:
     """Paper fills on every minute, the pattern strategy at each 1H close, and the daily trend
     strategy at each daily close, after tightening its open stops (D008: perpetuals only).
@@ -79,6 +101,9 @@ class TradingLoop:
 
     The money plan runs once per 15M close for every coin together, in its own 1,000 USDT
     account, with each strategy that closes then (D045).
+
+    With Binance demo keys, the same plan also trades Binance demo futures, and once a minute
+    every Binance position is checked for its stop (D048).
     """
 
     def __init__(
@@ -91,8 +116,11 @@ class TradingLoop:
         instruments: dict[int, Instrument],
         clock: Clock,
         sleep: Callable[[float], Awaitable[None]] = asyncio.sleep,
+        exchange: ExchangeLink | None = None,
     ) -> None:
         self._clock = clock
+        self._exchange = exchange
+        self._checked: datetime | None = None
         self._sleep = sleep
         self._signals = signals
         self._paper = paper
@@ -110,6 +138,7 @@ class TradingLoop:
             return
         if timeframe is Timeframe.M1:
             await self._paper.sync(provider_id, instrument_id)
+            await self._check_exchange(close_time)
             return
         try:
             await self._decide(instrument, provider_id, timeframe, close_time)
@@ -188,6 +217,42 @@ class TradingLoop:
                     detail=str(error)[:300],
                 )
 
+    async def _check_exchange(self, close_time: datetime) -> None:
+        """Once a minute: no Binance position without its stop, and no order without a position.
+
+        Then the account is saved for the dashboard, which never holds the exchange keys.
+        """
+        if self._exchange is None or self._checked == close_time:
+            return
+        self._checked = close_time
+        account = await self._exchange_account()
+        if account is None:
+            return
+        try:
+            stops = await self._exchange.orders.stops(account.id)
+            for record in await self._exchange.trader.reconcile(stops):
+                await self._exchange.orders.record(account.id, None, record)
+            await self._save_exchange_status(account)
+        except Exception as error:
+            log.error("exchange_check_failed", error=type(error).__name__, detail=str(error)[:300])
+
+    async def _save_exchange_status(self, account: Account) -> None:
+        assert self._exchange is not None
+        trader, orders = self._exchange.trader, self._exchange.orders
+        view = await trader.view()
+        today = Timeframe.D1.floor(self._clock.now()).date()
+        day_start = await orders.day_start(account.id, today, view.equity)
+        baseline = await orders.baseline(account.id) or day_start
+        budget = Budget.of(view, account.starting_balance, baseline, day_start)
+        body = describe(view, await trader.open_orders(), budget, account.starting_balance)
+        await orders.save_status(account.id, self._clock.now(), body)
+
+    async def _exchange_account(self) -> Account | None:
+        return await self._accounts.ensure_account(
+            self._owner_email, EXCHANGE_DEMO_ACCOUNT, EXCHANGE_DEMO_BUDGET, PLAN_PROFILE,
+            mode=EXCHANGE_DEMO_MODE,
+        )  # fmt: skip
+
     async def _plan(self, provider_id: int, close_time: datetime) -> None:
         """The money plan, once per close for all coins, so their signals share the room."""
         if close_time in self._planned:
@@ -211,6 +276,26 @@ class TradingLoop:
             signals=sum(outcome.recommendation_id is not None for outcome in outcomes),
             approved=sum(outcome.approved for outcome in outcomes),
             missing=missing,
+        )
+        if self._exchange is None:
+            return
+        exchange = await self._exchange_account()
+        if exchange is None or await self._accounts.decided(exchange.id, close_time):
+            return
+        try:
+            sent = await self._signals.run_exchange_plan(
+                provider_id, close_time, exchange, setups,
+                self._exchange.trader, self._exchange.orders,
+            )  # fmt: skip
+        except Exception as error:
+            # The paper plan above is already stored; the Binance side fails on its own.
+            log.error("exchange_plan_failed", error=type(error).__name__, detail=str(error)[:300])
+            return
+        log.info(
+            "exchange_plan_evaluated",
+            close_time=close_time.isoformat(),
+            signals=sum(outcome.recommendation_id is not None for outcome in sent),
+            approved=sum(outcome.approved for outcome in sent),
         )
 
 
@@ -264,7 +349,32 @@ class QuantService:
             )
 
 
-async def build_service(engine: AsyncEngine, owner_email: str) -> QuantService:
+async def exchange_link(
+    engine: AsyncEngine, key: str, secret: str, key_file: Path
+) -> ExchangeLink | None:
+    """Binance demo trading, if its keys work and the account can use one-way mode."""
+    if not key:
+        return None
+    try:
+        signer = signer_for(secret, key_file)
+    except ConfigurationError as error:
+        log.error("exchange_disabled", detail=error.message)
+        return None
+    gateway = BinanceFuturesGateway(key, signer)
+    try:
+        if not await gateway.one_way_mode():
+            await gateway.use_one_way_mode()
+    except BinanceError as error:
+        log.error("exchange_disabled", detail=error.message[:300])
+        await gateway.aclose()
+        return None
+    log.info("exchange_enabled", host="demo-fapi.binance.com")
+    return ExchangeLink(FuturesTrader(gateway), ExchangeRepository(engine))
+
+
+async def build_service(
+    engine: AsyncEngine, owner_email: str, exchange: ExchangeLink | None = None
+) -> QuantService:
     reference = ReferenceRepository(engine)
     provider_ids = {
         code: await reference.provider_id(code) for code in ("binance_spot", "binance_usdm")
@@ -294,6 +404,7 @@ async def build_service(engine: AsyncEngine, owner_email: str) -> QuantService:
         provider_ids["binance_usdm"],
         {item.instrument.id: item.instrument for item in listed},
         clock,
+        exchange=exchange,
     )
     return QuantService(candles, AnalysisRepository(engine), provider_ids, trading)
 
@@ -303,7 +414,13 @@ async def run() -> None:
     configure_logging(settings.log_level, settings.secret_values())
     engine = create_engine(settings.database_url)
     redis: Redis = Redis.from_url(settings.redis_url.get_secret_value())
-    service = await build_service(engine, settings.owner_email)
+    link = await exchange_link(
+        engine,
+        settings.binance_demo_api_key.get_secret_value(),
+        settings.binance_demo_api_secret.get_secret_value(),
+        settings.binance_demo_private_key_file,
+    )
+    service = await build_service(engine, settings.owner_email, link)
     consumer = ClosedCandleConsumer(redis, GROUP, "worker-1")
     await consumer.ensure_group()
 

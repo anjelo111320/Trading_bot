@@ -15,6 +15,7 @@ if TYPE_CHECKING:
     from trading_intel.api.forecast_jobs import AnalysisJobs
     from trading_intel.database.repositories.accounts import AuditRepository, UserRepository
     from trading_intel.database.repositories.candles import CandleRepository
+    from trading_intel.database.repositories.exchange import ExchangeRepository
     from trading_intel.database.repositories.forecasts import ForecastRepository
     from trading_intel.database.repositories.news import NewsRepository
     from trading_intel.database.repositories.operations import (
@@ -53,6 +54,7 @@ class Container:
     paper: PaperRepository = field(default=None)  # type: ignore[assignment]
     news: NewsRepository = field(default=None)  # type: ignore[assignment]
     forecasts: ForecastRepository = field(default=None)  # type: ignore[assignment]
+    exchange: ExchangeRepository = field(default=None)  # type: ignore[assignment]
     forecaster: ForecastService = field(default=None)  # type: ignore[assignment]
     analyses: AnalysisJobs = field(default=None)  # type: ignore[assignment]
 

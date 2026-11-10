@@ -20,6 +20,7 @@ import structlog
 
 from trading_intel.core.clock import Clock
 from trading_intel.database.repositories.candles import CandleRepository
+from trading_intel.database.repositories.exchange import ExchangeRepository
 from trading_intel.database.repositories.operations import (
     GapRepository,
     MarketRepository,
@@ -35,6 +36,8 @@ from trading_intel.database.repositories.signals import (
 from trading_intel.domain.candles import Timeframe
 from trading_intel.domain.instruments import Instrument, InstrumentRules
 from trading_intel.domain.signals import Action, EntryType, Side
+from trading_intel.execution.orders import TradePlan
+from trading_intel.execution.trader import Budget, FuturesTrader, Position
 from trading_intel.risk_management.allocation import Claim, split
 from trading_intel.risk_management.calculators.linear import (
     remaining_daily_budget,
@@ -60,6 +63,9 @@ from trading_intel.trade_signals.baseline import (
     BaselineParameters,
     evaluate,
 )
+from trading_intel.trade_signals.fvg_choch_strategy import STRATEGY_NAME as FVG_NAME
+from trading_intel.trade_signals.fvg_choch_strategy import STRATEGY_VERSION as FVG_VERSION
+from trading_intel.trade_signals.fvg_choch_strategy import FvgChochStrategy
 from trading_intel.trade_signals.lifecycle import dedupe_key
 from trading_intel.trade_signals.pattern_strategy import STRATEGY_NAME as PATTERN_NAME
 from trading_intel.trade_signals.pattern_strategy import STRATEGY_VERSION as PATTERN_VERSION
@@ -94,8 +100,14 @@ PATTERN_HOURS: Final = 1440
 PATTERN_FOURS: Final = 1200
 PATTERN_DAYS: Final = 3000
 TREND_DAYS: Final = 1000
+# About 35 days of 15M candles and 100 days of 4H candles, as registered in docs/35.
+FVG_QUARTERS: Final = 3360
+FVG_FOURS: Final = 600
 NO_DATA: Final = ("not enough data",)
 ZERO: Final = Decimal(0)
+# Share of Binance's available balance the risk engine may use as margin (D048). The rest
+# covers fees and price moves before the entry fills.
+MARGIN_USE: Final = Decimal("0.95")
 
 
 @dataclass(frozen=True)
@@ -244,6 +256,24 @@ class SignalService:
         decision = strategy.decide(hours[-1].close_time)
         return Setup(instrument, rules, decision, identity, Timeframe.H1)
 
+    async def fvg_setup(
+        self, provider_id: int, instrument: Instrument, as_of: datetime
+    ) -> Setup | None:
+        """The 4H gap and 15M CHoCH strategy's decision at a 15M close (docs/35)."""
+        quarters = await self._candles.for_analysis(
+            provider_id, instrument.id, Timeframe.M15, as_of, FVG_QUARTERS
+        )
+        fours = await self._candles.for_analysis(
+            provider_id, instrument.id, Timeframe.H4, as_of, FVG_FOURS
+        )
+        rules = await self._rules.as_of(provider_id, instrument.id, as_of)
+        if not quarters or not fours or rules is None:
+            return None
+        strategy = FvgChochStrategy(quarters, fours, rules.tick_size)
+        identity = StrategyIdentity(FVG_NAME, FVG_VERSION, strategy.parameters.as_dict())
+        decision = strategy.decide(quarters[-1].close_time)
+        return Setup(instrument, rules, decision, identity, Timeframe.M15)
+
     async def trend_setup(
         self, provider_id: int, instrument: Instrument, as_of: datetime
     ) -> Setup | None:
@@ -324,23 +354,26 @@ class SignalService:
         missing: list[str] = []
         for timeframe in due(close_time):
             for instrument in instruments:
-                setup = await self._setup_at(timeframe, provider_id, instrument, close_time)
-                if setup is None or setup.decision.as_of != close_time:
-                    missing.append(f"{instrument.symbol} {timeframe.value}")
-                    continue
-                setups.append(setup)
+                for setup in await self._setups_at(timeframe, provider_id, instrument, close_time):
+                    if setup is None or setup.decision.as_of != close_time:
+                        missing.append(f"{instrument.symbol} {timeframe.value}")
+                        continue
+                    setups.append(setup)
         return setups, missing
 
-    async def _setup_at(
+    async def _setups_at(
         self, timeframe: Timeframe, provider_id: int, instrument: Instrument, close_time: datetime
-    ) -> Setup | None:
+    ) -> list[Setup | None]:
         match timeframe:
             case Timeframe.M15:
-                return await self.baseline_setup(provider_id, instrument, close_time, instant=True)
+                return [
+                    await self.baseline_setup(provider_id, instrument, close_time, instant=True),
+                    await self.fvg_setup(provider_id, instrument, close_time),
+                ]
             case Timeframe.H1:
-                return await self.pattern_setup(provider_id, instrument, close_time)
+                return [await self.pattern_setup(provider_id, instrument, close_time)]
             case _:
-                return await self.trend_setup(provider_id, instrument, close_time)
+                return [await self.trend_setup(provider_id, instrument, close_time)]
 
     async def run_plan(
         self, provider_id: int, as_of: datetime, account: Account, setups: Sequence[Setup]
@@ -405,6 +438,169 @@ class SignalService:
                     }
                 )
         return outcomes
+
+    async def run_exchange_plan(
+        self,
+        provider_id: int,
+        as_of: datetime,
+        account: Account,
+        setups: Sequence[Setup],
+        trader: FuturesTrader,
+        orders: ExchangeRepository,
+    ) -> list[SignalOutcome]:
+        """The money plan on Binance demo trading (D048), with Binance's account as the truth.
+
+        Each signal asks for its strategy's evidence share of the 1% risk, strongest first, as
+        in the paper plan. Binance holds one position per coin in one-way mode, so a coin with
+        a position takes no new signal. The risk engine sizes each trade at the lowest leverage
+        whose margin fits, up to the profile's maximum, and only an approved trade is sent:
+        a market entry, a stop for the whole position, and a take-profit per target.
+        """
+        view = await trader.view()
+        if view.equity <= 0:
+            return [SignalOutcome(Action.NO_TRADE, None, False, ("no equity on Binance demo",))]
+        today = Timeframe.D1.floor(self._clock.now()).date()
+        day_start = await orders.day_start(account.id, today, view.equity)
+        baseline = await orders.baseline(account.id) or day_start
+        # The account's starting balance is its budget: Binance's test funds are not all used.
+        budget = Budget.of(view, account.starting_balance, baseline, day_start)
+        if budget.equity <= 0 or budget.day_start_equity <= 0:
+            return [SignalOutcome(Action.NO_TRADE, None, False, ("the budget is used up",))]
+        stops = await orders.stops(account.id)
+        state = AccountState(
+            equity=budget.equity,
+            day_start_equity=budget.day_start_equity,
+            open_positions=len(view.positions),
+            gross_exposure=sum((p.notional for p in view.positions.values()), ZERO),
+            open_risk=sum(
+                (_risk_at_stop(p, stops.get(s)) for s, p in view.positions.items()), ZERO
+            ),
+            available_margin=budget.available * MARGIN_USE,
+        )
+        taken = set(view.positions)
+        outcomes: list[SignalOutcome] = []
+        ready = sorted(
+            (s for s in setups if s.decision.proposal is not None and s.decision.setup_atr),
+            key=lambda s: (-share_of(s.identity.name), s.identity.name, s.instrument.symbol),
+        )
+        for setup in ready:
+            name, symbol = setup.identity.name, setup.instrument.symbol
+            proposal = setup.decision.proposal
+            assert proposal is not None
+            refused = (
+                "this strategy lost on this coin in the study (docs/33)"
+                if (name, symbol) in LEFT_OUT
+                else "a position on this coin is open on Binance"
+                if symbol in taken
+                else "only market entries are sent to Binance"
+                if proposal.entry_type is not EntryType.MARKET
+                else None
+            )
+            if refused:
+                outcomes.append(SignalOutcome(Action.NO_TRADE, None, False, (refused,)))
+                continue
+            share = share_of(name)
+            chosen = await self._at_lowest_leverage(
+                provider_id,
+                setup,
+                as_of,
+                account,
+                proposal.model_copy(update={"risk_share": share}),
+                state,
+            )
+            if chosen is None:
+                outcomes.append(SignalOutcome(Action.NO_TRADE, None, False, ("no recent book",)))
+                continue
+            prepared, assessment = chosen
+            leverage = int(prepared.request.proposal.leverage)
+            outcome = await self._record(
+                provider_id, setup.instrument, as_of, account, setup.rules, prepared, assessment,
+                setup.decision.reasons, setup.identity, setup.timeframe,
+                plan={"evidence_share": share, "risk_share": share, "leverage": Decimal(leverage)},
+                open_paper=False,
+            )  # fmt: skip
+            outcomes.append(outcome)
+            sizing = assessment.sizing
+            if not assessment.approved or sizing is None or outcome.recommendation_id is None:
+                continue
+            sent = prepared.request.proposal
+            plan = TradePlan(
+                key=prepared.key,
+                symbol=symbol,
+                side=sent.side,
+                leverage=leverage,
+                quantity=sizing.quantity,
+                stop=sent.stop,
+                targets=sent.targets,
+                allocation=sizing.allocation,
+                lot_step=setup.rules.lot_step,
+                min_qty=setup.rules.min_qty,
+            )
+            result = await trader.open_trade(plan)
+            for record in result.records:
+                keeps_stop = record.kind in ("entry", "stop")
+                await orders.record(
+                    account.id, outcome.recommendation_id, record,
+                    trade_key=plan.key if keeps_stop else None,
+                    stop_price=plan.stop if keeps_stop else None,
+                )  # fmt: skip
+            log.info(
+                "exchange_trade",
+                instrument=symbol,
+                strategy=name,
+                filled=str(result.filled),
+                protected=result.protected,
+                leverage=leverage,
+            )
+            if result.filled > 0:
+                taken.add(symbol)
+                state = state.model_copy(
+                    update={
+                        "open_positions": state.open_positions + 1,
+                        "gross_exposure": state.gross_exposure + sizing.notional,
+                        "open_risk": state.open_risk + sizing.max_account_risk,
+                        "available_margin": max(
+                            (state.available_margin or ZERO) - sizing.margin, ZERO
+                        ),
+                    }
+                )
+        return outcomes
+
+    async def _at_lowest_leverage(
+        self,
+        provider_id: int,
+        setup: Setup,
+        as_of: datetime,
+        account: Account,
+        proposal: TradeProposal,
+        state: AccountState,
+    ) -> tuple[Prepared, RiskAssessment] | None:
+        """Leverage 1, then 2, up to the profile's maximum, until the margin fits.
+
+        Leverage never changes what the stop loses, only the margin held and how near
+        liquidation sits, which the risk engine checks at every step.
+        """
+        assert setup.decision.setup_atr is not None
+        prepared = await self._prepare(
+            provider_id, setup.instrument, as_of, account, setup.rules,
+            proposal.model_copy(update={"leverage": Decimal(1)}), setup.decision.setup_atr,
+            timeframe=setup.timeframe, instant=True, state=state,
+        )  # fmt: skip
+        if prepared is None:
+            return None
+        assessment = assess(prepared.request)
+        leverage = 1
+        while (
+            RejectionCode.MARGIN_INSUFFICIENT in assessment.codes
+            and leverage < account.profile.max_leverage
+        ):
+            leverage += 1
+            raised = prepared.request.proposal.model_copy(update={"leverage": Decimal(leverage)})
+            prepared = replace(
+                prepared, request=prepared.request.model_copy(update={"proposal": raised})
+            )
+            assessment = assess(prepared.request)
+        return prepared, assessment
 
     async def _submit_setup(
         self, provider_id: int, as_of: datetime, account: Account, setup: Setup | None
@@ -558,8 +754,13 @@ class SignalService:
         identity: StrategyIdentity,
         timeframe: Timeframe,
         plan: dict[str, Decimal] | None = None,
+        *,
+        open_paper: bool = True,
     ) -> SignalOutcome:
-        """Store the signal and its assessment, and open the paper position if approved."""
+        """Store the signal and its assessment, and open the paper position if approved.
+
+        An exchange account opens nothing here: its trade goes to Binance (D048).
+        """
         proposal, fees = prepared.request.proposal, prepared.request.fees
         quality = self._quality(assessment.sizing)
         score = await self._score_record(provider_id, instrument, timeframe, as_of, proposal.side)
@@ -604,7 +805,7 @@ class SignalService:
                 signal_score=score,
             )
         )
-        if assessment.approved and assessment.sizing is not None:
+        if open_paper and assessment.approved and assessment.sizing is not None:
             await self._paper.open_position(
                 account.id, recommendation, instrument.id, proposal.side, assessment.sizing.quantity
             )
@@ -698,6 +899,13 @@ class SignalService:
                 volatility=0.5,
             )
         ).score
+
+
+def _risk_at_stop(position: Position, stop: tuple[Decimal, str] | None) -> Decimal:
+    """What a Binance position loses at its recorded stop, or its whole value if none is known."""
+    if stop is None:
+        return position.notional
+    return abs(position.entry_price - stop[0]) * abs(position.amount)
 
 
 def _against(side: Side, price: Decimal, tick: Decimal) -> Decimal:

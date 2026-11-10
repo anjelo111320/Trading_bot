@@ -187,6 +187,8 @@ def _sizing_checks(request: RiskRequest, rules: InstrumentRules, sizing: Sizing)
     limit = account.equity * profile.max_total_exposure_fraction
     if account.gross_exposure + sizing.notional > limit:
         codes.append(Code.EXPOSURE_EXCEEDED)
+    if account.available_margin is not None and sizing.margin > account.available_margin:
+        codes.append(Code.MARGIN_INSUFFICIENT)
     codes += _liquidation_checks(request, sizing)
     return codes
 

@@ -149,7 +149,7 @@ Consequences: Indicator outputs are converted deliberately at the boundary and n
 Revisit conditions: none expected.
 
 ### D016: Hard-coded paper mode and no exchange keys
-Date: 2026-11-02. Status: Adopted.
+Date: 2026-11-02. Status: Adopted. Amended on 2026-11-10 by D048: Binance demo trading keys and orders exist, with test funds only. Real money is still unrepresentable.
 Context: A setting that can say "live" can be changed by mistake or by an attacker.
 Options considered: a `TRADING_MODE` setting; a mode with only one possible value.
 Decision: `TradingMode` has one member, `PAPER`. No exchange credentials exist anywhere, and no order path is written.
@@ -494,6 +494,52 @@ Consequences:
 - Stopping a service by hand no longer works, because launchd starts it again. `scripts/autostart.sh` restarts, rebuilds or removes them.
 - The ingestor soak started on 2026-11-06 ended at the switch, and a new run began under launchd.
 Revisit conditions: the stack moves to Railway (D026).
+
+### D048: The money plan on Binance demo futures, isolated, with stops and targets on Binance
+Date: 2026-11-10.
+Status: Accepted by the owner, who chose all four recommended options on 2026-11-10. **Amends D016** for demo trading only.
+Context: The owner asked to trade Binance futures with isolated margin, 1% risk and profit targets, and for a Binance API gateway. Research is in [36-BINANCE-FUTURES-EXECUTION.md](36-BINANCE-FUTURES-EXECUTION.md). Risk per trade was already at most 1%, and every trade already had targets, but only in paper accounts.
+Options considered:
+- Where: Binance demo trading with test funds; demo now with a locked real-money path; or real money now with a cap.
+- Strategies: the money plan's three at their evidence shares; the daily trend only; or all three at a flat 1%.
+- Targets: three take-profits on Binance plus the daily +3% stop; one take-profit for the whole trade; or three take-profits plus closing everything at +3%.
+- Leverage: the lowest that fits, at most 3x; a fixed 2x; or a fixed 5x.
+Decision:
+- A new `execution` module holds the only code that signs requests or sends orders. Its host is fixed to `https://demo-fapi.binance.com`, and a client pointed elsewhere is refused. Keys come from `.env` (`BINANCE_DEMO_API_KEY`, `BINANCE_DEMO_API_SECRET`) and are filtered from logs. Import contracts keep Claude's analyst, news, forecasts, the API and backtests from reaching it.
+- A `Binance demo` account, in the new `exchange_demo` mode, runs the money plan at each 15M close, after the paper plan, with the same setups and evidence shares. Binance's account is the truth: equity, available margin and positions come from Binance, and the day's starting equity is stored once a day.
+- The risk engine decides every trade. It now refuses margin the exchange cannot lend (`MARGIN_INSUFFICIENT`), and the trade is sized at leverage 1, then 2, then 3, until the margin fits. Leverage never changes what the stop loses.
+- Each approved trade is sent as follows:
+  - Isolated margin and the chosen leverage.
+  - A market entry.
+  - A mark-price stop that closes the whole position.
+  - One reduce-only take-profit per target, split 50%, 30% and 20% of what filled.
+  - If the stop cannot be placed, the position is closed at once.
+- One-way mode, so one position per coin. A coin with a Binance position takes no new signal.
+- **A 100 USDT budget**, at the owner's request on 2026-11-10: the demo account holds 5,000 test USDT, but the bot trades it as if it held only 100. The risk engine sees 100 USDT plus the bot's own profit and loss since its first recorded day, and never more free margin than that leaves. So 1% risk is at most 1 USDT a trade, and open positions stay within the budget at 1x. Binance's minimum sizes mean most BTC signals are refused at this size; SOL, BNB, XRP and DOGE trade from 5 USDT.
+- Once a minute, orders left on a flat coin are cancelled, and a position without a stop gets its recorded stop back, or is closed if none is known.
+- Every request and reply is stored in `exchange_orders`, which cannot be changed (migration 0011). `binance_demo keygen|check|status|flatten` makes a key, tests it, shows the account, and is the kill switch.
+Consequences:
+- A real-money account is still impossible: the database allows only `paper` and `exchange_demo` accounts, and `TradingMode` still has one member.
+- Stops and targets sit on Binance, so demo positions stay protected while the Mac sleeps.
+- Keys can be self-generated Ed25519, which the owner chose on 2026-11-10 after the demo site never showed a system-generated secret, or system-generated HMAC. `binance_demo keygen` writes the private key to `~/.config/trading-intel`, readable only by the owner, and prints the public key for Binance. This added the `cryptography` package.
+- Version 1 limits:
+  - Market entries only.
+  - Order state is checked by REST once a minute, not by Binance's user data stream.
+  - The dashboard shows the account from a snapshot the quant worker saves once a minute (migration 0012), so the API never holds the keys. Stops and targets that Binance triggers are not reported back yet; they show as the position disappearing.
+Revisit conditions: forward demo results per strategy, the owner wants real money (a new decision replacing D016 and rule 13 in `CLAUDE.md`), or the dashboard view is built.
+
+### D049: The 4H gap and 15M CHoCH strategy joins the money plan at a half share
+Date: 2026-11-10.
+Status: Decided by the rule the owner's request was pre-registered under ([35-FVG-CHOCH-STRATEGY.md](35-FVG-CHOCH-STRATEGY.md)), run once on 2026-11-10 after the owner asked to run it.
+Context: The owner asked for a strategy that finds a 4H fair value gap, then a 15M CHoCH, and enters at the 15M gap. The system had the detectors but no such strategy.
+Decision:
+- The study pooled six coins from 2020 to 2025: +0.020R a trade, 95% interval -0.18 to +0.23, 255 trades. That is above zero, so by its rule it joins the money plan's `Portfolio` account at a half share, beside the 15M rule baseline at each 15M close.
+- Its entries are limit orders at the 15M gap, valid for two hours. The shared simulator now counts only the stop in the candle where a limit fills (docs/10).
+- Binance demo trading sends market entries only, so it refuses these limit orders with that reason.
+Consequences:
+- The evidence is weak: the result turned negative at 1.5× costs, and only longs made money. Forward paper results decide whether it stays.
+- The study's code, tests and report stay so the run can be reproduced.
+Revisit conditions: forward paper results per strategy, or Binance demo trading gains limit entries.
 
 ## Owner Decisions, 2026-11-05 Model Forecasts
 

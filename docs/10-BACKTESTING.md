@@ -119,6 +119,7 @@ Higher-timeframe strategies are simulated on 1-minute candles, so order and fill
 | Gap through a target | Fills at the target, with no credit for the better price |
 | Stop and target in the same 1M candle | Stop first. No optimistic assumption is ever made |
 | Entry and stop in the same 1M candle | Treated as entered, then stopped |
+| Limit entry and target in the same candle | Only the stop is checked in the candle where a limit fills, because the target may have traded before the entry. Added 2026-11-10 for docs/35. No earlier strategy used limit entries |
 | Size against liquidity | Order limited to 5% of the 1M candle's volume by default. Any excess is treated as unfilled |
 | Expiry | Unfilled orders cancel at expiry. Open positions follow their exit rules |
 

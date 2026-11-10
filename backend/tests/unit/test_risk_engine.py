@@ -586,3 +586,15 @@ def test_independent_exact_arithmetic_agrees_with_example_a() -> None:
     assert D(unit.numerator) / D(unit.denominator) == sizing.risk_per_unit
     assert D(quantity.numerator) / D(quantity.denominator) == sizing.quantity
     assert round(float(weighted), 9) == round(float(sizing.weighted_reward_risk), 9)
+
+
+def test_an_exchange_account_refuses_margin_it_does_not_have() -> None:
+    """D048: Binance's available margin, when given, must cover the trade at its leverage."""
+    funded = account(available_margin=D(3000))
+    at_one = assess(example_b("1").model_copy(update={"account": funded}))
+    assert codes(at_one) == {Code.MARGIN_INSUFFICIENT}
+    at_two = assess(example_b("2").model_copy(update={"account": funded}))
+    assert at_two.approved
+    assert at_one.sizing is not None and at_two.sizing is not None
+    assert at_two.sizing.max_account_risk == at_one.sizing.max_account_risk
+    assert assess(example_b("1")).approved  # Paper accounts give no margin and are unchanged.

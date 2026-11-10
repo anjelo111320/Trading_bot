@@ -98,8 +98,13 @@ def test_shares_never_exceed_the_room_after_rounding() -> None:
 
 
 def test_the_plan_uses_the_shares_the_study_set() -> None:
-    """docs/33, run once on 2026-11-09."""
-    study = {"daily_trend": D(1), "pattern_breakout": D("0.5"), "trend_break_baseline": D("0.25")}
+    """docs/33, run once on 2026-11-09, and docs/35, run once on 2026-11-10."""
+    study = {
+        "daily_trend": D(1),
+        "pattern_breakout": D("0.5"),
+        "trend_break_baseline": D("0.25"),
+        "fvg_choch": D("0.5"),
+    }
     assert dict(EVIDENCE_SHARES) == study
     assert share_of("an untested strategy") == QUARTER_SHARE
 

@@ -28,6 +28,12 @@ DEMO_BALANCE: Final = Decimal(100)
 # The money plan's account: every strategy on every core coin, sized by evidence (D045).
 PORTFOLIO_ACCOUNT: Final = "Portfolio"
 PORTFOLIO_BALANCE: Final = Decimal(1000)
+# The money plan on Binance demo trading, with test funds (D048). Its starting balance is the
+# budget below, and its profit and loss come from Binance.
+EXCHANGE_DEMO_ACCOUNT: Final = "Binance demo"
+EXCHANGE_DEMO_MODE: Final = "exchange_demo"
+# The owner trades it as if it held only this much, whatever test funds Binance gives (D048).
+EXCHANGE_DEMO_BUDGET: Final = Decimal(100)
 # Limits newer than the profile's columns, kept in its settings.
 PLAN_SETTINGS: Final = ("max_open_risk_fraction", "daily_profit_stop_fraction")
 ACTIVE_STATES: Final = ("CANDIDATE", "VALIDATED", "ACTIVE", "ENTRY_TRIGGERED", "TP1_HIT", "TP2_HIT")
@@ -75,8 +81,13 @@ class SignalRepository:
         name: str = PAPER_ACCOUNT,
         balance: Decimal = STARTING_BALANCE,
         limits: RiskProfile | None = None,
+        mode: str = "paper",
     ) -> Account | None:
-        """A named paper account, created on first use with these limits or the defaults."""
+        """A named account, created on first use with these limits or the defaults.
+
+        `mode` is "paper", or "exchange_demo" for Binance demo trading. The database allows no
+        other value, so a real-money account cannot be created (D016, D048).
+        """
         async with self._engine.begin() as connection:
             user = (
                 await connection.execute(
@@ -99,12 +110,12 @@ class SignalRepository:
                 row = (
                     await connection.execute(
                         text(
-                            """INSERT INTO trading_accounts (user_id, name, base_currency,
+                            """INSERT INTO trading_accounts (user_id, name, mode, base_currency,
                                  starting_balance)
-                               VALUES (:user, :name, 'USDT', :balance)
+                               VALUES (:user, :name, :mode, 'USDT', :balance)
                                RETURNING id, starting_balance"""
                         ),
-                        {"user": user, "name": name, "balance": balance},
+                        {"user": user, "name": name, "mode": mode, "balance": balance},
                     )
                 ).one()
                 await self._create_profile(connection, row.id, user, limits or RiskProfile())

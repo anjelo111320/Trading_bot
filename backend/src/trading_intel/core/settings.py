@@ -46,6 +46,15 @@ class Settings(BaseSettings):
 
     anthropic_api_key: SecretStr = SecretStr("")
     newsdata_api_key: SecretStr = SecretStr("")
+    # Binance demo trading keys, from demo.binance.com: test funds only (D048). Empty keeps the
+    # futures bot off. The host is fixed in code, so no setting can point these at real money.
+    binance_demo_api_key: SecretStr = SecretStr("")
+    binance_demo_api_secret: SecretStr = SecretStr("")  # A system-generated (HMAC) key only.
+    # A self-generated Ed25519 key: `binance_demo keygen` writes it here, outside the project,
+    # readable only by this user. When the file exists it is used instead of the secret.
+    binance_demo_private_key_file: Path = (
+        Path.home() / ".config" / "trading-intel" / "binance-demo-ed25519.pem"
+    )
 
     owner_email: str = ""
     owner_password: SecretStr = SecretStr("")
@@ -78,6 +87,8 @@ class Settings(BaseSettings):
             self.owner_password,
             self.anthropic_api_key,
             self.newsdata_api_key,
+            self.binance_demo_api_key,
+            self.binance_demo_api_secret,
         )
         return tuple(value for s in secrets if (value := s.get_secret_value()))
 

@@ -70,6 +70,9 @@ class AccountState(DomainModel):
     gross_exposure: Decimal = Field(ge=0)
     # What open and pending positions would lose at their current stops.
     open_risk: Decimal = Field(default=Decimal(0), ge=0)
+    # Margin the exchange can still lend this trade, for an account on Binance (D048). None for
+    # paper accounts, which hold no margin.
+    available_margin: Decimal | None = Field(default=None, ge=0)
 
 
 class MarketState(DomainModel):
