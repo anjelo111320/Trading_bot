@@ -2256,6 +2256,90 @@
         "title": "ReachView",
         "type": "object"
       },
+      "SignalScoreView": {
+        "description": "The signal score's conditions at the signal: True for the trade, False against it,\nNone unknown. The score failed its test (D046), so it is information and sets no size.",
+        "properties": {
+          "against": {
+            "title": "Against",
+            "type": "integer"
+          },
+          "bitcoin_applies": {
+            "title": "Bitcoin Applies",
+            "type": "boolean"
+          },
+          "bitcoin_trend": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Bitcoin Trend"
+          },
+          "funding": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Funding"
+          },
+          "long_term_trend": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Long Term Trend"
+          },
+          "version": {
+            "title": "Version",
+            "type": "integer"
+          },
+          "volume": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Volume"
+          },
+          "weak": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Weak"
+          }
+        },
+        "required": [
+          "version",
+          "weak",
+          "against",
+          "long_term_trend",
+          "bitcoin_trend",
+          "bitcoin_applies",
+          "volume",
+          "funding"
+        ],
+        "title": "SignalScoreView",
+        "type": "object"
+      },
       "SignalView": {
         "properties": {
           "action": {
@@ -2439,6 +2523,16 @@
               }
             ],
             "title": "Setup Quality Score"
+          },
+          "signal_score": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/SignalScoreView"
+              },
+              {
+                "type": "null"
+              }
+            ]
           },
           "state": {
             "title": "State",

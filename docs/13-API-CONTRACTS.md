@@ -115,6 +115,8 @@ Each takes `account`: `paper`, the tested strategies' account and the default; `
 
 The summary also gives `day_start_equity`, `open_risk` (what open trades would lose at their stops), and the account's `max_open_risk` and `daily_profit_stop` fractions, which are null outside the money plan. Signals carry `risk_share`, and trades carry `max_account_risk`, `risk_share` and `evidence_share`: the share of the 1% risk the trade was given and the share its strategy's evidence asked for. Both are null outside the money plan.
 
+Signals also carry `signal_score`, the conditions of the signal score at the signal's close (docs/34): `long_term_trend`, `bitcoin_trend`, `volume` and `funding`, each true for the trade, false against it or null when unknown, with `against`, `weak` (null while any condition is unknown) and `bitcoin_applies` (false on Bitcoin's own signals). The score failed its test (D046), so it is information only and sets no size. It is null on signals from before 2026-11-10.
+
 A trade's fills have a `kind` (`entry`, `tp1` to `tp3`, `stop`, `expiry`, `invalidation` or `funding`), a UTC time, a price, quantity, fee, funding and whether the fill was `reconstructed` from repaired candles. Every trade and summary carries `simulated: true`.
 
 ## Event Envelope

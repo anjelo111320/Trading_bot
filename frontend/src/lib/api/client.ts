@@ -13,6 +13,7 @@ export type MarketStatus = Schemas["MarketStatusView"];
 export type Ticket = Schemas["TicketView"];
 export type Timeframe = Schemas["Timeframe"];
 export type Signal = Schemas["SignalView"];
+export type SignalScore = Schemas["SignalScoreView"];
 export type Position = Schemas["PositionView"];
 export type PaperSummary = Schemas["PaperSummary"];
 export type Trade = Schemas["TradeView"];

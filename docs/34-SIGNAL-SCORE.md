@@ -94,3 +94,9 @@ What this says:
 - Weak signals still made money on average. Halving them cut the total from +149R to +130R, while the largest fall barely moved, from 24.7R to 23.9R.
 - Among shorts, weak signals did better than strong ones, so the score added nothing beyond the known long and short result.
 - Each condition on its own pointed different ways for the two strategies. For the daily trend, signals with the coin's and Bitcoin's long-term trend made more than those against it. For the pattern breakout, they made less. These slices were described, not tested, so they cannot change trading. A rule built from one would need forward data to test.
+
+## Forward Record
+
+From 2026-11-10, at the owner's request, the same four conditions are stored with every live signal, in every account, at the signal's close (`trade_recommendations.signal_score`, migration 0010). They are computed by the same code as the study, read from what was stored by that close, and shown on the Bot page. They set no size.
+
+A later test of the score on these forward results needs its own registration before its data are read.

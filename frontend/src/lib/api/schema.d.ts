@@ -1080,6 +1080,29 @@ export interface components {
             /** Model */
             model: number | null;
         };
+        /**
+         * SignalScoreView
+         * @description The signal score's conditions at the signal: True for the trade, False against it,
+         *     None unknown. The score failed its test (D046), so it is information and sets no size.
+         */
+        SignalScoreView: {
+            /** Against */
+            against: number;
+            /** Bitcoin Applies */
+            bitcoin_applies: boolean;
+            /** Bitcoin Trend */
+            bitcoin_trend: boolean | null;
+            /** Funding */
+            funding: boolean | null;
+            /** Long Term Trend */
+            long_term_trend: boolean | null;
+            /** Version */
+            version: number;
+            /** Volume */
+            volume: boolean | null;
+            /** Weak */
+            weak: boolean | null;
+        };
         /** SignalView */
         SignalView: {
             /** Action */
@@ -1143,6 +1166,7 @@ export interface components {
             risk_share: string | null;
             /** Setup Quality Score */
             setup_quality_score: string | null;
+            signal_score?: components["schemas"]["SignalScoreView"] | null;
             /** State */
             state: string;
             /** Stop Loss */

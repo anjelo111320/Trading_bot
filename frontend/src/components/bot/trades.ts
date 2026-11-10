@@ -5,7 +5,7 @@
 
 import type { SeriesMarker, Time, UTCTimestamp } from "lightweight-charts";
 
-import type { PaperSummary, Trade, TradeFill } from "@/lib/api/client";
+import type { PaperSummary, SignalScore, Trade, TradeFill } from "@/lib/api/client";
 
 import { DOWN, UP } from "@/components/chart/bars";
 import type { PriceLevel } from "@/components/chart/CandleChart";
@@ -143,6 +143,29 @@ export function strategyLabel(name: string): string {
 /** The money plan's risk for a trade as a percent of equity, or null outside the plan. */
 export function riskPercent(share: string | null | undefined): number | null {
   return share ? Number(share) * RISK_PER_TRADE : null;
+}
+
+type Reading = boolean | null;
+
+function reading(value: Reading): string {
+  return value === null ? "unknown" : value ? "for" : "against";
+}
+
+/**
+ * The signal score's conditions in words (docs/34). It failed its test (D046), so it is shown
+ * as information beside the decision and never changes a trade's size.
+ */
+export function scoreText(score: SignalScore | null | undefined): string | null {
+  if (!score) return null;
+  const conditions: [string, Reading][] = [
+    ["coin's trend", score.long_term_trend],
+    ...(score.bitcoin_applies ? [["Bitcoin's trend", score.bitcoin_trend] as [string, Reading]] : []),
+    ["volume", score.volume],
+    ["funding", score.funding],
+  ];
+  const verdict = score.weak === null ? "incomplete" : score.weak ? "weak" : "strong";
+  const parts = conditions.map(([name, value]) => `${name} ${reading(value)}`).join(", ");
+  return `Score ${verdict}, ${score.against} of ${conditions.length} against: ${parts}.`;
 }
 
 export type Today = {

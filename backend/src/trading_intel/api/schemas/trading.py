@@ -14,6 +14,20 @@ class TargetView(BaseModel):
     net_reward_risk: str
 
 
+class SignalScoreView(BaseModel):
+    """The signal score's conditions at the signal: True for the trade, False against it,
+    None unknown. The score failed its test (D046), so it is information and sets no size."""
+
+    version: int
+    weak: bool | None
+    against: int
+    long_term_trend: bool | None
+    bitcoin_trend: bool | None
+    bitcoin_applies: bool
+    volume: bool | None
+    funding: bool | None
+
+
 class SignalView(BaseModel):
     id: str
     provider: str
@@ -35,6 +49,8 @@ class SignalView(BaseModel):
     reward_risk_net: str | None
     # The money plan's share of the 1% risk per trade (D045). None outside the plan.
     risk_share: str | None
+    # None for signals recorded before the score was stored, on 2026-11-10.
+    signal_score: SignalScoreView | None = None
     decision: str
     rejection_codes: list[str]
     setup_quality_score: str | None

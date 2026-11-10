@@ -66,6 +66,8 @@ FRESH: Final[dict[Timeframe, timedelta]] = {
 }
 LOOKBACK_CANDLES: Final = 600
 MINIMUM_CANDLES: Final = 30
+# The signal score reads Bitcoin's trend for every other coin (docs/34).
+BITCOIN: Final = "BTCUSDT"
 
 
 class TradingLoop:
@@ -272,6 +274,7 @@ async def build_service(engine: AsyncEngine, owner_email: str) -> QuantService:
     market = MarketRepository(engine)
     paper = PaperRepository(engine)
     accounts = SignalRepository(engine)
+    listed = await reference.provider_instruments("binance_usdm")
     signals = SignalService(
         candles,
         SnapshotRepository(engine),
@@ -281,8 +284,8 @@ async def build_service(engine: AsyncEngine, owner_email: str) -> QuantService:
         accounts,
         paper,
         clock,
+        bitcoin=next((i.instrument for i in listed if i.instrument.symbol == BITCOIN), None),
     )
-    listed = await reference.provider_instruments("binance_usdm")
     trading = TradingLoop(
         signals,
         PaperService(candles, market, paper, clock),

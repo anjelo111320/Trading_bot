@@ -1,5 +1,6 @@
 """Signal to paper position to outcome, on real PostgreSQL."""
 
+import json
 from collections.abc import AsyncIterator
 from datetime import UTC, datetime, timedelta
 from decimal import Decimal as D
@@ -12,7 +13,7 @@ from sqlalchemy import text
 from tests.conftest import make_settings
 from tests.integration.support import SUPERUSER_URL
 from tests.quant_data import candle
-from trading_intel.api.routers.trading import _trade
+from trading_intel.api.routers.trading import _signal, _trade
 from trading_intel.core.clock import FixedClock
 from trading_intel.database.engine import create_engine
 from trading_intel.database.repositories.accounts import UserRepository
@@ -38,6 +39,7 @@ from trading_intel.domain.base import DataOrigin
 from trading_intel.domain.candles import ClosedCandle, Timeframe
 from trading_intel.domain.events import plain
 from trading_intel.domain.instruments import Instrument, InstrumentRules
+from trading_intel.domain.market import FundingRate
 from trading_intel.domain.signals import Action, EntryType, Side
 from trading_intel.paper_trading.service import PaperService
 from trading_intel.risk_management.models import TradeProposal
@@ -682,3 +684,82 @@ async def test_the_money_plan_holds_one_position_per_strategy_and_coin(world: Wo
     [again] = await world.signals.run_plan(world.provider_id, NOW, account, [trend])
     assert again.reasons == ("a position from this strategy is open",)
     assert again.recommendation_id is None
+
+
+def history(world: World, timeframe: Timeframe, last_open: datetime, closes: list[float]) -> Any:
+    """Candles ending with the one opening at `last_open`. Volume rises on the last one."""
+    rows = []
+    for back, close in enumerate(reversed(closes)):
+        base = candle(0, close, close + 1, close - 1, close, 30.0 if back == 0 else 10.0, timeframe)
+        at = last_open - timeframe.delta * back
+        rows.append(
+            base.model_copy(
+                update={
+                    "provider_id": world.provider_id,
+                    "instrument_id": world.instrument.id,
+                    "open_time": at,
+                    "close_time": timeframe.close_time(at),
+                    "data_origin": DataOrigin.LIVE,
+                }
+            )
+        )
+    return rows
+
+
+async def test_every_signal_stores_its_score_as_information_only(world: World) -> None:
+    """The four conditions of docs/34 at the signal's close (D046), for Bitcoin's own trade."""
+    last_quarter = NOW - timedelta(minutes=15)
+    as_of = Timeframe.M15.close_time(last_quarter)
+    day = Timeframe.D1.floor(NOW) - timedelta(days=1)
+    await world.candles.insert(history(world, Timeframe.D1, day, [50 + i / 2 for i in range(200)]))
+    await world.candles.insert(history(world, Timeframe.M15, last_quarter, [100.0] * 21))
+    await MarketRepository(world.candles._engine).insert_funding(
+        [
+            FundingRate(
+                provider_id=world.provider_id,
+                instrument_id=world.instrument.id,
+                funding_time=as_of - timedelta(hours=8 * step),
+                funding_rate=D("0.0001"),
+                data_origin=DataOrigin.LIVE,
+                received_at=NOW,
+            )
+            for step in range(3 * 92)
+        ]
+    )
+    world.signals._bitcoin = world.instrument
+    rules = await RuleRepository(world.signals._rules._engine).current(
+        world.provider_id, world.instrument.id
+    )
+    assert rules is not None
+    outcome = await world.signals._assess(
+        world.provider_id, world.instrument, as_of, world.account, rules, proposal(), D(1),
+        ("test setup",),
+    )  # fmt: skip
+    assert outcome.approved, outcome.reasons
+    [stored] = await rows(
+        "SELECT r.signal_score, a.inputs FROM trade_recommendations r "
+        "JOIN risk_assessments a ON a.recommendation_id = r.id"
+    )
+    assert json.loads(stored["signal_score"]) == {
+        "version": 1,
+        "weak": False,
+        "against": 0,
+        "long_term_trend": True,
+        "bitcoin_trend": None,
+        "bitcoin_applies": False,
+        "volume": True,
+        "funding": True,
+    }
+    assert "risk_share" not in json.loads(stored["inputs"]), "the score sets no size"
+    [view] = [_signal(row) for row in await world.records.recent(world.account.id)]
+    assert view.signal_score is not None and view.signal_score.weak is False
+
+
+async def test_a_score_without_enough_history_is_stored_as_unknown(world: World) -> None:
+    outcome = await approve(world)
+    assert outcome.approved, outcome.reasons
+    [stored] = await rows("SELECT signal_score FROM trade_recommendations")
+    score = json.loads(stored["signal_score"])
+    assert score["weak"] is None and score["against"] == 0
+    assert score["bitcoin_applies"] is True, "no Bitcoin was given, so its trend is unknown"
+    assert {score[k] for k in ("long_term_trend", "bitcoin_trend", "volume", "funding")} == {None}

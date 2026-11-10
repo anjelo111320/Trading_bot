@@ -11,7 +11,7 @@ from collections.abc import Sequence
 from dataclasses import dataclass
 from datetime import datetime, timedelta
 from decimal import Decimal
-from typing import Final
+from typing import Any, Final
 
 from trading_intel.domain.signals import Side
 from trading_intel.technical_analysis.series import CandleSeries
@@ -54,6 +54,19 @@ class Conditions:
     def weak(self) -> bool | None:
         """Undefined while a condition is unknown, so such a signal is never scored."""
         return self.against >= WEAK_AGAINST if self.known else None
+
+    def as_record(self) -> dict[str, Any]:
+        """Stored with a live signal as information only, since the score failed (D046)."""
+        return {
+            "version": SCORE_VERSION,
+            "weak": self.weak,
+            "against": self.against,
+            "long_term_trend": self.long_term_trend,
+            "bitcoin_trend": self.bitcoin_trend,
+            "bitcoin_applies": self.bitcoin_applies,
+            "volume": self.volume,
+            "funding": self.funding,
+        }
 
 
 class LongTermTrend:

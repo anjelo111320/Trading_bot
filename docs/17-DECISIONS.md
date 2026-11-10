@@ -476,7 +476,8 @@ Decision:
 - Strong signals made +0.19R a trade and weak ones +0.10R, with an interval for the gap of -0.15 to +0.32. Among shorts the gap reversed, and it was positive in only 2 of 6 years. Halving weak signals would have cut profit more than drawdown. Four of the six checks failed, so nothing changes in trading.
 - While preparing the study, the backtests were found to charge no funding from 2020 to early 2023, because Binance's history has no mark price before March 2023. The loader now uses the last 15M close as the mark. The corrected six-coin study gives the same shares (docs/33), with the daily trend at +0.40R a trade instead of +0.44R.
 Consequences:
-- `trade_signals/signal_score.py` and the study stay, with their tests, so the run can be reproduced and the conditions can be recorded forward later.
+- `trade_signals/signal_score.py` and the study stay, with their tests, so the run can be reproduced.
+- From 2026-11-10, at the owner's request, the four conditions are stored with every live signal in every account and shown on the Bot page. They are information only: the risk engine never reads them, and they set no size. Forward results can then test the score on data it was never fitted on.
 - Python's setup score in `trade_signals/quality.py` is still a checklist of mostly fixed numbers, and it sets no size.
 - Earlier reports for docs/27 and docs/29 were run without that funding, and are kept as they were, with corrected figures beside them.
 Revisit conditions: none for this version. A changed score is a new trial, tested on forward paper results.

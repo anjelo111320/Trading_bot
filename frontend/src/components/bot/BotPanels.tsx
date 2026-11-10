@@ -9,6 +9,7 @@ import {
   realizedPnl,
   resultOf,
   riskPercent,
+  scoreText,
   strategyLabel,
   today,
 } from "./trades";
@@ -156,7 +157,8 @@ export function Decisions({ signals, symbols }: { signals: Signal[]; symbols: Ma
       <h2 className="mb-1 text-sm font-semibold">Python&apos;s latest signals</h2>
       <p className="mb-2 text-xs text-muted">
         Every setup Python found, and what the risk engine decided. Closes with no setup are not
-        listed.
+        listed. The score failed its test on 2020 to 2025 history, so it is recorded to test on
+        live results and never changes a trade&apos;s size.
       </p>
       {signals.length === 0 ? (
         <p className="text-sm text-muted">No setups yet. Python checks every coin at each 15M close.</p>
@@ -176,6 +178,9 @@ export function Decisions({ signals, symbols }: { signals: Signal[]; symbols: Ma
                   ? `Approved, traded${risk(signal.risk_share) ? ` at ${risk(signal.risk_share)} risk` : ""}`
                   : `Refused: ${signal.rejection_codes.join(", ")}`}
               </div>
+              {scoreText(signal.signal_score) && (
+                <div className="text-xs text-muted">{scoreText(signal.signal_score)}</div>
+              )}
             </li>
           ))}
         </ul>

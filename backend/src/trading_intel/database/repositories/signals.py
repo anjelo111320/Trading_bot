@@ -62,6 +62,7 @@ class NewRecommendation:
     created_at: datetime
     expires_at: datetime
     risk_inputs: dict[str, Any]
+    signal_score: dict[str, Any] | None = None
 
 
 class SignalRepository:
@@ -241,13 +242,14 @@ class SignalRepository:
                          is_countertrend, dedupe_key, setup_quality_score, news_alignment,
                          data_reliability_score, technical_explanation, fundamental_explanation,
                          supporting_evidence, conflicting_evidence, invalidation_conditions,
-                         data_as_of, data_age_ms, created_at, expires_at)
+                         data_as_of, data_age_ms, created_at, expires_at, signal_score)
                        VALUES (:id, 1, :strategy, :account, :provider, :instrument,
                          CAST(:timeframe AS timeframe_t), CAST(:action AS action_t),
                          CAST(:entry_type AS entry_type_t), :market_price, :entry, :stop,
                          :countertrend, :key, :quality, 'unavailable', :reliability, :technical,
                          :fundamental, CAST(:evidence AS jsonb), CAST(:conflicting AS jsonb),
-                         CAST(:invalidation AS jsonb), :data_as_of, :age, :created, :expires)"""
+                         CAST(:invalidation AS jsonb), :data_as_of, :age, :created, :expires,
+                         CAST(:score AS jsonb))"""
                 ),
                 {
                     "id": recommendation,
@@ -274,6 +276,7 @@ class SignalRepository:
                     "age": int((new.created_at - new.data_as_of).total_seconds() * 1000),
                     "created": new.created_at,
                     "expires": new.expires_at,
+                    "score": None if new.signal_score is None else json.dumps(new.signal_score),
                 },
             )
             if sizing is not None and len(sizing.target_reward_risk) == len(new.proposal.targets):
@@ -401,7 +404,7 @@ class SignalRepository:
                       r.invalidation_conditions, r.created_at, r.expires_at, r.data_as_of,
                       a.decision, a.rejection_codes, a.quantity, a.notional, a.fees_est,
                       a.max_account_risk, a.reward_risk_net, a.funding_est,
-                      a.inputs->>'risk_share' AS risk_share,
+                      a.inputs->>'risk_share' AS risk_share, r.signal_score,
                       COALESCE(s.state::text, 'REJECTED') AS state,
                       (SELECT json_agg(json_build_object('price', t.price::text,
                           'allocation', t.allocation_fraction::text,

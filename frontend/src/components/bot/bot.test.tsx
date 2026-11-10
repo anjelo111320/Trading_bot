@@ -12,6 +12,7 @@ import {
   percentOf,
   resultOf,
   riskPercent,
+  scoreText,
   strategyLabel,
   today,
   tradeMarkers,
@@ -203,5 +204,33 @@ describe("demo bot trades", () => {
   it("says plainly when there are no trades yet", () => {
     render(<TradeHistory trades={[]} balance="100" ticks={new Map()} />);
     expect(screen.getByText(/No trades yet in this account/)).toBeTruthy();
+  });
+
+  it("shows each signal's score as information, and nothing for older signals", () => {
+    const base = { version: 1, against: 2, weak: true, long_term_trend: true, volume: false };
+    const weak = { ...base, bitcoin_trend: false, bitcoin_applies: true, funding: true };
+    expect(scoreText(weak)).toBe(
+      "Score weak, 2 of 4 against: coin's trend for, Bitcoin's trend against, volume against, funding for.",
+    );
+    const bitcoin = { ...base, against: 1, weak: false, bitcoin_trend: null, bitcoin_applies: false, funding: null };
+    expect(scoreText(bitcoin)).toBe(
+      "Score strong, 1 of 3 against: coin's trend for, volume against, funding unknown.",
+    );
+    expect(scoreText({ ...bitcoin, weak: null })).toMatch(/^Score incomplete/);
+    expect(scoreText(null)).toBeNull();
+    const signal = {
+      id: "s2",
+      instrument_id: 3,
+      action: "BUY",
+      strategy: "daily_trend",
+      created_at: "2026-11-10T00:00:10Z",
+      decision: "REJECTED",
+      rejection_codes: ["RR_BELOW_MIN"],
+      risk_share: "1",
+      signal_score: weak,
+    } as unknown as Signal;
+    render(<Decisions signals={[signal]} symbols={new Map([[3, "SOLUSDT"]])} />);
+    expect(screen.getByText(/^Score weak, 2 of 4 against/)).toBeTruthy();
+    expect(screen.getByText(/never changes a trade's size/)).toBeTruthy();
   });
 });

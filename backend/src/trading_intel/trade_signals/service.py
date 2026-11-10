@@ -66,6 +66,15 @@ from trading_intel.trade_signals.pattern_strategy import STRATEGY_VERSION as PAT
 from trading_intel.trade_signals.pattern_strategy import PatternStrategy
 from trading_intel.trade_signals.portfolio import LEFT_OUT, due, share_of
 from trading_intel.trade_signals.quality import SetupEvidence, score_setup
+from trading_intel.trade_signals.signal_score import (
+    FUNDING_HISTORY,
+    VOLUME_CANDLES,
+    Conditions,
+    FundingView,
+    LongTermTrend,
+    VolumeView,
+)
+from trading_intel.trade_signals.signal_score import TREND_DAYS as SCORE_DAYS
 from trading_intel.trade_signals.trend_strategy import STRATEGY_NAME as TREND_NAME
 from trading_intel.trade_signals.trend_strategy import STRATEGY_VERSION as TREND_VERSION
 from trading_intel.trade_signals.trend_strategy import DailyTrendStrategy
@@ -180,7 +189,9 @@ class SignalService:
         paper: PaperRepository,
         clock: Clock,
         parameters: BaselineParameters | None = None,
+        bitcoin: Instrument | None = None,
     ) -> None:
+        """`bitcoin` is the perpetual whose trend the signal score reads for other coins."""
         self._candles = candles
         self._snapshots = snapshots
         self._market = market
@@ -190,6 +201,7 @@ class SignalService:
         self._paper = paper
         self._clock = clock
         self._parameters = parameters or BaselineParameters()
+        self._bitcoin = bitcoin
 
     async def _closed(
         self, provider_id: int, instrument: Instrument, timeframe: Timeframe, at: datetime, n: int
@@ -550,6 +562,7 @@ class SignalService:
         """Store the signal and its assessment, and open the paper position if approved."""
         proposal, fees = prepared.request.proposal, prepared.request.fees
         quality = self._quality(assessment.sizing)
+        score = await self._score_record(provider_id, instrument, timeframe, as_of, proposal.side)
         strategy_id = await self._signals.ensure_strategy(
             identity.name, identity.version, identity.parameters
         )
@@ -588,6 +601,7 @@ class SignalService:
                     **taken,
                     **(plan or {}),
                 },
+                signal_score=score,
             )
         )
         if assessment.approved and assessment.sizing is not None:
@@ -606,6 +620,66 @@ class SignalService:
         return SignalOutcome(
             action, recommendation, assessment.approved, tuple(c.value for c in assessment.codes)
         )
+
+    async def _score_record(
+        self,
+        provider_id: int,
+        instrument: Instrument,
+        timeframe: Timeframe,
+        as_of: datetime,
+        side: Side,
+    ) -> dict[str, Any] | None:
+        """The signal score's conditions at this close, stored as information only (D046).
+
+        A failure here must not lose the signal, so it is logged and the score left empty.
+        """
+        try:
+            conditions = await self._signal_score(provider_id, instrument, timeframe, as_of, side)
+        except Exception as error:
+            log.error(
+                "signal_score_failed",
+                instrument=instrument.symbol,
+                error=type(error).__name__,
+                detail=str(error)[:300],
+            )
+            return None
+        return conditions.as_record()
+
+    async def _signal_score(
+        self,
+        provider_id: int,
+        instrument: Instrument,
+        timeframe: Timeframe,
+        as_of: datetime,
+        side: Side,
+    ) -> Conditions:
+        """The four conditions of docs/34, read from what was stored by this close."""
+        is_bitcoin = self._bitcoin is not None and instrument.id == self._bitcoin.id
+        own = await self._long_term_trend(provider_id, instrument, as_of)
+        market = None
+        if self._bitcoin is not None and not is_bitcoin:
+            market = await self._long_term_trend(provider_id, self._bitcoin, as_of)
+        setup = await self._closed(provider_id, instrument, timeframe, as_of, VOLUME_CANDLES + 1)
+        # A day more than the history, so a rate paid at its start is always included.
+        rows = await self._market.funding_between(
+            provider_id,
+            instrument.id,
+            as_of - FUNDING_HISTORY - timedelta(days=1),
+            as_of + timedelta(milliseconds=1),
+        )
+        return Conditions(
+            long_term_trend=None if own is None else own.agrees(as_of, side),
+            bitcoin_trend=None if market is None else market.agrees(as_of, side),
+            volume=None if setup is None else VolumeView(setup).confirms(as_of),
+            funding=FundingView([(at, rate) for at, rate, _ in rows]).agrees(as_of, side),
+            bitcoin_applies=not is_bitcoin,
+        )
+
+    async def _long_term_trend(
+        self, provider_id: int, instrument: Instrument, as_of: datetime
+    ) -> LongTermTrend | None:
+        days = await self._closed(provider_id, instrument, Timeframe.D1, as_of, SCORE_DAYS)
+        return None if days is None else LongTermTrend(days)
 
     @staticmethod
     def _quality(sizing: Sizing | None) -> float:

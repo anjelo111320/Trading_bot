@@ -102,6 +102,8 @@ Immutable tables: `risk_profiles`, `market_candle_revisions`, `analysis_input_sn
 
 A forecast is stored before its outcome is known, and neither row can change afterwards, so a model's track record cannot be improved after the fact.
 
+The same holds for the signal score (D046). From migration 0010, `trade_recommendations.signal_score` stores its four conditions at the signal's close, before the trade's outcome exists. It is information only and never read by the risk engine. Signals recorded before 2026-11-10 have none.
+
 ### Key Design Choices
 
 - Candles use a natural key, not UUIDs. Including `open_time` keeps a later hypertable conversion possible.
