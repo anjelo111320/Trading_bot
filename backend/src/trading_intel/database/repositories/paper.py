@@ -294,19 +294,39 @@ class PaperRepository:
                ) latest
                WHERE p.account_id = :account AND p.status = 'open'"""
         )
+        # What each open or pending trade could still lose: the risk engine's own figure per
+        # unit, with fees and slippage, until a stop move makes it the distance to the new stop.
+        at_risk = text(
+            """SELECT COALESCE(sum(
+                 CASE WHEN moved.price IS NULL THEN a.risk_per_unit
+                      ELSE GREATEST(CASE WHEN p.side = 'LONG' THEN 1 ELSE -1 END
+                        * (COALESCE(p.average_entry, r.entry_price) - moved.price), 0) END
+                 * CASE WHEN p.status = 'open' THEN p.open_quantity
+                        ELSE p.planned_quantity END), 0)
+               FROM paper_positions p
+               JOIN trade_recommendations r ON r.id = p.recommendation_id
+               JOIN risk_assessments a ON a.recommendation_id = r.id
+               LEFT JOIN LATERAL (
+                 SELECT m.stop_price AS price FROM paper_stop_moves m
+                 WHERE m.position_id = p.id ORDER BY m.effective_after DESC LIMIT 1
+               ) moved ON true
+               WHERE p.account_id = :account AND p.status IN ('pending_entry', 'open')"""
+        )
         async with self._engine.connect() as connection:
             row = (
                 await connection.execute(query, {"account": account_id, "day_start": day_start})
             ).one()
             open_pnl = (await connection.execute(unrealized, {"account": account_id})).scalar_one()
+            open_risk = (await connection.execute(at_risk, {"account": account_id})).scalar_one()
         return AccountState(
             equity=starting_balance + row.realized + open_pnl,
             day_start_equity=starting_balance + row.before_today,
             open_positions=int(row.open_count),
             gross_exposure=row.exposure,
+            open_risk=open_risk,
         )
 
-    async def positions(self, limit: int = 50) -> list[dict[str, Any]]:
+    async def positions(self, account_id: UUID, limit: int = 50) -> list[dict[str, Any]]:
         query = text(
             """SELECT p.id, p.instrument_id, i.canonical_symbol AS symbol, p.side::text AS side,
                       p.status, p.planned_quantity, p.open_quantity, p.average_entry,
@@ -318,23 +338,69 @@ class PaperRepository:
                JOIN instruments i ON i.id = p.instrument_id
                JOIN trade_recommendations r ON r.id = p.recommendation_id
                LEFT JOIN signal_current_state s ON s.recommendation_id = r.id
+               WHERE p.account_id = :account
                ORDER BY COALESCE(p.opened_at, p.updated_at) DESC LIMIT :limit"""
         )
+        params = {"account": account_id, "limit": limit}
         async with self._engine.connect() as connection:
-            rows = (await connection.execute(query, {"limit": limit})).mappings().all()
+            rows = (await connection.execute(query, params)).mappings().all()
         return [dict(row) for row in rows]
 
-    async def performance(self) -> dict[str, Any]:
+    async def trades(
+        self, account_id: UUID, instrument_id: int | None, limit: int = 100
+    ) -> list[dict[str, Any]]:
+        """Each position with its plan, current stop and every fill, newest first."""
         query = text(
-            """SELECT count(*) FILTER (WHERE counts_for_win_rate) AS resolved,
-                      count(*) FILTER (WHERE outcome = 'WIN') AS wins,
-                      count(*) FILTER (WHERE outcome = 'LOSS') AS losses,
-                      count(*) FILTER (WHERE NOT counts_for_win_rate) AS unfilled,
-                      COALESCE(sum(net_pnl), 0) AS net_pnl,
-                      COALESCE(sum(costs), 0) AS costs,
-                      avg(r_multiple) FILTER (WHERE counts_for_win_rate) AS expectancy_r
-               FROM trade_outcomes"""
+            """SELECT p.id, p.instrument_id, i.canonical_symbol AS symbol, c.name AS strategy,
+                      r.timeframe::text AS timeframe, p.side::text AS side, p.status,
+                      s.state::text AS signal_state, r.created_at, r.expires_at,
+                      r.entry_price AS planned_entry, p.average_entry, r.stop_loss,
+                      COALESCE((SELECT m.stop_price FROM paper_stop_moves m
+                                WHERE m.position_id = p.id
+                                ORDER BY m.effective_after DESC LIMIT 1),
+                               r.stop_loss) AS current_stop,
+                      p.planned_quantity, p.open_quantity, p.realized_pnl, p.costs_paid,
+                      p.opened_at, p.closed_at, o.outcome::text AS outcome, o.r_multiple,
+                      r.technical_explanation, a.max_account_risk,
+                      a.inputs->>'risk_share' AS risk_share,
+                      a.inputs->>'evidence_share' AS evidence_share,
+                      (SELECT json_agg(t.price::text ORDER BY t.target_no) FROM trade_targets t
+                       WHERE t.recommendation_id = r.id) AS targets,
+                      (SELECT json_agg(json_build_object(
+                          'kind', e.kind, 'at', e.executed_at, 'price', e.fill_price::text,
+                          'quantity', e.quantity::text, 'fee', e.fee::text,
+                          'funding', e.funding::text, 'reconstructed', e.reconstructed)
+                        ORDER BY e.executed_at, e.id)
+                       FROM paper_executions e WHERE e.position_id = p.id) AS fills
+               FROM paper_positions p
+               JOIN instruments i ON i.id = p.instrument_id
+               JOIN trade_recommendations r ON r.id = p.recommendation_id
+               JOIN strategy_configurations c ON c.id = r.strategy_configuration_id
+               JOIN risk_assessments a ON a.recommendation_id = r.id
+               LEFT JOIN signal_current_state s ON s.recommendation_id = r.id
+               LEFT JOIN trade_outcomes o ON o.recommendation_id = r.id
+               WHERE p.account_id = :account
+                 AND (CAST(:instrument AS integer) IS NULL OR p.instrument_id = :instrument)
+               ORDER BY r.created_at DESC LIMIT :limit"""
+        )
+        params = {"account": account_id, "instrument": instrument_id, "limit": limit}
+        async with self._engine.connect() as connection:
+            rows = (await connection.execute(query, params)).mappings().all()
+        return [dict(row) for row in rows]
+
+    async def performance(self, account_id: UUID) -> dict[str, Any]:
+        query = text(
+            """SELECT count(*) FILTER (WHERE o.counts_for_win_rate) AS resolved,
+                      count(*) FILTER (WHERE o.outcome = 'WIN') AS wins,
+                      count(*) FILTER (WHERE o.outcome = 'LOSS') AS losses,
+                      count(*) FILTER (WHERE NOT o.counts_for_win_rate) AS unfilled,
+                      COALESCE(sum(o.net_pnl), 0) AS net_pnl,
+                      COALESCE(sum(o.costs), 0) AS costs,
+                      avg(o.r_multiple) FILTER (WHERE o.counts_for_win_rate) AS expectancy_r
+               FROM trade_outcomes o
+               JOIN trade_recommendations r ON r.id = o.recommendation_id
+               WHERE r.account_id = :account"""
         )
         async with self._engine.connect() as connection:
-            row = (await connection.execute(query)).mappings().one()
+            row = (await connection.execute(query, {"account": account_id})).mappings().one()
         return dict(row)

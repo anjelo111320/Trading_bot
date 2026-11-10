@@ -3,12 +3,16 @@
 Every proposal passes through the risk engine, and a rejection is stored with its reasons.
 The live paper loop runs the 1H pattern breakout (docs/27) at each 1H close and the daily
 trend (docs/29) at each daily close, which also tightens the trend's trailing stops (D039).
-Each strategy holds at most one position per coin, as in its backtest.
+The demo bot runs the 15M rule baseline in its own account and enters at the live price (D044).
+The money plan runs every strategy on every coin in one account, and signals that arrive at
+the same close share its room by tested evidence (D045).
+Each strategy holds at most one position per coin and account, as in its backtest.
 """
 
-from dataclasses import dataclass
+from collections.abc import Sequence
+from dataclasses import dataclass, replace
 from datetime import datetime, timedelta
-from decimal import Decimal
+from decimal import ROUND_CEILING, ROUND_FLOOR, Decimal
 from typing import Any, Final
 from uuid import UUID
 
@@ -30,14 +34,23 @@ from trading_intel.database.repositories.signals import (
 )
 from trading_intel.domain.candles import Timeframe
 from trading_intel.domain.instruments import Instrument, InstrumentRules
-from trading_intel.domain.signals import Action
+from trading_intel.domain.signals import Action, EntryType, Side
+from trading_intel.risk_management.allocation import Claim, split
+from trading_intel.risk_management.calculators.linear import (
+    remaining_daily_budget,
+    remaining_open_risk,
+)
 from trading_intel.risk_management.engine import assess
 from trading_intel.risk_management.models import (
+    AccountState,
     MarketState,
+    RiskAssessment,
+    RiskProfile,
     RiskRequest,
     Sizing,
     TradeProposal,
 )
+from trading_intel.risk_management.rejections import RejectionCode
 from trading_intel.technical_analysis.series import CandleSeries
 from trading_intel.technical_analysis.volatility import atr
 from trading_intel.trade_signals.baseline import (
@@ -51,6 +64,7 @@ from trading_intel.trade_signals.lifecycle import dedupe_key
 from trading_intel.trade_signals.pattern_strategy import STRATEGY_NAME as PATTERN_NAME
 from trading_intel.trade_signals.pattern_strategy import STRATEGY_VERSION as PATTERN_VERSION
 from trading_intel.trade_signals.pattern_strategy import PatternStrategy
+from trading_intel.trade_signals.portfolio import LEFT_OUT, due, share_of
 from trading_intel.trade_signals.quality import SetupEvidence, score_setup
 from trading_intel.trade_signals.trend_strategy import STRATEGY_NAME as TREND_NAME
 from trading_intel.trade_signals.trend_strategy import STRATEGY_VERSION as TREND_VERSION
@@ -71,6 +85,8 @@ PATTERN_HOURS: Final = 1440
 PATTERN_FOURS: Final = 1200
 PATTERN_DAYS: Final = 3000
 TREND_DAYS: Final = 1000
+NO_DATA: Final = ("not enough data",)
+ZERO: Final = Decimal(0)
 
 
 @dataclass(frozen=True)
@@ -88,6 +104,68 @@ class SignalOutcome:
     recommendation_id: UUID | None
     approved: bool
     reasons: tuple[str, ...]
+
+
+@dataclass(frozen=True)
+class Setup:
+    """One strategy's decision on one coin at a close, before any risk check."""
+
+    instrument: Instrument
+    rules: InstrumentRules
+    decision: BaselineDecision
+    identity: StrategyIdentity
+    timeframe: Timeframe
+    instant: bool = False
+
+
+@dataclass(frozen=True)
+class Prepared:
+    """A risk request with the live context its record needs."""
+
+    request: RiskRequest
+    now: datetime
+    bid: Decimal
+    ask: Decimal
+    slippage: Decimal
+    key: str
+    unresolved: bool
+    instant: bool
+
+
+def _claims(
+    ready: Sequence[tuple[Setup, Prepared, str]], state: AccountState, profile: RiskProfile
+) -> list[Claim]:
+    """What each signal asks for, sized alone as if the account had all its room.
+
+    A signal refused alone for any reason but its size is no claim: the risk engine refuses
+    it again with that reason. One too large alone is a claim, and the split shrinks it.
+    """
+    empty = state.model_copy(
+        update={"open_positions": 0, "gross_exposure": ZERO, "open_risk": ZERO}
+    )
+    claims: list[Claim] = []
+    for setup, prepared, key in ready:
+        alone = assess(prepared.request.model_copy(update={"account": empty}))
+        sizing = alone.sizing
+        if set(alone.codes) - {RejectionCode.EXPOSURE_EXCEEDED} or sizing is None:
+            continue
+        if sizing.risk_per_unit <= 0:
+            continue
+        share = prepared.request.proposal.risk_share
+        risk = state.equity * profile.max_risk_fraction * share
+        unit = sizing.entry_fill * setup.instrument.contract_multiplier
+        claims.append(Claim(key, share, risk, risk / sizing.risk_per_unit * unit))
+    return claims
+
+
+def _room(state: AccountState, profile: RiskProfile) -> tuple[Decimal, Decimal, int]:
+    """Risk the account may still take today, its unused exposure and its free slots."""
+    risk = remaining_daily_budget(state, profile)
+    open_room = remaining_open_risk(state, profile)
+    if open_room is not None:
+        risk = min(risk, open_room)
+    exposure = state.equity * profile.max_total_exposure_fraction - state.gross_exposure
+    return risk, exposure, profile.max_open_positions - state.open_positions
 
 
 class SignalService:
@@ -119,27 +197,24 @@ class SignalService:
         rows = await self._candles.for_analysis(provider_id, instrument.id, timeframe, at, n)
         return CandleSeries.of(rows) if rows else None
 
-    async def evaluate(
-        self, provider_id: int, instrument: Instrument, as_of: datetime, account: Account
-    ) -> SignalOutcome:
+    async def baseline_setup(
+        self, provider_id: int, instrument: Instrument, as_of: datetime, *, instant: bool = False
+    ) -> Setup | None:
+        """The 15M rule baseline's decision at a 15M close."""
         setup = await self._closed(provider_id, instrument, Timeframe.M15, as_of, SETUP_LOOKBACK)
         middle = await self._closed(provider_id, instrument, Timeframe.H1, as_of, MIDDLE_LOOKBACK)
         higher = await self._closed(provider_id, instrument, Timeframe.H4, as_of, HIGHER_LOOKBACK)
         rules = await self._rules.as_of(provider_id, instrument.id, as_of)
         if setup is None or middle is None or higher is None or rules is None:
-            return SignalOutcome(Action.NO_TRADE, None, False, ("not enough data",))
+            return None
         decision = evaluate(setup, middle, higher, rules.tick_size, self._parameters)
-        if decision.proposal is None or decision.setup_atr is None:
-            return SignalOutcome(decision.action, None, False, decision.reasons)
-        return await self._assess(
-            provider_id, instrument, as_of, account, rules, decision.proposal,
-            decision.setup_atr, decision.reasons,
-        )  # fmt: skip
+        identity = StrategyIdentity(STRATEGY_NAME, STRATEGY_VERSION, self._parameters.as_dict())
+        return Setup(instrument, rules, decision, identity, Timeframe.M15, instant)
 
-    async def evaluate_pattern(
-        self, provider_id: int, instrument: Instrument, as_of: datetime, account: Account
-    ) -> SignalOutcome:
-        """The 1H pattern breakout strategy at a 1H close."""
+    async def pattern_setup(
+        self, provider_id: int, instrument: Instrument, as_of: datetime
+    ) -> Setup | None:
+        """The 1H pattern breakout's decision at a 1H close."""
         hours = await self._candles.for_analysis(
             provider_id, instrument.id, Timeframe.H1, as_of, PATTERN_HOURS
         )
@@ -151,30 +226,53 @@ class SignalService:
         )
         rules = await self._rules.as_of(provider_id, instrument.id, as_of)
         if not hours or not fours or not days or rules is None:
-            return SignalOutcome(Action.NO_TRADE, None, False, ("not enough data",))
+            return None
         strategy = PatternStrategy(hours, fours, days, rules.tick_size)
         identity = StrategyIdentity(PATTERN_NAME, PATTERN_VERSION, strategy.parameters.as_dict())
         decision = strategy.decide(hours[-1].close_time)
-        return await self._submit(
-            provider_id, instrument, as_of, account, rules, decision, identity, Timeframe.H1
-        )
+        return Setup(instrument, rules, decision, identity, Timeframe.H1)
 
-    async def evaluate_trend(
-        self, provider_id: int, instrument: Instrument, as_of: datetime, account: Account
-    ) -> SignalOutcome:
-        """The daily trend strategy at a daily close."""
+    async def trend_setup(
+        self, provider_id: int, instrument: Instrument, as_of: datetime
+    ) -> Setup | None:
+        """The daily trend's decision at a daily close."""
         days = await self._candles.for_analysis(
             provider_id, instrument.id, Timeframe.D1, as_of, TREND_DAYS
         )
         rules = await self._rules.as_of(provider_id, instrument.id, as_of)
         if not days or rules is None:
-            return SignalOutcome(Action.NO_TRADE, None, False, ("not enough data",))
+            return None
         strategy = DailyTrendStrategy(days, rules.tick_size)
         identity = StrategyIdentity(TREND_NAME, TREND_VERSION, strategy.parameters.as_dict())
         decision = strategy.decide(days[-1].close_time)
-        return await self._submit(
-            provider_id, instrument, as_of, account, rules, decision, identity, Timeframe.D1
-        )
+        return Setup(instrument, rules, decision, identity, Timeframe.D1)
+
+    async def evaluate(
+        self,
+        provider_id: int,
+        instrument: Instrument,
+        as_of: datetime,
+        account: Account,
+        *,
+        instant: bool = False,
+    ) -> SignalOutcome:
+        """The 15M rule baseline at a 15M close. `instant` enters at the live price (D044)."""
+        setup = await self.baseline_setup(provider_id, instrument, as_of, instant=instant)
+        return await self._submit_setup(provider_id, as_of, account, setup)
+
+    async def evaluate_pattern(
+        self, provider_id: int, instrument: Instrument, as_of: datetime, account: Account
+    ) -> SignalOutcome:
+        """The 1H pattern breakout strategy at a 1H close."""
+        setup = await self.pattern_setup(provider_id, instrument, as_of)
+        return await self._submit_setup(provider_id, as_of, account, setup)
+
+    async def evaluate_trend(
+        self, provider_id: int, instrument: Instrument, as_of: datetime, account: Account
+    ) -> SignalOutcome:
+        """The daily trend strategy at a daily close."""
+        setup = await self.trend_setup(provider_id, instrument, as_of)
+        return await self._submit_setup(provider_id, as_of, account, setup)
 
     async def trail_stops(self, provider_id: int, instrument: Instrument, as_of: datetime) -> int:
         """Tighten open daily trend positions to the 10-day extreme. Returns how many moved."""
@@ -202,6 +300,110 @@ class SignalService:
                 moved += 1
         return moved
 
+    async def plan_setups(
+        self, provider_id: int, instruments: Sequence[Instrument], close_time: datetime
+    ) -> tuple[list[Setup], list[str]]:
+        """Every due strategy's decision on every coin at this close, for the money plan.
+
+        A coin whose candle for this close is not stored yet is listed as missing. It is never
+        decided on the candle before, which would trade an old close as if it were new.
+        """
+        setups: list[Setup] = []
+        missing: list[str] = []
+        for timeframe in due(close_time):
+            for instrument in instruments:
+                setup = await self._setup_at(timeframe, provider_id, instrument, close_time)
+                if setup is None or setup.decision.as_of != close_time:
+                    missing.append(f"{instrument.symbol} {timeframe.value}")
+                    continue
+                setups.append(setup)
+        return setups, missing
+
+    async def _setup_at(
+        self, timeframe: Timeframe, provider_id: int, instrument: Instrument, close_time: datetime
+    ) -> Setup | None:
+        match timeframe:
+            case Timeframe.M15:
+                return await self.baseline_setup(provider_id, instrument, close_time, instant=True)
+            case Timeframe.H1:
+                return await self.pattern_setup(provider_id, instrument, close_time)
+            case _:
+                return await self.trend_setup(provider_id, instrument, close_time)
+
+    async def run_plan(
+        self, provider_id: int, as_of: datetime, account: Account, setups: Sequence[Setup]
+    ) -> list[SignalOutcome]:
+        """The money plan (D045): signals from one close share the account's room.
+
+        Each signal asks for its strategy's evidence share of the 1% risk. The strongest
+        evidence is served first and equal evidence splits what is left. The risk engine still
+        decides every trade, seeing the trades approved before it in the same close.
+        """
+        state = await self._paper.account_state(
+            account.id, account.starting_balance, Timeframe.D1.floor(self._clock.now())
+        )
+        outcomes: list[SignalOutcome] = []
+        ready: list[tuple[Setup, Prepared, str]] = []
+        for setup in setups:
+            decision, name = setup.decision, setup.identity.name
+            if decision.proposal is None or decision.setup_atr is None:
+                outcomes.append(SignalOutcome(decision.action, None, False, decision.reasons))
+                continue
+            if (name, setup.instrument.symbol) in LEFT_OUT:
+                reason = "this strategy lost on this coin in the study (docs/33)"
+                outcomes.append(SignalOutcome(Action.NO_TRADE, None, False, (reason,)))
+                continue
+            holding = await self._paper.active(provider_id, setup.instrument.id)
+            if any(t.account_id == account.id and t.strategy == name for t in holding):
+                reason = "a position from this strategy is open"
+                outcomes.append(SignalOutcome(Action.NO_TRADE, None, False, (reason,)))
+                continue
+            proposal = decision.proposal.model_copy(update={"risk_share": share_of(name)})
+            prepared = await self._prepare(
+                provider_id, setup.instrument, as_of, account, setup.rules, proposal,
+                decision.setup_atr, timeframe=setup.timeframe, instant=setup.instant,
+                state=state,
+            )  # fmt: skip
+            if prepared is None:
+                outcomes.append(SignalOutcome(Action.NO_TRADE, None, False, ("no recent book",)))
+                continue
+            ready.append((setup, prepared, f"{name}:{setup.instrument.symbol}"))
+        shares = split(_claims(ready, state, account.profile), *_room(state, account.profile))
+        ready.sort(key=lambda item: (-item[1].request.proposal.risk_share, item[2]))
+        for setup, prepared, key in ready:
+            wish = prepared.request.proposal.risk_share
+            final = shares.get(key, wish)
+            proposal = prepared.request.proposal.model_copy(update={"risk_share": final})
+            request = prepared.request.model_copy(update={"proposal": proposal, "account": state})
+            assessment = assess(request)
+            outcome = await self._record(
+                provider_id, setup.instrument, as_of, account, setup.rules,
+                replace(prepared, request=request), assessment, setup.decision.reasons,
+                setup.identity, setup.timeframe,
+                plan={"evidence_share": wish, "risk_share": final},
+            )  # fmt: skip
+            outcomes.append(outcome)
+            sizing = assessment.sizing
+            if assessment.approved and sizing is not None:
+                state = state.model_copy(
+                    update={
+                        "open_positions": state.open_positions + 1,
+                        "gross_exposure": state.gross_exposure + sizing.notional,
+                        "open_risk": state.open_risk + sizing.max_account_risk,
+                    }
+                )
+        return outcomes
+
+    async def _submit_setup(
+        self, provider_id: int, as_of: datetime, account: Account, setup: Setup | None
+    ) -> SignalOutcome:
+        if setup is None:
+            return SignalOutcome(Action.NO_TRADE, None, False, NO_DATA)
+        return await self._submit(
+            provider_id, setup.instrument, as_of, account, setup.rules, setup.decision,
+            setup.identity, setup.timeframe, instant=setup.instant,
+        )  # fmt: skip
+
     async def _submit(
         self,
         provider_id: int,
@@ -212,18 +414,21 @@ class SignalService:
         decision: BaselineDecision,
         identity: StrategyIdentity,
         timeframe: Timeframe,
+        *,
+        instant: bool = False,
     ) -> SignalOutcome:
         if decision.proposal is None or decision.setup_atr is None:
             return SignalOutcome(decision.action, None, False, decision.reasons)
         holding = await self._paper.active(provider_id, instrument.id)
-        if any(trade.strategy == identity.name for trade in holding):
-            # One position per coin and strategy, as in the backtests.
+        if any(t.account_id == account.id and t.strategy == identity.name for t in holding):
+            # One position per coin, strategy and account, as in the backtests.
             return SignalOutcome(
                 Action.NO_TRADE, None, False, ("a position from this strategy is open",)
             )
         return await self._assess(
             provider_id, instrument, as_of, account, rules, decision.proposal,
             decision.setup_atr, decision.reasons, strategy=identity, timeframe=timeframe,
+            instant=instant,
         )  # fmt: skip
 
     async def _assess(
@@ -239,15 +444,42 @@ class SignalService:
         *,
         strategy: StrategyIdentity | None = None,
         timeframe: Timeframe = Timeframe.M15,
+        instant: bool = False,
     ) -> SignalOutcome:
         identity = strategy or StrategyIdentity(
             STRATEGY_NAME, STRATEGY_VERSION, self._parameters.as_dict()
         )
+        prepared = await self._prepare(
+            provider_id, instrument, as_of, account, rules, proposal, setup_atr,
+            timeframe=timeframe, instant=instant,
+        )  # fmt: skip
+        if prepared is None:
+            return SignalOutcome(Action.NO_TRADE, None, False, ("no recent book",))
+        return await self._record(
+            provider_id, instrument, as_of, account, rules, prepared, assess(prepared.request),
+            reasons, identity, timeframe,
+        )  # fmt: skip
+
+    async def _prepare(
+        self,
+        provider_id: int,
+        instrument: Instrument,
+        as_of: datetime,
+        account: Account,
+        rules: InstrumentRules,
+        proposal: TradeProposal,
+        setup_atr: Decimal,
+        *,
+        timeframe: Timeframe,
+        instant: bool,
+        state: AccountState | None = None,
+    ) -> Prepared | None:
+        """The risk request for a proposal, with the live book, costs and account."""
         now = self._clock.now()
         book = await self._snapshots.latest_book(provider_id, instrument.id, now)
         minutes = await self._closed(provider_id, instrument, Timeframe.M1, now, MINUTE_LOOKBACK)
         if book is None or minutes is None:
-            return SignalOutcome(Action.NO_TRADE, None, False, ("no recent book",))
+            return None
         book_minute, bid, ask = book
         # A minute row holds the last bid and ask seen in that minute, so it is as fresh as the
         # minute's end. Its start is always over a minute old, which once made every live
@@ -257,6 +489,13 @@ class SignalService:
         if minute_atr.is_nan():
             minute_atr = Decimal(0)
         slippage = max(SLIPPAGE_TICKS * rules.tick_size, SLIPPAGE_ATR_SHARE * minute_atr)
+        instant = instant and proposal.entry_type is EntryType.MARKET
+        if instant:
+            # The bot enters now, so the risk engine sizes it from the live mid, rounded against
+            # the trade. It fills there plus half the spread and slippage (D044).
+            proposal = proposal.model_copy(
+                update={"entry": _against(proposal.side, (bid + ask) / 2, rules.tick_size)}
+            )
         funding = await self._market.funding_between(
             provider_id, instrument.id, now - timedelta(days=2), now
         )
@@ -265,8 +504,9 @@ class SignalService:
         unresolved = await self._gaps.list(
             provider_id=provider_id, instrument_id=instrument.id, states=("detected", "repairing")
         )
-        day_start = Timeframe.D1.floor(now)
-        state = await self._paper.account_state(account.id, account.starting_balance, day_start)
+        if state is None:
+            day_start = Timeframe.D1.floor(now)
+            state = await self._paper.account_state(account.id, account.starting_balance, day_start)
         market = MarketState(
             bid=bid,
             ask=ask,
@@ -291,12 +531,32 @@ class SignalService:
             profile=account.profile,
             duplicate_active=await self._signals.is_active(account.id, key),
         )
-        assessment = assess(request)
+        return Prepared(request, now, bid, ask, slippage, key, bool(unresolved), instant)
+
+    async def _record(
+        self,
+        provider_id: int,
+        instrument: Instrument,
+        as_of: datetime,
+        account: Account,
+        rules: InstrumentRules,
+        prepared: Prepared,
+        assessment: RiskAssessment,
+        reasons: tuple[str, ...],
+        identity: StrategyIdentity,
+        timeframe: Timeframe,
+        plan: dict[str, Decimal] | None = None,
+    ) -> SignalOutcome:
+        """Store the signal and its assessment, and open the paper position if approved."""
+        proposal, fees = prepared.request.proposal, prepared.request.fees
         quality = self._quality(assessment.sizing)
         strategy_id = await self._signals.ensure_strategy(
             identity.name, identity.version, identity.parameters
         )
-        half_spread = (ask - bid) / 2
+        half_spread = (prepared.ask - prepared.bid) / 2
+        taken: dict[str, Decimal] = {}
+        if prepared.instant and assessment.sizing is not None:
+            taken["entry_fill"] = assessment.sizing.entry_fill
         recommendation = await self._signals.record(
             NewRecommendation(
                 strategy_id=strategy_id,
@@ -306,25 +566,27 @@ class SignalService:
                 timeframe=timeframe,
                 proposal=proposal,
                 assessment=assessment,
-                market_price=(bid + ask) / 2,
-                equity=state.equity,
-                dedupe_key=key,
+                market_price=(prepared.bid + prepared.ask) / 2,
+                equity=prepared.request.account.equity,
+                dedupe_key=prepared.key,
                 quality_score=Decimal(str(quality)),
-                data_reliability=Decimal(100 if not unresolved else 50),
+                data_reliability=Decimal(100 if not prepared.unresolved else 50),
                 technical_explanation="; ".join(reasons),
                 evidence=reasons,
                 conflicting=(),
                 data_as_of=as_of,
-                created_at=now,
-                expires_at=now + timeframe.delta * (proposal.expiry_candles or 1),
+                created_at=prepared.now,
+                expires_at=prepared.now + timeframe.delta * (proposal.expiry_candles or 1),
                 risk_inputs={
                     "half_spread": half_spread,
-                    "entry_slippage": slippage,
-                    "stop_slippage": slippage,
+                    "entry_slippage": prepared.slippage,
+                    "stop_slippage": prepared.slippage,
                     "taker_fee": fees.entry if fees else None,
                     "maker_fee": MAKER_FEE_FALLBACK,
                     "tick": rules.tick_size,
                     "lot_step": rules.lot_step,
+                    **taken,
+                    **(plan or {}),
                 },
             )
         )
@@ -362,3 +624,9 @@ class SignalService:
                 volatility=0.5,
             )
         ).score
+
+
+def _against(side: Side, price: Decimal, tick: Decimal) -> Decimal:
+    """Round to the tick in the direction that is worse for the trade."""
+    rounding = ROUND_CEILING if side.sign > 0 else ROUND_FLOOR
+    return (price / tick).to_integral_value(rounding=rounding) * tick

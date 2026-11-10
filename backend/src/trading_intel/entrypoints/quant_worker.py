@@ -28,7 +28,13 @@ from trading_intel.database.repositories.operations import (
 )
 from trading_intel.database.repositories.paper import PaperRepository
 from trading_intel.database.repositories.reference import ReferenceRepository
-from trading_intel.database.repositories.signals import SignalRepository
+from trading_intel.database.repositories.signals import (
+    DEMO_ACCOUNT,
+    DEMO_BALANCE,
+    PORTFOLIO_ACCOUNT,
+    PORTFOLIO_BALANCE,
+    SignalRepository,
+)
 from trading_intel.domain.candles import Timeframe
 from trading_intel.domain.events import EventEnvelope, MarketCandlePayload
 from trading_intel.domain.instruments import Instrument
@@ -41,6 +47,7 @@ from trading_intel.technical_analysis.pipeline import (
     values_at,
 )
 from trading_intel.technical_analysis.series import CandleSeries
+from trading_intel.trade_signals.portfolio import PLAN_PROFILE
 from trading_intel.trade_signals.service import SignalService
 
 log = structlog.get_logger(__name__)
@@ -53,6 +60,7 @@ GROUP: Final = "quant"
 # and the other timeframes' candles. Without it, a decision could read a book a minute old.
 SETTLE: Final = timedelta(seconds=10)
 FRESH: Final[dict[Timeframe, timedelta]] = {
+    Timeframe.M15: timedelta(minutes=5),
     Timeframe.H1: timedelta(minutes=15),
     Timeframe.D1: timedelta(hours=1),
 }
@@ -62,7 +70,14 @@ MINIMUM_CANDLES: Final = 30
 
 class TradingLoop:
     """Paper fills on every minute, the pattern strategy at each 1H close, and the daily trend
-    strategy at each daily close, after tightening its open stops (D008: perpetuals only)."""
+    strategy at each daily close, after tightening its open stops (D008: perpetuals only).
+
+    The demo bot runs the untested 15M rule baseline at each 15M close, in its own 100 USDT
+    account, entering at the live price (D044). The tested strategies' account is untouched.
+
+    The money plan runs once per 15M close for every coin together, in its own 1,000 USDT
+    account, with each strategy that closes then (D045).
+    """
 
     def __init__(
         self,
@@ -83,6 +98,7 @@ class TradingLoop:
         self._owner_email = owner_email
         self._provider_id = provider_id
         self._instruments = instruments
+        self._planned: set[datetime] = set()
 
     async def on_closed(
         self, provider_id: int, instrument_id: int, timeframe: Timeframe, close_time: datetime
@@ -123,10 +139,21 @@ class TradingLoop:
         wait = (close_time + SETTLE - self._clock.now()).total_seconds()
         if wait > 0:
             await self._sleep(wait)
-        account = await self._accounts.ensure_account(self._owner_email)
+        demo = timeframe is Timeframe.M15
+        account = await (
+            self._accounts.ensure_account(self._owner_email, DEMO_ACCOUNT, DEMO_BALANCE)
+            if demo
+            else self._accounts.ensure_account(self._owner_email)
+        )
         if account is None:
             return
-        if timeframe is Timeframe.D1:
+        if demo:
+            moved = 0
+            outcome = await self._signals.evaluate(
+                provider_id, instrument, close_time, account, instant=True
+            )
+            strategy = "trend_break_baseline"
+        elif timeframe is Timeframe.D1:
             moved = await self._signals.trail_stops(provider_id, instrument, close_time)
             outcome = await self._signals.evaluate_trend(
                 provider_id, instrument, close_time, account
@@ -146,6 +173,42 @@ class TradingLoop:
             approved=outcome.approved,
             reasons=outcome.reasons,
             stops_moved=moved,
+        )
+        if demo:
+            try:
+                await self._plan(provider_id, close_time)
+            except Exception as error:
+                # Logged apart from this coin's own signal, which has already been stored.
+                log.error(
+                    "plan_failed",
+                    close_time=close_time.isoformat(),
+                    error=type(error).__name__,
+                    detail=str(error)[:300],
+                )
+
+    async def _plan(self, provider_id: int, close_time: datetime) -> None:
+        """The money plan, once per close for all coins, so their signals share the room."""
+        if close_time in self._planned:
+            return
+        recent = {at for at in self._planned if close_time - at < timedelta(days=1)}
+        self._planned = recent | {close_time}
+        account = await self._accounts.ensure_account(
+            self._owner_email, PORTFOLIO_ACCOUNT, PORTFOLIO_BALANCE, PLAN_PROFILE
+        )
+        if account is None or await self._accounts.decided(account.id, close_time):
+            # Already decided before a restart: a repeat would store every signal twice.
+            return
+        setups, missing = await self._signals.plan_setups(
+            provider_id, list(self._instruments.values()), close_time
+        )
+        outcomes = await self._signals.run_plan(provider_id, close_time, account, setups)
+        log.info(
+            "plan_evaluated",
+            close_time=close_time.isoformat(),
+            decided=len(setups),
+            signals=sum(outcome.recommendation_id is not None for outcome in outcomes),
+            approved=sum(outcome.approved for outcome in outcomes),
+            missing=missing,
         )
 
 

@@ -34,6 +34,21 @@ def remaining_daily_budget(account: AccountState, profile: RiskProfile) -> Decim
     return limit - loss
 
 
+def remaining_open_risk(account: AccountState, profile: RiskProfile) -> Decimal | None:
+    """Room under the cap on what all open trades could lose together, if the account has one."""
+    if profile.max_open_risk_fraction is None:
+        return None
+    return account.equity * profile.max_open_risk_fraction - account.open_risk
+
+
+def daily_profit_reached(account: AccountState, profile: RiskProfile) -> bool:
+    """The money plan stops new trades for the UTC day once it is this far up (D045)."""
+    stop = profile.daily_profit_stop_fraction
+    if stop is None:
+        return False
+    return account.equity - account.day_start_equity >= account.day_start_equity * stop
+
+
 def scaled_allocation(allocation: Sequence[Decimal], count: int) -> tuple[Decimal, ...]:
     """Fewer targets rescale the shares. A missing target stays missing."""
     shares = allocation[:count]
@@ -92,8 +107,12 @@ def size_trade(
     risk_per_unit = sign * (entry - stop) * multiplier + entry_fee + stop_fee + funding
 
     budget = min(
-        account.equity * profile.max_risk_fraction, remaining_daily_budget(account, profile)
+        account.equity * profile.max_risk_fraction * proposal.risk_share,
+        remaining_daily_budget(account, profile),
     )
+    room = remaining_open_risk(account, profile)
+    if room is not None:
+        budget = min(budget, room)
     usable = risk_per_unit > 0 and budget > 0
     quantity = floor_to_step(budget / risk_per_unit, rules.lot_step) if usable else ZERO
 

@@ -110,6 +110,7 @@ Higher-timeframe strategies are simulated on 1-minute candles, so order and fill
 | Situation | Rule |
 |---|---|
 | Market entry | Next 1M open, plus half spread and slippage |
+| Market entry taken live (demo bot, D044) | The live mid at the decision, rounded against the trade, plus half spread and slippage, at the decision time. In that first minute only the stop is checked, because part of the minute traded before the entry. If that minute cannot absorb the size, the entry is cancelled rather than filled later at an old price. Backtests never use this rule |
 | Stop entry | Triggers when the price trades through the level. Fills at the worse of level or open, plus costs |
 | Limit entry | Fills only if price trades **through** the limit by at least one tick. A touch does not fill |
 | Stop-loss | Fills at the worse of stop or candle open, plus slippage |

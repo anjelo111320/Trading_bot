@@ -19,6 +19,7 @@ CEILING_RISK_FRACTION: Final = Decimal("0.02")
 FLOOR_REWARD_RISK: Final = Decimal(1)
 CEILING_DAILY_LOSS: Final = Decimal("0.05")
 CEILING_LEVERAGE: Final = Decimal(5)
+CEILING_OPEN_RISK: Final = Decimal("0.1")
 
 
 class RiskProfile(DomainModel):
@@ -32,6 +33,9 @@ class RiskProfile(DomainModel):
     max_spread_bps: Decimal = Decimal(5)
     max_data_age_seconds: int = 30
     target_allocation: tuple[Decimal, ...] = (Decimal("0.5"), Decimal("0.3"), Decimal("0.2"))
+    # The money plan's limits (D045). None leaves an account as it was.
+    max_open_risk_fraction: Decimal | None = None
+    daily_profit_stop_fraction: Decimal | None = None
 
     @model_validator(mode="after")
     def _within_ceilings(self) -> RiskProfile:
@@ -45,6 +49,12 @@ class RiskProfile(DomainModel):
             raise ValueError("max_leverage is outside its ceiling")
         if sum(self.target_allocation, Decimal(0)) != Decimal(1):
             raise ValueError("target_allocation must sum to 1")
+        open_risk = self.max_open_risk_fraction
+        if open_risk is not None and not self.max_risk_fraction <= open_risk <= CEILING_OPEN_RISK:
+            raise ValueError("max_open_risk_fraction is outside its range")
+        profit_stop = self.daily_profit_stop_fraction
+        if profit_stop is not None and profit_stop <= 0:
+            raise ValueError("daily_profit_stop_fraction must be positive")
         return self
 
 
@@ -58,6 +68,8 @@ class AccountState(DomainModel):
     day_start_equity: Decimal = Field(gt=0)
     open_positions: int = Field(ge=0)
     gross_exposure: Decimal = Field(ge=0)
+    # What open and pending positions would lose at their current stops.
+    open_risk: Decimal = Field(default=Decimal(0), ge=0)
 
 
 class MarketState(DomainModel):
@@ -84,6 +96,8 @@ class TradeProposal(DomainModel):
     is_countertrend: bool = False
     expiry_candles: int | None = DEFAULT_EXPIRY_CANDLES
     invalidation_conditions: tuple[str, ...] = ()
+    # The money plan's share of the profile's risk per trade (D045). It can only lower risk.
+    risk_share: Decimal = Field(default=Decimal(1), gt=0, le=1)
 
 
 class RiskRequest(DomainModel):

@@ -11,6 +11,7 @@ import { SignalCard } from "./SignalCard";
 const SIGNAL: Signal = {
   id: "1",
   provider: "binance_usdm",
+  strategy: "trend_break_baseline",
   instrument_id: 3,
   timeframe: "15m",
   action: "BUY",
@@ -26,6 +27,7 @@ const SIGNAL: Signal = {
   estimated_fees: "0.19",
   estimated_funding: "0",
   reward_risk_net: "2.257",
+  risk_share: null,
   decision: "APPROVED",
   rejection_codes: [],
   setup_quality_score: "72",
@@ -44,6 +46,7 @@ const SIGNAL: Signal = {
 
 const SUMMARY: PaperSummary = {
   simulated: true,
+  account: "paper",
   starting_balance: "10000",
   equity: "10000",
   open_positions: 0,
@@ -55,6 +58,10 @@ const SUMMARY: PaperSummary = {
   costs: "0",
   win_rate: null,
   expectancy_r: null,
+  day_start_equity: "10000",
+  open_risk: "0",
+  max_open_risk: null,
+  daily_profit_stop: null,
 };
 
 afterEach(cleanup);

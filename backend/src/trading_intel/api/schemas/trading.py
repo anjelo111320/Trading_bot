@@ -17,6 +17,7 @@ class TargetView(BaseModel):
 class SignalView(BaseModel):
     id: str
     provider: str
+    strategy: str
     instrument_id: int
     timeframe: Timeframe
     action: str
@@ -32,6 +33,8 @@ class SignalView(BaseModel):
     estimated_fees: str | None
     estimated_funding: str | None
     reward_risk_net: str | None
+    # The money plan's share of the 1% risk per trade (D045). None outside the plan.
+    risk_share: str | None
     decision: str
     rejection_codes: list[str]
     setup_quality_score: str | None
@@ -65,8 +68,54 @@ class PositionView(BaseModel):
     reconstructed: bool
 
 
+class FillView(BaseModel):
+    kind: str
+    at: UtcDatetime
+    price: str | None
+    quantity: str
+    fee: str
+    funding: str
+    reconstructed: bool
+
+
+class TradeView(BaseModel):
+    """One simulated trade with its plan and every fill, for chart markers and history."""
+
+    simulated: Literal[True] = True
+    id: str
+    instrument_id: int
+    symbol: str
+    strategy: str
+    timeframe: Timeframe
+    side: str
+    status: str
+    signal_state: str | None
+    created_at: UtcDatetime
+    expires_at: UtcDatetime
+    planned_entry: str
+    average_entry: str | None
+    stop_loss: str
+    current_stop: str
+    targets: list[str]
+    planned_quantity: str
+    open_quantity: str
+    realized_pnl: str
+    costs_paid: str
+    opened_at: UtcDatetime | None
+    closed_at: UtcDatetime | None
+    outcome: str | None
+    r_multiple: str | None
+    explanation: str
+    max_account_risk: str | None
+    # The money plan's share of the 1% risk, and what the strategy's evidence asked for (D045).
+    risk_share: str | None
+    evidence_share: str | None
+    fills: list[FillView]
+
+
 class PaperSummary(BaseModel):
     simulated: Literal[True] = True
+    account: str
     starting_balance: str
     equity: str
     open_positions: int
@@ -78,6 +127,11 @@ class PaperSummary(BaseModel):
     costs: str
     win_rate: float | None
     expectancy_r: float | None
+    # Today's start, what open trades could lose, and the money plan's limits (D045).
+    day_start_equity: str
+    open_risk: str
+    max_open_risk: str | None
+    daily_profit_stop: str | None
 
 
 class NewsView(BaseModel):

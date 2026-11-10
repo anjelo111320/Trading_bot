@@ -283,6 +283,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/paper-trading/trades": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Trades */
+        get: operations["trades_api_v1_paper_trading_trades_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/signals": {
         parameters: {
             query?: never;
@@ -499,6 +516,26 @@ export interface components {
              * @enum {string}
              */
             state: "HEALTHY" | "DEGRADED" | "STALE" | "DISCONNECTED" | "RECOVERING";
+        };
+        /** FillView */
+        FillView: {
+            /**
+             * At
+             * Format: date-time
+             */
+            at: string;
+            /** Fee */
+            fee: string;
+            /** Funding */
+            funding: string;
+            /** Kind */
+            kind: string;
+            /** Price */
+            price: string | null;
+            /** Quantity */
+            quantity: string;
+            /** Reconstructed */
+            reconstructed: boolean;
         };
         /** ForecastStepView */
         ForecastStepView: {
@@ -794,18 +831,28 @@ export interface components {
         };
         /** PaperSummary */
         PaperSummary: {
+            /** Account */
+            account: string;
             /** Costs */
             costs: string;
+            /** Daily Profit Stop */
+            daily_profit_stop: string | null;
+            /** Day Start Equity */
+            day_start_equity: string;
             /** Equity */
             equity: string;
             /** Expectancy R */
             expectancy_r: number | null;
             /** Losses */
             losses: number;
+            /** Max Open Risk */
+            max_open_risk: string | null;
             /** Net Pnl */
             net_pnl: string;
             /** Open Positions */
             open_positions: number;
+            /** Open Risk */
+            open_risk: string;
             /** Resolved Trades */
             resolved_trades: number;
             /**
@@ -1092,12 +1139,16 @@ export interface components {
             rejection_codes: string[];
             /** Reward Risk Net */
             reward_risk_net: string | null;
+            /** Risk Share */
+            risk_share: string | null;
             /** Setup Quality Score */
             setup_quality_score: string | null;
             /** State */
             state: string;
             /** Stop Loss */
             stop_loss: string | null;
+            /** Strategy */
+            strategy: string;
             /** Supporting Evidence */
             supporting_evidence: unknown[];
             /** Targets */
@@ -1159,6 +1210,79 @@ export interface components {
             resolved: number;
             /** Status */
             status: string;
+        };
+        /**
+         * TradeView
+         * @description One simulated trade with its plan and every fill, for chart markers and history.
+         */
+        TradeView: {
+            /** Average Entry */
+            average_entry: string | null;
+            /** Closed At */
+            closed_at: string | null;
+            /** Costs Paid */
+            costs_paid: string;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /** Current Stop */
+            current_stop: string;
+            /** Evidence Share */
+            evidence_share: string | null;
+            /**
+             * Expires At
+             * Format: date-time
+             */
+            expires_at: string;
+            /** Explanation */
+            explanation: string;
+            /** Fills */
+            fills: components["schemas"]["FillView"][];
+            /** Id */
+            id: string;
+            /** Instrument Id */
+            instrument_id: number;
+            /** Max Account Risk */
+            max_account_risk: string | null;
+            /** Open Quantity */
+            open_quantity: string;
+            /** Opened At */
+            opened_at: string | null;
+            /** Outcome */
+            outcome: string | null;
+            /** Planned Entry */
+            planned_entry: string;
+            /** Planned Quantity */
+            planned_quantity: string;
+            /** R Multiple */
+            r_multiple: string | null;
+            /** Realized Pnl */
+            realized_pnl: string;
+            /** Risk Share */
+            risk_share: string | null;
+            /** Side */
+            side: string;
+            /** Signal State */
+            signal_state: string | null;
+            /**
+             * Simulated
+             * @default true
+             * @constant
+             */
+            simulated: true;
+            /** Status */
+            status: string;
+            /** Stop Loss */
+            stop_loss: string;
+            /** Strategy */
+            strategy: string;
+            /** Symbol */
+            symbol: string;
+            /** Targets */
+            targets: string[];
+            timeframe: components["schemas"]["Timeframe"];
         };
         /**
          * TradingMode
@@ -1640,6 +1764,7 @@ export interface operations {
         parameters: {
             query?: {
                 limit?: number;
+                account?: "paper" | "demo" | "portfolio";
             };
             header?: never;
             path?: never;
@@ -1669,7 +1794,9 @@ export interface operations {
     };
     summary_api_v1_paper_trading_summary_get: {
         parameters: {
-            query?: never;
+            query?: {
+                account?: "paper" | "demo" | "portfolio";
+            };
             header?: never;
             path?: never;
             cookie?: never;
@@ -1696,10 +1823,44 @@ export interface operations {
             };
         };
     };
+    trades_api_v1_paper_trading_trades_get: {
+        parameters: {
+            query?: {
+                account?: "paper" | "demo" | "portfolio";
+                instrument_id?: number | null;
+                limit?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TradeView"][];
+                };
+            };
+            /** @description Default Response */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
     signals_api_v1_signals_get: {
         parameters: {
             query?: {
                 limit?: number;
+                account?: "paper" | "demo" | "portfolio";
             };
             header?: never;
             path?: never;

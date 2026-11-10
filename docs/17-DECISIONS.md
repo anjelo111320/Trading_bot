@@ -424,6 +424,49 @@ Consequences:
 - Liquidation bursts and open interest, which were the clearest signs on 2026-11-05, can only be studied forward from November 2026.
 Revisit conditions: the owner wants the warning shown as information, or six months of forward liquidation and open-interest data exist.
 
+### D044: A demo bot on the 15M rule baseline, in its own 100 USDT account
+Date: 2026-11-07.
+Status: Accepted by the owner, who chose all four options on 2026-11-07.
+Context: The owner wanted a bot they can watch buy and sell on the live chart, with every trade saved and profit counted on 100 USDT. The two tested strategies trade about twice a month per coin and had made no trade since D042 started.
+Options considered:
+- Strategy: add a faster demo in its own account; move the tested strategies to 100 USDT; or run only a faster strategy.
+- Balance: 100 USDT as the starting balance at 1% risk; 100 USDT per trade; or a starting balance at 2% risk.
+- Entry: at the live price seconds after the close; never missing a signal; both; or before the candle closes, which acts on unconfirmed candles.
+- Chart: one coin with a picker; or all six in a grid.
+Decision:
+- The quant worker runs the 15M rule baseline (docs/reports/phase-4.md) at every 15M close for each core perpetual, into a separate `Demo` paper account with 100 USDT and the default risk profile. The risk engine decides every trade. The tested strategies and their `Paper` account are unchanged.
+- The bot enters at the live price. The risk engine sizes the trade from the live mid, rounded against the trade, and the entry fills there plus half the spread and slippage at the decision time, about 10 seconds after the close. The shared simulator checks only the stop in that first minute (docs/10, fill rules).
+- The API takes `account=paper|demo` on signals, summary and positions, and adds `GET /paper-trading/trades` with every fill. The dashboard's Demo bot page draws entries, exits and open levels on the live chart, with the account and the trade history.
+Consequences:
+- The baseline showed no edge in its only backtest, so the page labels it untested. Its results are a demonstration, not evidence for the tested strategies.
+- More decisions: 24 a day per coin instead of 1. In its three-month backtest the baseline made 9 BTC trades and 32 ETH trades, so a few trades a week across six coins is a rough expectation, not a promise.
+- At 100 USDT, 1% risk is 1 USDT. Trades whose size falls below Binance's minimum (0.001 BTC, 20 USDT of ETH, 5 USDT otherwise) or whose notional would exceed equity are refused, and the refusal is shown with its reason.
+- Live entries do not match the backtest entry rule exactly, so demo fills are not used to validate backtests.
+Revisit conditions: the owner wants a different strategy on the page, a different balance or risk, or the demo account to stop.
+
+### D045: A money plan across all coins, sized by tested evidence
+Date: 2026-11-09.
+Status: Accepted by the owner, who chose all four recommended options on 2026-11-09.
+Context: The owner wanted the whole fund divided across many coins, with more money on the signals with the most potential, and a target of 3% profit a day. They asked to make Python's engine more accurate before Claude is added. The best tested strategy averaged about 0.02% a day in its backtest, and Python's setup score is mostly fixed numbers, so it does not measure a chance of winning. Of the first 12 live signals, 7 were refused because the account was full, and all 12 were sells on coins that move together.
+Options considered:
+- The 3% target: stop new trades for the day at +3%; only show progress; or raise risk to about 18% a trade to chase it, where three losses in a row would cost about 45%.
+- Splitting money: by tested evidence per strategy; equally; or by the current setup score, which would mostly favour farther targets.
+- Account: a new 1,000 USDT account; the 100 USDT demo, where most tested trades fall below Binance's minimum size; or the main account, which would break its comparison with the backtests.
+- Accuracy first: test the strategies on the other four coins; build a tested signal score; wait for live results. The owner chose all three.
+Decision:
+- A new `Portfolio` paper account with 1,000 USDT runs the daily trend, the 1H pattern breakout and the 15M rule baseline on all six core perpetuals. The `Paper` and `Demo` accounts are unchanged.
+- Each strategy asks for a share of the 1% risk per trade set by the six-coin replication study, pre-registered and run once (docs/33): daily trend full, pattern breakout half, 15M baseline a quarter.
+- At each 15M close, all due strategies are decided for all coins together. The strongest evidence is served first and equal evidence splits what is left, within the room for open risk, the daily loss budget, exposure and position slots.
+- New limits, for this account only: at most 3% of equity at risk across open trades, new trades stop for the UTC day at +3%, and up to 10 positions. Risk per trade stays at most 1%, exposure within equity, and the daily loss limit 3%.
+- The risk engine decides every trade. A share can only lower risk, as in D038, and is stored with each assessment.
+Consequences:
+- The +3% stop is a ceiling, not a target. Nothing trades more to reach it, and most days will end well below it.
+- Shares weigh backtest evidence; they are not win probabilities, and the dashboard says so.
+- The 15M baseline fills on one-minute candles, which exist only from 2025, so its quarter share rests on no multi-coin test.
+- Correlated coins still count as separate trades. The 3% open-risk limit caps what they can lose together.
+- The signal score is the next accuracy step. It needs its own pre-registration and a test on history before it can change size.
+Revisit conditions: the study's shares are replaced by forward paper results after enough trades per strategy, a tested signal score passes, or the owner wants different limits.
+
 ## Owner Decisions, 2026-11-05 Model Forecasts
 
 ### D040: Kronos forecasts are labelled evidence, never prices

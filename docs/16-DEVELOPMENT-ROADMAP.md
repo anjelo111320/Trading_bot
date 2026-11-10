@@ -12,6 +12,8 @@ Updated 2026-11-02.
 - Phase 6 is built, and Claude classification waits for an API key: [phase-6.md](reports/phase-6.md).
 - Pattern signals, added 2026-11-03: trend-aware candles, chart patterns, a 1H pattern strategy and a history backtest are built. The backtest made money in simulation on BTC and ETH but shows no proven edge. See [27-PATTERN-SIGNAL-PLAN.md](27-PATTERN-SIGNAL-PLAN.md) and D030 to D034.
 - Phase 7 has not started. It needs the owner's Claude API key. Under D030, Claude trades its own paper account, so it no longer waits for the evidence gate.
+- Money plan, added 2026-11-09 (D045): a 1,000 USDT paper account runs all three strategies on all six coins and splits risk between signals by tested evidence, after the six-coin replication study (docs/33). Next on accuracy: a pre-registered signal score, tested on history before it can change size.
+- Demo bot, added 2026-11-07 (D044): the untested 15M rule baseline trades all six coins in a separate 100 USDT paper account, entering at the live price, and the dashboard's Demo bot page draws every entry and exit on the live chart. See [11-PAPER-TRADING.md](11-PAPER-TRADING.md).
 - Model forecasts, added 2026-11-05: Kronos runs beside a resampling baseline as unvalidated evidence for Claude, and every forecast is stored and scored. The dashboard's Forecast page draws it with Python's levels, patterns and the analyst plan. Running at setups waits for the paper loop and Phase 7. See [30-MODEL-FORECASTS.md](30-MODEL-FORECASTS.md) and D040.
 
 - Done: repository inspection, provider research, the ten first deliverables and decisions D006 to D028. See [22-REQUIREMENTS-TRACEABILITY.md](22-REQUIREMENTS-TRACEABILITY.md) and [17-DECISIONS.md](17-DECISIONS.md).

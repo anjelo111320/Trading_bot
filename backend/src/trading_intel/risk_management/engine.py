@@ -15,7 +15,9 @@ from trading_intel.domain.instruments import InstrumentRules, InstrumentType
 from trading_intel.domain.signals import EntryType
 from trading_intel.risk_management.calculators.linear import (
     SUPPORTED,
+    daily_profit_reached,
     remaining_daily_budget,
+    remaining_open_risk,
     size_trade,
 )
 from trading_intel.risk_management.models import (
@@ -145,6 +147,11 @@ def _policy_checks(request: RiskRequest) -> list[Code]:
     codes: list[Code] = []
     if remaining_daily_budget(account, profile) <= 0:
         codes.append(Code.DAILY_LOSS_REACHED)
+    if daily_profit_reached(account, profile):
+        codes.append(Code.DAILY_PROFIT_REACHED)
+    room = remaining_open_risk(account, profile)
+    if room is not None and room <= 0:
+        codes.append(Code.OPEN_RISK_FULL)
     if account.open_positions >= profile.max_open_positions:
         codes.append(Code.MAX_OPEN_POSITIONS)
     is_spot = request.instrument.instrument_type is InstrumentType.SPOT

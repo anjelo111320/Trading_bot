@@ -5,6 +5,7 @@ const LINKS = [
   { href: "/forecast", label: "Forecast" },
   { href: "/signals", label: "Signals" },
   { href: "/paper", label: "Paper trading" },
+  { href: "/bot", label: "Bot" },
   { href: "/news", label: "News" },
 ];
 

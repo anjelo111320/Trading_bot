@@ -4,8 +4,14 @@ import {
   CandlestickSeries,
   ColorType,
   createChart,
+  createSeriesMarkers,
+  LineStyle,
   type IChartApi,
+  type IPriceLine,
   type ISeriesApi,
+  type ISeriesMarkersPluginApi,
+  type SeriesMarker,
+  type Time,
 } from "lightweight-charts";
 import { useEffect, useRef } from "react";
 
@@ -14,19 +20,36 @@ import type { LiveCandle } from "@/features/market/useLiveMarket";
 
 import { DOWN, UP, closedBar, formingBar } from "./bars";
 
+/** A horizontal level, such as an open trade's entry, stop or target. */
+export type PriceLevel = { price: number; color: string; title: string; dashed: boolean };
+
 type Props = {
   candles: Candle[];
   live: LiveCandle | null;
   onNeedOlder: () => void;
   onHover: (time: number | null) => void;
+  markers?: SeriesMarker<Time>[];
+  levels?: PriceLevel[];
 };
+
+const NO_MARKERS: SeriesMarker<Time>[] = [];
+const NO_LEVELS: PriceLevel[] = [];
 
 const OLDER_THRESHOLD_BARS = 30;
 
-export function CandleChart({ candles, live, onNeedOlder, onHover }: Props) {
+export function CandleChart({
+  candles,
+  live,
+  onNeedOlder,
+  onHover,
+  markers = NO_MARKERS,
+  levels = NO_LEVELS,
+}: Props) {
   const container = useRef<HTMLDivElement>(null);
   const chartRef = useRef<IChartApi | null>(null);
   const seriesRef = useRef<ISeriesApi<"Candlestick"> | null>(null);
+  const markersRef = useRef<ISeriesMarkersPluginApi<Time> | null>(null);
+  const linesRef = useRef<IPriceLine[]>([]);
   const newestDrawn = useRef(0);
   const handlers = useRef({ onNeedOlder, onHover });
 
@@ -71,12 +94,37 @@ export function CandleChart({ candles, live, onNeedOlder, onHover }: Props) {
     });
     chartRef.current = chart;
     seriesRef.current = series;
+    markersRef.current = createSeriesMarkers(series, []);
     return () => {
       chart.remove();
       chartRef.current = null;
       seriesRef.current = null;
+      markersRef.current = null;
+      linesRef.current = [];
     };
   }, []);
+
+  useEffect(() => {
+    markersRef.current?.setMarkers(markers);
+  }, [markers, candles]);
+
+  useEffect(() => {
+    const series = seriesRef.current;
+    if (!series) {
+      return;
+    }
+    linesRef.current.forEach((line) => series.removePriceLine(line));
+    linesRef.current = levels.map((level) =>
+      series.createPriceLine({
+        price: level.price,
+        color: level.color,
+        title: level.title,
+        lineWidth: 1,
+        lineStyle: level.dashed ? LineStyle.Dashed : LineStyle.Solid,
+        axisLabelVisible: true,
+      }),
+    );
+  }, [levels]);
 
   useEffect(() => {
     const bars = candles.map(closedBar);

@@ -100,6 +100,23 @@ Forecast values are floats because they are model samples. Market prices stay st
 
 `POST /forecasts/analyse` takes `provider` and `instrument_id`, and is the only write route besides authentication. It runs a forecast and stores it. Forecasts cannot reach orders (D040), and a regression test keeps the list of write routes fixed.
 
+## Signals and Paper Trading Endpoints
+
+All are read-only. Nothing here can place or change a trade.
+
+| Method and path | Purpose | Limits |
+|---|---|---|
+| `GET /api/v1/signals` | Recent recommendations with their risk decision and strategy | `limit` 1 to 200 |
+| `GET /api/v1/paper-trading/summary` | Starting balance, equity with open trades at the latest price, and resolved results | |
+| `GET /api/v1/paper-trading/positions` | Recent simulated positions | `limit` 1 to 200 |
+| `GET /api/v1/paper-trading/trades` | Each simulated trade with its plan, current stop, targets and every fill, newest first | `limit` 1 to 500 |
+
+Each takes `account`: `paper`, the tested strategies' account and the default; `demo`, the demo bot's 100 USDT account (D044); or `portfolio`, the money plan's 1,000 USDT account (D045). Any other value is refused with 422. `GET /paper-trading/trades` also takes an optional `instrument_id`.
+
+The summary also gives `day_start_equity`, `open_risk` (what open trades would lose at their stops), and the account's `max_open_risk` and `daily_profit_stop` fractions, which are null outside the money plan. Signals carry `risk_share`, and trades carry `max_account_risk`, `risk_share` and `evidence_share`: the share of the 1% risk the trade was given and the share its strategy's evidence asked for. Both are null outside the money plan.
+
+A trade's fills have a `kind` (`entry`, `tp1` to `tp3`, `stop`, `expiry`, `invalidation` or `funding`), a UTC time, a price, quantity, fee, funding and whether the fill was `reconstructed` from repaired candles. Every trade and summary carries `simulated: true`.
+
 ## Event Envelope
 
 Every event has this structure. JSON Schemas are exported from Pydantic by `domain/events.py`.

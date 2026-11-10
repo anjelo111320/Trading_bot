@@ -73,8 +73,10 @@ Limits are stored per account in `risk_profiles`, so each change is a new audite
 | `max_spread_bps` | 5 | Configurable | Proposed |
 | `max_data_age_seconds` | 30 | Configurable | Proposed |
 | `target_allocation` | 50/30/20 | Must sum to 1 | Proposed |
+| `max_open_risk_fraction` | None. The money plan uses 0.03 | From `max_risk_fraction` to 0.1 | D045 |
+| `daily_profit_stop_fraction` | None. The money plan uses 0.03 | Above 0 | D045 |
 
-The proposed defaults are starting points to be reviewed, not validated settings.
+The proposed defaults are starting points to be reviewed, not validated settings. The two D045 limits are kept in the profile's `settings`, and an account without them behaves as before.
 
 ### Inputs and Outputs
 
@@ -131,11 +133,13 @@ U  = s × (E - S) × m + Ce + Cs + F
 ### Position Size
 
 ```text
-B = min(equity × max_risk_fraction, remaining_daily_loss_budget)
+B = min(equity × max_risk_fraction × w, remaining_daily_loss_budget, open_risk_room)
 Q = floor(B / U) to the instrument's lot step
 A = Q × U                   maximum account risk
 N = Q × E × m               notional
 ```
+
+`w` is the proposal's `risk_share`, from above 0 to 1, and 1 unless the money plan sets it (D045). It can only lower risk. `open_risk_room` applies only to accounts with `max_open_risk_fraction`: `equity × max_open_risk_fraction - open risk`, where open risk is what every open or pending trade would lose at its current stop.
 
 Quantity is always rounded down, so actual risk never exceeds the budget. If `Q` falls below the minimum quantity, or notional falls below the minimum notional, the trade is rejected rather than increased.
 
@@ -189,6 +193,14 @@ The stop must sit inside the liquidation price, separated by at least 1 ATR on t
 
 A stop can still gap past its level, so the daily limit is a control, not a guarantee.
 
+### Money Plan Limits
+
+For accounts that set them (D045):
+
+- **Open risk.** What all open and pending trades would lose at their current stops stays at or below `max_open_risk_fraction` of equity. A trade is shrunk to the room left, and refused as `OPEN_RISK_FULL` when none is left. Per trade it is the engine's own `U × Q`, until a stop move makes it the distance to the new stop.
+- **Daily profit stop.** Once equity is `daily_profit_stop_fraction` above the day's starting equity, new entries are refused as `DAILY_PROFIT_REACHED` until the next UTC day. Open trades keep their stops and targets. It is a ceiling, not a goal: nothing trades more to reach it.
+- **Signals that arrive together** are split before the engine sees them (`risk_management/allocation.py`). Each asks for its strategy's evidence share of the 1% risk. The highest share is served first, and signals with the same share split what is left in proportion, within the open-risk room, the remaining daily loss budget, the exposure room and the free position slots. The engine then checks each one, counting the trades approved before it at the same close.
+
 ### Exposure Limits
 
 ```text
@@ -232,6 +244,8 @@ A new trade is rejected if it would exceed `max_open_positions` or `max_total_ex
 | `QTY_ABOVE_MAX` | Quantity over the instrument maximum |
 | `NOTIONAL_BELOW_MIN` | Notional under the instrument minimum |
 | `DAILY_LOSS_REACHED` | Daily loss limit hit |
+| `DAILY_PROFIT_REACHED` | The money plan's daily profit stop was reached (D045) |
+| `OPEN_RISK_FULL` | No room left under the money plan's open-risk limit (D045) |
 | `MAX_OPEN_POSITIONS` | Too many positions |
 | `EXPOSURE_EXCEEDED` | Exposure limit exceeded |
 | `LEVERAGE_EXCEEDED` | Leverage above the limit |

@@ -4,6 +4,7 @@ import asyncio
 import json
 from collections.abc import AsyncIterator, Iterator
 from datetime import UTC, datetime, timedelta
+from decimal import Decimal
 from typing import Any
 
 import asyncpg
@@ -47,6 +48,7 @@ PROTECTED = [
     "/api/v1/signals",
     "/api/v1/paper-trading/positions",
     "/api/v1/paper-trading/summary",
+    "/api/v1/paper-trading/trades?account=demo",
     "/api/v1/auth/me",
     "/api/v1/market/candles?provider=binance_spot&instrument_id=1&timeframe=1m",
     "/api/v1/market/price?provider=binance_spot&instrument_id=1",
@@ -286,6 +288,35 @@ def test_paper_summary_is_labelled_simulated_and_shows_no_fake_results(api: Test
     assert body["expectancy_r"] is None
     assert api.get("/api/v1/signals").json() == []
     assert api.get("/api/v1/paper-trading/positions").json() == []
+
+
+def test_the_demo_bot_reports_its_own_100_usdt_account(api: TestClient) -> None:
+    """D044: the demo bot's account is separate from the tested strategies' account."""
+    login(api)
+    demo = api.get("/api/v1/paper-trading/summary?account=demo").json()
+    assert demo["simulated"] is True
+    assert demo["account"] == "demo"
+    assert Decimal(demo["starting_balance"]) == 100
+    assert Decimal(demo["equity"]) == 100
+    assert api.get("/api/v1/paper-trading/summary").json()["account"] == "paper"
+    assert api.get("/api/v1/paper-trading/trades?account=demo").json() == []
+    assert api.get("/api/v1/signals?account=demo").json() == []
+    assert api.get("/api/v1/paper-trading/summary?account=live").status_code == 422
+
+
+def test_the_money_plan_reports_its_own_1000_usdt_account_and_limits(api: TestClient) -> None:
+    """D045: the API may create the account first, so it must give it the plan's limits."""
+    login(api)
+    plan = api.get("/api/v1/paper-trading/summary?account=portfolio").json()
+    assert plan["account"] == "portfolio"
+    assert Decimal(plan["starting_balance"]) == 1000
+    assert Decimal(plan["day_start_equity"]) == 1000
+    assert Decimal(plan["open_risk"]) == 0
+    assert Decimal(plan["max_open_risk"]) == Decimal("0.03")
+    assert Decimal(plan["daily_profit_stop"]) == Decimal("0.03")
+    demo = api.get("/api/v1/paper-trading/summary?account=demo").json()
+    assert demo["max_open_risk"] is None and demo["daily_profit_stop"] is None
+    assert api.get("/api/v1/paper-trading/trades?account=portfolio").json() == []
 
 
 def test_no_route_can_place_a_trade(api: TestClient) -> None:

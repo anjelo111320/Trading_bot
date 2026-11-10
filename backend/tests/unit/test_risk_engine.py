@@ -249,6 +249,70 @@ def test_each_rejection_code(change: dict[str, Any], expected: Code) -> None:
     assert expected in result.codes
 
 
+PLAN = RiskProfile(
+    max_open_positions=10, max_open_risk_fraction=D("0.03"), daily_profit_stop_fraction=D("0.03")
+)
+
+
+def account(**overrides: Any) -> AccountState:
+    values: dict[str, Any] = {
+        "equity": D(10000),
+        "day_start_equity": D(10000),
+        "open_positions": 0,
+        "gross_exposure": D(0),
+    }
+    return AccountState(**{**values, **overrides})
+
+
+def test_a_risk_share_lowers_the_budget_and_nothing_else() -> None:
+    full = assess(request()).sizing
+    half = assess(request(proposal=proposal(risk_share=D("0.5")))).sizing
+    assert full is not None and half is not None
+    assert half.risk_budget == D("50.00")
+    assert half.quantity == D("21.85")
+    assert half.target_reward_risk == full.target_reward_risk
+
+
+@pytest.mark.parametrize("share", [D(0), D("-0.5"), D("1.01")])
+def test_a_risk_share_can_never_raise_risk_or_be_empty(share: D) -> None:
+    with pytest.raises(ValidationError):
+        proposal(risk_share=share)
+    payload = request().model_dump(mode="python")
+    payload["proposal"]["risk_share"] = share
+    assert assess_raw(payload).codes == (Code.SCHEMA_INVALID,)
+
+
+def test_the_money_plan_stops_new_trades_at_three_percent_up() -> None:
+    up = account(equity=D(10300))
+    result = assess(request(account=up, profile=PLAN))
+    assert result.codes == (Code.DAILY_PROFIT_REACHED,)
+    nearly = account(equity=D("10299.99"))
+    assert assess(request(account=nearly, profile=PLAN)).approved
+
+
+def test_open_risk_shrinks_a_trade_to_the_room_left_then_refuses() -> None:
+    sizing = assess(request(account=account(open_risk=D(260)), profile=PLAN)).sizing
+    assert sizing is not None
+    assert sizing.risk_budget == D(40)
+    assert sizing.max_account_risk <= D(40)
+    full = assess(request(account=account(open_risk=D(300)), profile=PLAN))
+    assert Code.OPEN_RISK_FULL in full.codes
+
+
+def test_accounts_without_the_plan_ignore_open_risk_and_profit() -> None:
+    busy = account(equity=D(10500), open_risk=D(5000))
+    assert assess(request(account=busy)).approved
+
+
+def test_the_plan_limits_stay_inside_their_ceilings() -> None:
+    with pytest.raises(ValidationError):
+        RiskProfile(max_open_risk_fraction=D("0.005"))
+    with pytest.raises(ValidationError):
+        RiskProfile(max_open_risk_fraction=D("0.2"))
+    with pytest.raises(ValidationError):
+        RiskProfile(daily_profit_stop_fraction=D(0))
+
+
 def test_unsupported_instrument_is_refused() -> None:
     other = instrument().model_copy(update={"instrument_type": "forex"})
     result = assess(request().model_copy(update={"instrument": other}))

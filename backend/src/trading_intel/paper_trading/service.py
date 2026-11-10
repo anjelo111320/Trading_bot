@@ -66,6 +66,7 @@ def build_order(trade: OpenTrade) -> SimulatedOrder:
         stop_slippage=number("stop_slippage"),
         placed_at=trade.created_at,
         expires_at=trade.expires_at,
+        filled_price=number("entry_fill") if "entry_fill" in costs else None,
     )
 
 

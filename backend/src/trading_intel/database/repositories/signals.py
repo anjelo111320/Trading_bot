@@ -21,6 +21,15 @@ from trading_intel.risk_management.models import (
 )
 
 STARTING_BALANCE: Final = Decimal(10000)
+PAPER_ACCOUNT: Final = "Paper"
+# The demo bot's account: the 15M rule strategy, entering at the live price (D044).
+DEMO_ACCOUNT: Final = "Demo"
+DEMO_BALANCE: Final = Decimal(100)
+# The money plan's account: every strategy on every core coin, sized by evidence (D045).
+PORTFOLIO_ACCOUNT: Final = "Portfolio"
+PORTFOLIO_BALANCE: Final = Decimal(1000)
+# Limits newer than the profile's columns, kept in its settings.
+PLAN_SETTINGS: Final = ("max_open_risk_fraction", "daily_profit_stop_fraction")
 ACTIVE_STATES: Final = ("CANDIDATE", "VALIDATED", "ACTIVE", "ENTRY_TRIGGERED", "TP1_HIT", "TP2_HIT")
 
 
@@ -59,8 +68,14 @@ class SignalRepository:
     def __init__(self, engine: AsyncEngine) -> None:
         self._engine = engine
 
-    async def ensure_account(self, email: str) -> Account | None:
-        """The single paper account, created on first use with default limits."""
+    async def ensure_account(
+        self,
+        email: str,
+        name: str = PAPER_ACCOUNT,
+        balance: Decimal = STARTING_BALANCE,
+        limits: RiskProfile | None = None,
+    ) -> Account | None:
+        """A named paper account, created on first use with these limits or the defaults."""
         async with self._engine.begin() as connection:
             user = (
                 await connection.execute(
@@ -74,9 +89,9 @@ class SignalRepository:
                 await connection.execute(
                     text(
                         "SELECT id, starting_balance FROM trading_accounts "
-                        "WHERE user_id = :user AND name = 'Paper'"
+                        "WHERE user_id = :user AND name = :name"
                     ),
-                    {"user": user},
+                    {"user": user, "name": name},
                 )
             ).one_or_none()
             if row is None:
@@ -85,13 +100,13 @@ class SignalRepository:
                         text(
                             """INSERT INTO trading_accounts (user_id, name, base_currency,
                                  starting_balance)
-                               VALUES (:user, 'Paper', 'USDT', :balance)
+                               VALUES (:user, :name, 'USDT', :balance)
                                RETURNING id, starting_balance"""
                         ),
-                        {"user": user, "balance": STARTING_BALANCE},
+                        {"user": user, "name": name, "balance": balance},
                     )
                 ).one()
-                await self._create_profile(connection, row.id, user)
+                await self._create_profile(connection, row.id, user, limits or RiskProfile())
             profile = (
                 (
                     await connection.execute(
@@ -107,16 +122,22 @@ class SignalRepository:
             )
         return Account(row.id, row.starting_balance, profile["id"], _profile_of(profile))
 
-    async def _create_profile(self, connection: AsyncConnection, account: UUID, user: UUID) -> None:
-        defaults = RiskProfile()
+    async def _create_profile(
+        self, connection: AsyncConnection, account: UUID, user: UUID, defaults: RiskProfile
+    ) -> None:
+        settings = {
+            name: str(value)
+            for name in PLAN_SETTINGS
+            if (value := getattr(defaults, name)) is not None
+        }
         await connection.execute(
             text(
                 """INSERT INTO risk_profiles (account_id, version, max_risk_fraction,
                      min_reward_risk, countertrend_extra_rr, max_daily_loss_fraction,
                      max_open_positions, max_total_exposure_fraction, max_leverage,
-                     max_spread_bps, max_data_age_seconds, created_by)
+                     max_spread_bps, max_data_age_seconds, settings, created_by)
                    VALUES (:account, 1, :risk, :rr, :extra, :daily, :positions, :exposure,
-                     :leverage, :spread, :age, :user)"""
+                     :leverage, :spread, :age, CAST(:settings AS jsonb), :user)"""
             ),
             {
                 "account": account,
@@ -129,6 +150,7 @@ class SignalRepository:
                 "leverage": defaults.max_leverage,
                 "spread": defaults.max_spread_bps,
                 "age": defaults.max_data_age_seconds,
+                "settings": json.dumps(settings),
                 "user": user,
             },
         )
@@ -175,6 +197,20 @@ class SignalRepository:
                 )
             ).scalar_one()
         return found
+
+    async def decided(self, account_id: UUID, data_as_of: datetime) -> bool:
+        """Whether this close already has stored signals, so a restart cannot repeat a batch."""
+        async with self._engine.connect() as connection:
+            found = (
+                await connection.execute(
+                    text(
+                        """SELECT EXISTS (SELECT 1 FROM trade_recommendations
+                           WHERE account_id = :account AND data_as_of = :at)"""
+                    ),
+                    {"account": account_id, "at": data_as_of},
+                )
+            ).scalar_one()
+        return bool(found)
 
     async def is_active(self, account_id: UUID, key: str) -> bool:
         async with self._engine.connect() as connection:
@@ -354,9 +390,10 @@ class SignalRepository:
             },
         )
 
-    async def recent(self, limit: int = 50) -> list[dict[str, Any]]:
+    async def recent(self, account_id: UUID, limit: int = 50) -> list[dict[str, Any]]:
         query = text(
-            """SELECT r.id, r.instrument_id, p.code AS provider, r.timeframe::text AS timeframe,
+            """SELECT r.id, r.instrument_id, p.code AS provider, c.name AS strategy,
+                      r.timeframe::text AS timeframe,
                       r.action::text AS action, r.entry_type::text AS entry_type, r.entry_price,
                       r.stop_loss, r.market_price, r.setup_quality_score, r.news_alignment,
                       r.data_reliability_score, r.probability_status, r.technical_explanation,
@@ -364,6 +401,7 @@ class SignalRepository:
                       r.invalidation_conditions, r.created_at, r.expires_at, r.data_as_of,
                       a.decision, a.rejection_codes, a.quantity, a.notional, a.fees_est,
                       a.max_account_risk, a.reward_risk_net, a.funding_est,
+                      a.inputs->>'risk_share' AS risk_share,
                       COALESCE(s.state::text, 'REJECTED') AS state,
                       (SELECT json_agg(json_build_object('price', t.price::text,
                           'allocation', t.allocation_fraction::text,
@@ -371,17 +409,27 @@ class SignalRepository:
                        FROM trade_targets t WHERE t.recommendation_id = r.id) AS targets
                FROM trade_recommendations r
                JOIN providers p ON p.id = r.provider_id
+               JOIN strategy_configurations c ON c.id = r.strategy_configuration_id
                JOIN risk_assessments a ON a.recommendation_id = r.id
                LEFT JOIN signal_current_state s ON s.recommendation_id = r.id
+               WHERE r.account_id = :account
                ORDER BY r.created_at DESC LIMIT :limit"""
         )
+        params = {"account": account_id, "limit": limit}
         async with self._engine.connect() as connection:
-            rows = (await connection.execute(query, {"limit": limit})).mappings().all()
+            rows = (await connection.execute(query, params)).mappings().all()
         return [dict(row) for row in rows]
 
 
 def _profile_of(row: Any) -> RiskProfile:
+    settings = row["settings"] or {}
+
+    def setting(name: str) -> Decimal | None:
+        return Decimal(settings[name]) if name in settings else None
+
     return RiskProfile(
+        max_open_risk_fraction=setting("max_open_risk_fraction"),
+        daily_profit_stop_fraction=setting("daily_profit_stop_fraction"),
         max_risk_fraction=row["max_risk_fraction"],
         min_reward_risk=row["min_reward_risk"],
         max_daily_loss_fraction=row["max_daily_loss_fraction"],

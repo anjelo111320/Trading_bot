@@ -12,6 +12,7 @@ from sqlalchemy import text
 from tests.conftest import make_settings
 from tests.integration.support import SUPERUSER_URL
 from tests.quant_data import candle
+from trading_intel.api.routers.trading import _trade
 from trading_intel.core.clock import FixedClock
 from trading_intel.database.engine import create_engine
 from trading_intel.database.repositories.accounts import UserRepository
@@ -25,15 +26,24 @@ from trading_intel.database.repositories.operations import (
 )
 from trading_intel.database.repositories.paper import PaperRepository
 from trading_intel.database.repositories.reference import ReferenceRepository
-from trading_intel.database.repositories.signals import Account, SignalRepository
+from trading_intel.database.repositories.signals import (
+    DEMO_ACCOUNT,
+    DEMO_BALANCE,
+    PORTFOLIO_ACCOUNT,
+    PORTFOLIO_BALANCE,
+    Account,
+    SignalRepository,
+)
 from trading_intel.domain.base import DataOrigin
 from trading_intel.domain.candles import ClosedCandle, Timeframe
+from trading_intel.domain.events import plain
 from trading_intel.domain.instruments import Instrument, InstrumentRules
 from trading_intel.domain.signals import Action, EntryType, Side
 from trading_intel.paper_trading.service import PaperService
 from trading_intel.risk_management.models import TradeProposal
 from trading_intel.trade_signals.baseline import BaselineDecision
-from trading_intel.trade_signals.service import SignalService, StrategyIdentity
+from trading_intel.trade_signals.portfolio import PLAN_PROFILE
+from trading_intel.trade_signals.service import Setup, SignalService, StrategyIdentity
 
 pytestmark = pytest.mark.integration
 
@@ -500,3 +510,175 @@ async def test_a_book_from_the_minute_just_finished_counts_as_fresh(world: World
     )
     outcome = await approve(world)
     assert outcome.approved, outcome.reasons
+
+
+async def demo_trade(world: World, **overrides: Any) -> tuple[Account, Any]:
+    """The demo bot's signal ten seconds into the minute, through the same risk engine."""
+    demo = await world.records.ensure_account(EMAIL, DEMO_ACCOUNT, DEMO_BALANCE)
+    assert demo is not None
+    world.clock.advance(10)
+    outcome = await world.signals._assess(
+        world.provider_id,
+        world.instrument,
+        NOW,
+        demo,
+        await RuleRepository(world.signals._rules._engine).current(
+            world.provider_id, world.instrument.id
+        ),
+        proposal(**overrides),
+        D(1),
+        ("BOS with both higher timeframes up",),
+        instant=True,
+    )
+    return demo, outcome
+
+
+async def test_the_demo_bot_has_its_own_100_usdt_account(world: World) -> None:
+    demo = await world.records.ensure_account(EMAIL, DEMO_ACCOUNT, DEMO_BALANCE)
+    assert demo is not None
+    assert demo.id != world.account.id
+    assert demo.starting_balance == D(100)
+    assert demo.profile.max_risk_fraction == D("0.01")
+    again = await world.records.ensure_account(EMAIL, DEMO_ACCOUNT, DEMO_BALANCE)
+    assert again is not None and again.id == demo.id
+
+
+async def test_the_demo_bot_is_sized_and_filled_at_the_live_price(world: World) -> None:
+    """D044: the entry is the live mid rounded against the trade, not the 15M close."""
+    demo, outcome = await demo_trade(world, entry=D("99.50"))
+    assert outcome.approved, outcome.reasons
+    [plan] = await rows(
+        "SELECT r.entry_price, a.entry_fill_est, a.max_account_risk FROM trade_recommendations r "
+        "JOIN risk_assessments a ON a.recommendation_id = r.id"
+    )
+    assert plan["entry_price"] == D("100.00")  # The mid of 99.99 and 100.01.
+    assert plan["max_account_risk"] <= D(1)  # 1% of 100 USDT.
+    await world.candles.insert(
+        [
+            bar(world, 0, "100", "104.5", "99.5", "104"),
+            bar(world, 1, "104", "104.5", "103.5", "104"),
+        ]
+    )
+    world.clock.advance(120)
+    await world.paper.sync(world.provider_id, world.instrument.id)
+    fills = await rows("SELECT kind, fill_price, executed_at FROM paper_executions ORDER BY id")
+    assert [fill["kind"] for fill in fills] == ["entry", "tp1"]
+    assert fills[0]["executed_at"] == NOW + timedelta(seconds=10)
+    assert fills[0]["fill_price"] == plan["entry_fill_est"]
+    assert fills[1]["executed_at"] == Timeframe.M1.close_time(NOW + timedelta(minutes=1))
+    [view] = [_trade(row) for row in await world.paper_repository.trades(demo.id, None)]
+    assert view.simulated is True
+    assert [fill.kind for fill in view.fills] == ["entry", "tp1"]
+    assert view.fills[0].at == NOW + timedelta(seconds=10)
+    assert view.fills[0].price == plain(plan["entry_fill_est"])
+    assert view.status == "open"
+    assert [D(price) for price in view.targets] == [D(104), D(106), D(108)]
+
+
+async def test_accounts_report_only_their_own_trades(world: World) -> None:
+    assert (await approve(world)).approved
+    demo, outcome = await demo_trade(world, side=Side.SHORT, stop=D("102.00"),
+                                     targets=(D("96.00"), D("94.00"), D("92.00")),
+                                     invalidation_conditions=("close above 102.00",))  # fmt: skip
+    assert outcome.approved, outcome.reasons
+    paper = world.paper_repository
+    assert [row["side"] for row in await paper.positions(world.account.id)] == ["LONG"]
+    assert [row["side"] for row in await paper.positions(demo.id)] == ["SHORT"]
+    assert [row["action"] for row in await world.records.recent(demo.id)] == ["SELL"]
+    [trade] = await paper.trades(demo.id, world.instrument.id)
+    assert trade["strategy"] == "trend_break_baseline"
+    assert [D(price) for price in trade["targets"]] == [D(96), D(94), D(92)]
+    assert trade["fills"] is None
+    assert await paper.trades(demo.id, world.instrument.id + 1000) == []
+    assert (await paper.performance(demo.id))["resolved"] == 0
+
+
+PATTERN = StrategyIdentity("pattern_breakout", 1, {"test": True})
+BASELINE = StrategyIdentity("trend_break_baseline", 1, {"test": True})
+
+
+async def plan_account(world: World) -> Account:
+    account = await world.records.ensure_account(
+        EMAIL, PORTFOLIO_ACCOUNT, PORTFOLIO_BALANCE, PLAN_PROFILE
+    )
+    assert account is not None
+    return account
+
+
+async def plan_setup(world: World, identity: StrategyIdentity, stop: str) -> Setup:
+    rules = await RuleRepository(world.signals._rules._engine).current(
+        world.provider_id, world.instrument.id
+    )
+    assert rules is not None
+    decision = BaselineDecision(
+        Action.BUY, NOW, ("test setup",), proposal=proposal(stop=D(stop)), setup_atr=D(1)
+    )
+    timeframe = {"daily_trend": Timeframe.D1, "pattern_breakout": Timeframe.H1}
+    return Setup(
+        world.instrument, rules, decision, identity, timeframe.get(identity.name, Timeframe.M15)
+    )
+
+
+async def plan_rows() -> list[Any]:
+    return await rows(
+        "SELECT c.name, a.decision, a.rejection_codes, a.max_account_risk, a.notional, "
+        "a.inputs->>'risk_share' AS share, a.inputs->>'evidence_share' AS evidence "
+        "FROM risk_assessments a JOIN trade_recommendations r ON r.id = a.recommendation_id "
+        "JOIN strategy_configurations c ON c.id = r.strategy_configuration_id ORDER BY a.id"
+    )
+
+
+async def test_the_money_plan_account_keeps_its_own_limits(world: World) -> None:
+    account = await plan_account(world)
+    assert account.starting_balance == D(1000)
+    assert account.profile.max_open_positions == 10
+    assert account.profile.max_open_risk_fraction == D("0.03")
+    assert account.profile.daily_profit_stop_fraction == D("0.03")
+    assert world.account.profile.max_open_risk_fraction is None, "other accounts are unchanged"
+
+
+async def test_signals_at_one_close_get_their_evidence_share_when_they_fit(world: World) -> None:
+    """D045: the daily trend risks the full 1%, the pattern half and the baseline a quarter."""
+    account = await plan_account(world)
+    setups = [await plan_setup(world, who, "98.00") for who in (BASELINE, PATTERN, TREND)]
+    outcomes = await world.signals.run_plan(world.provider_id, NOW, account, setups)
+    assert all(outcome.approved for outcome in outcomes), [o.reasons for o in outcomes]
+    planned = await plan_rows()
+    assert [(row["name"], D(row["share"])) for row in planned] == [
+        ("daily_trend", D(1)),
+        ("pattern_breakout", D("0.5")),
+        ("trend_break_baseline", D("0.25")),
+    ]
+    limits = (D(10), D(5), D("2.5"))
+    assert all(row["max_account_risk"] <= cap for row, cap in zip(planned, limits, strict=True))
+    assert planned[0]["max_account_risk"] > D("9.9")
+    state = await world.paper_repository.account_state(account.id, D(1000), NOW)
+    # Stored risk is rounded to 18 places, the per-unit figure times quantity is not.
+    stored = sum(row["max_account_risk"] for row in planned)
+    assert abs(state.open_risk - stored) < D("1e-12")
+    assert await world.records.decided(account.id, NOW)
+    assert not await world.records.decided(world.account.id, NOW)
+
+
+async def test_when_room_runs_short_the_best_evidence_is_served_first(world: World) -> None:
+    """A 1% stop makes each trade large, so the account's size limit binds before risk."""
+    account = await plan_account(world)
+    setups = [await plan_setup(world, who, "99.00") for who in (BASELINE, PATTERN, TREND)]
+    await world.signals.run_plan(world.provider_id, NOW, account, setups)
+    trend, pattern, baseline = await plan_rows()
+    assert trend["decision"] == "APPROVED" and D(trend["share"]) == D(1)
+    assert pattern["decision"] == "APPROVED"
+    assert D(0) < D(pattern["share"]) < D("0.5") == D(pattern["evidence"])
+    assert trend["notional"] + pattern["notional"] <= D(1000)
+    assert baseline["decision"] == "REJECTED"
+    assert "EXPOSURE_EXCEEDED" in baseline["rejection_codes"]
+    assert D(baseline["share"]) == D("0.25"), "a signal with no room is refused at its own share"
+
+
+async def test_the_money_plan_holds_one_position_per_strategy_and_coin(world: World) -> None:
+    account = await plan_account(world)
+    trend = await plan_setup(world, TREND, "98.00")
+    assert (await world.signals.run_plan(world.provider_id, NOW, account, [trend]))[0].approved
+    [again] = await world.signals.run_plan(world.provider_id, NOW, account, [trend])
+    assert again.reasons == ("a position from this strategy is open",)
+    assert again.recommendation_id is None

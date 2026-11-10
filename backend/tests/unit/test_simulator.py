@@ -329,3 +329,51 @@ def test_a_short_stop_only_moves_down() -> None:
     run(sim, bar(1, "99.50", "100.45", "99.40", "100.30"))
     assert sim.fills[-1].kind == "stop"
     assert sim.fills[-1].price == D("100.40") + D("0.01") + D("0.05")
+
+
+def taken(**overrides: Any) -> SimulatedOrder:
+    """A market entry taken from the live book ten seconds into minute 0 (D044)."""
+    values: dict[str, Any] = {
+        "placed_at": START + timedelta(seconds=10),
+        "filled_price": D("100.03"),
+    }
+    return order(**{**values, **overrides})
+
+
+def test_a_taken_entry_fills_at_its_live_price_in_its_own_minute() -> None:
+    sim = run(TradeSimulator(taken()), bar(0, "99.50", "100.50", "99.40", "100.20"))
+    entry = sim.fills[0]
+    assert sim.status is OrderStatus.OPEN
+    assert entry.at == START + timedelta(seconds=10)
+    assert entry.price == D("100.03")
+    assert entry.fee == D("0.001") * D("100.03") * 10
+    assert entry.spread_cost == D("0.10")
+    assert entry.slippage_cost == D("0.20")
+
+
+def test_a_taken_entry_ignores_minutes_that_ended_before_it() -> None:
+    sim = run(TradeSimulator(taken(placed_at=START + timedelta(minutes=1, seconds=10))))
+    assert run(sim, bar(0, "100", "101", "99", "100")).fills == []
+
+
+def test_targets_wait_for_the_minute_after_a_taken_entry() -> None:
+    """Part of the entry minute traded before the entry, so its high may have come first."""
+    sim = run(TradeSimulator(taken()), bar(0, "100", "104.50", "99.50", "104"))
+    assert [fill.kind for fill in sim.fills] == ["entry"]
+    run(sim, bar(1, "104", "104.50", "103.50", "104"))
+    assert [fill.kind for fill in sim.fills] == ["entry", "tp1"]
+
+
+def test_a_stop_in_the_entry_minute_still_counts() -> None:
+    """The worse outcome is assumed: the minute's low may have come after the entry."""
+    sim = run(TradeSimulator(taken()), bar(0, "100", "100.50", "97.90", "98.50"))
+    assert [fill.kind for fill in sim.fills] == ["entry", "stop"]
+    assert sim.fills[-1].price == D("98.00") - D("0.01") - D("0.05")
+
+
+def test_a_taken_entry_its_minute_cannot_absorb_is_cancelled() -> None:
+    """The live price exists only in its minute, so it never fills later at that price."""
+    sim = run(TradeSimulator(taken()), bar(0, "100", "100.50", "99.50", "100", volume="0"))
+    assert sim.status is OrderStatus.CANCELLED
+    run(sim, bar(1, "100", "100.50", "99.50", "100"))
+    assert [fill.kind for fill in sim.fills] == ["expiry"]

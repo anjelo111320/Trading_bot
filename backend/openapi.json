@@ -559,6 +559,57 @@
         "title": "FeedStatusView",
         "type": "object"
       },
+      "FillView": {
+        "properties": {
+          "at": {
+            "format": "date-time",
+            "title": "At",
+            "type": "string"
+          },
+          "fee": {
+            "title": "Fee",
+            "type": "string"
+          },
+          "funding": {
+            "title": "Funding",
+            "type": "string"
+          },
+          "kind": {
+            "title": "Kind",
+            "type": "string"
+          },
+          "price": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Price"
+          },
+          "quantity": {
+            "title": "Quantity",
+            "type": "string"
+          },
+          "reconstructed": {
+            "title": "Reconstructed",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "kind",
+          "at",
+          "price",
+          "quantity",
+          "fee",
+          "funding",
+          "reconstructed"
+        ],
+        "title": "FillView",
+        "type": "object"
+      },
       "ForecastStepView": {
         "properties": {
           "baseline": {
@@ -1397,8 +1448,27 @@
       },
       "PaperSummary": {
         "properties": {
+          "account": {
+            "title": "Account",
+            "type": "string"
+          },
           "costs": {
             "title": "Costs",
+            "type": "string"
+          },
+          "daily_profit_stop": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Daily Profit Stop"
+          },
+          "day_start_equity": {
+            "title": "Day Start Equity",
             "type": "string"
           },
           "equity": {
@@ -1420,6 +1490,17 @@
             "title": "Losses",
             "type": "integer"
           },
+          "max_open_risk": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Max Open Risk"
+          },
           "net_pnl": {
             "title": "Net Pnl",
             "type": "string"
@@ -1427,6 +1508,10 @@
           "open_positions": {
             "title": "Open Positions",
             "type": "integer"
+          },
+          "open_risk": {
+            "title": "Open Risk",
+            "type": "string"
           },
           "resolved_trades": {
             "title": "Resolved Trades",
@@ -1463,6 +1548,7 @@
           }
         },
         "required": [
+          "account",
           "starting_balance",
           "equity",
           "open_positions",
@@ -1473,7 +1559,11 @@
           "net_pnl",
           "costs",
           "win_rate",
-          "expectancy_r"
+          "expectancy_r",
+          "day_start_equity",
+          "open_risk",
+          "max_open_risk",
+          "daily_profit_stop"
         ],
         "title": "PaperSummary",
         "type": "object"
@@ -2328,6 +2418,17 @@
             ],
             "title": "Reward Risk Net"
           },
+          "risk_share": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Risk Share"
+          },
           "setup_quality_score": {
             "anyOf": [
               {
@@ -2354,6 +2455,10 @@
             ],
             "title": "Stop Loss"
           },
+          "strategy": {
+            "title": "Strategy",
+            "type": "string"
+          },
           "supporting_evidence": {
             "items": {},
             "title": "Supporting Evidence",
@@ -2377,6 +2482,7 @@
         "required": [
           "id",
           "provider",
+          "strategy",
           "instrument_id",
           "timeframe",
           "action",
@@ -2392,6 +2498,7 @@
           "estimated_fees",
           "estimated_funding",
           "reward_risk_net",
+          "risk_share",
           "decision",
           "rejection_codes",
           "setup_quality_score",
@@ -2589,6 +2696,233 @@
           "crps_baseline_pct"
         ],
         "title": "TrackRecordView",
+        "type": "object"
+      },
+      "TradeView": {
+        "description": "One simulated trade with its plan and every fill, for chart markers and history.",
+        "properties": {
+          "average_entry": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Average Entry"
+          },
+          "closed_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Closed At"
+          },
+          "costs_paid": {
+            "title": "Costs Paid",
+            "type": "string"
+          },
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "current_stop": {
+            "title": "Current Stop",
+            "type": "string"
+          },
+          "evidence_share": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Evidence Share"
+          },
+          "expires_at": {
+            "format": "date-time",
+            "title": "Expires At",
+            "type": "string"
+          },
+          "explanation": {
+            "title": "Explanation",
+            "type": "string"
+          },
+          "fills": {
+            "items": {
+              "$ref": "#/components/schemas/FillView"
+            },
+            "title": "Fills",
+            "type": "array"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "instrument_id": {
+            "title": "Instrument Id",
+            "type": "integer"
+          },
+          "max_account_risk": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Max Account Risk"
+          },
+          "open_quantity": {
+            "title": "Open Quantity",
+            "type": "string"
+          },
+          "opened_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Opened At"
+          },
+          "outcome": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Outcome"
+          },
+          "planned_entry": {
+            "title": "Planned Entry",
+            "type": "string"
+          },
+          "planned_quantity": {
+            "title": "Planned Quantity",
+            "type": "string"
+          },
+          "r_multiple": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "R Multiple"
+          },
+          "realized_pnl": {
+            "title": "Realized Pnl",
+            "type": "string"
+          },
+          "risk_share": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Risk Share"
+          },
+          "side": {
+            "title": "Side",
+            "type": "string"
+          },
+          "signal_state": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Signal State"
+          },
+          "simulated": {
+            "const": true,
+            "default": true,
+            "title": "Simulated",
+            "type": "boolean"
+          },
+          "status": {
+            "title": "Status",
+            "type": "string"
+          },
+          "stop_loss": {
+            "title": "Stop Loss",
+            "type": "string"
+          },
+          "strategy": {
+            "title": "Strategy",
+            "type": "string"
+          },
+          "symbol": {
+            "title": "Symbol",
+            "type": "string"
+          },
+          "targets": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Targets",
+            "type": "array"
+          },
+          "timeframe": {
+            "$ref": "#/components/schemas/Timeframe"
+          }
+        },
+        "required": [
+          "id",
+          "instrument_id",
+          "symbol",
+          "strategy",
+          "timeframe",
+          "side",
+          "status",
+          "signal_state",
+          "created_at",
+          "expires_at",
+          "planned_entry",
+          "average_entry",
+          "stop_loss",
+          "current_stop",
+          "targets",
+          "planned_quantity",
+          "open_quantity",
+          "realized_pnl",
+          "costs_paid",
+          "opened_at",
+          "closed_at",
+          "outcome",
+          "r_multiple",
+          "explanation",
+          "max_account_risk",
+          "risk_share",
+          "evidence_share",
+          "fills"
+        ],
+        "title": "TradeView",
         "type": "object"
       },
       "TradingMode": {
@@ -3290,6 +3624,21 @@
               "title": "Limit",
               "type": "integer"
             }
+          },
+          {
+            "in": "query",
+            "name": "account",
+            "required": false,
+            "schema": {
+              "default": "paper",
+              "enum": [
+                "paper",
+                "demo",
+                "portfolio"
+              ],
+              "title": "Account",
+              "type": "string"
+            }
           }
         ],
         "responses": {
@@ -3327,6 +3676,23 @@
     "/api/v1/paper-trading/summary": {
       "get": {
         "operationId": "summary_api_v1_paper_trading_summary_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "account",
+            "required": false,
+            "schema": {
+              "default": "paper",
+              "enum": [
+                "paper",
+                "demo",
+                "portfolio"
+              ],
+              "title": "Account",
+              "type": "string"
+            }
+          }
+        ],
         "responses": {
           "200": {
             "content": {
@@ -3355,6 +3721,87 @@
         ]
       }
     },
+    "/api/v1/paper-trading/trades": {
+      "get": {
+        "operationId": "trades_api_v1_paper_trading_trades_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "account",
+            "required": false,
+            "schema": {
+              "default": "paper",
+              "enum": [
+                "paper",
+                "demo",
+                "portfolio"
+              ],
+              "title": "Account",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "instrument_id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "minimum": 1,
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Instrument Id"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 100,
+              "maximum": 500,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/TradeView"
+                  },
+                  "title": "Response Trades Api V1 Paper Trading Trades Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Default Response"
+          }
+        },
+        "summary": "Trades",
+        "tags": [
+          "trading"
+        ]
+      }
+    },
     "/api/v1/signals": {
       "get": {
         "operationId": "signals_api_v1_signals_get",
@@ -3369,6 +3816,21 @@
               "minimum": 1,
               "title": "Limit",
               "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "account",
+            "required": false,
+            "schema": {
+              "default": "paper",
+              "enum": [
+                "paper",
+                "demo",
+                "portfolio"
+              ],
+              "title": "Account",
+              "type": "string"
             }
           }
         ],

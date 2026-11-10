@@ -47,6 +47,10 @@ class SimulatedOrder:
     placed_at: datetime
     expires_at: datetime
     liquidity_cap: Decimal = LIQUIDITY_CAP
+    # A market entry already taken at `placed_at` from the live book, costs included (D044).
+    # It fills inside the minute it was placed, where only the stop is checked, because part
+    # of that minute traded before the entry.
+    filled_price: Decimal | None = None
 
 
 @dataclass(frozen=True)
@@ -87,14 +91,20 @@ class TradeSimulator:
         return self.status in (OrderStatus.CLOSED, OrderStatus.CANCELLED)
 
     def on_candle(self, candle: ClosedCandle) -> list[Fill]:
-        if self.is_finished or candle.open_time < self.order.placed_at:
+        if self.is_finished or not self._reaches(candle):
             return []
         start = len(self.fills)
         if self.status is OrderStatus.PENDING:
             self._try_entry(candle)
         if self.status is OrderStatus.OPEN:
-            self._try_exits(candle)
+            self._try_exits(candle, stop_only=candle.open_time < self.order.placed_at)
         return self.fills[start:]
+
+    def _reaches(self, candle: ClosedCandle) -> bool:
+        """A taken entry starts in the minute it was placed, and any other order after it."""
+        if self.order.filled_price is not None:
+            return candle.close_time > self.order.placed_at
+        return candle.open_time >= self.order.placed_at
 
     def on_funding(self, at: datetime, rate: Decimal, mark: Decimal) -> list[Fill]:
         """Longs pay a positive rate, and shorts receive it."""
@@ -117,6 +127,9 @@ class TradeSimulator:
             return
         allowed = self._floor(candle.volume * order.liquidity_cap)
         quantity = min(order.quantity, allowed)
+        if quantity <= 0 and order.filled_price is not None:
+            self._cancel("expiry", candle.close_time)  # The live price is gone after its minute.
+            return
         if quantity <= 0:
             return  # Nothing traded, so the order stays open.
         is_limit = order.entry_type is EntryType.LIMIT
@@ -129,7 +142,7 @@ class TradeSimulator:
         self.fills.append(
             Fill(
                 "entry",
-                candle.open_time,
+                max(candle.open_time, order.placed_at),
                 quantity,
                 price,
                 fee=rate * price * quantity,
@@ -140,6 +153,8 @@ class TradeSimulator:
 
     def _entry_price(self, candle: ClosedCandle) -> Decimal | None:
         order, sign = self.order, self.order.side.sign
+        if order.filled_price is not None:
+            return order.filled_price
         costs = order.half_spread + order.entry_slippage
         match order.entry_type:
             case EntryType.MARKET:
@@ -166,7 +181,7 @@ class TradeSimulator:
         self.status = OrderStatus.CANCELLED
         self.fills.append(Fill(kind, at))
 
-    def _try_exits(self, candle: ClosedCandle) -> None:
+    def _try_exits(self, candle: ClosedCandle, *, stop_only: bool = False) -> None:
         """The stop is checked first, so a candle reaching both counts as a loss."""
         order, sign = self.order, self.order.side.sign
         stopped = candle.low <= self.stop if sign > 0 else candle.high >= self.stop
@@ -174,6 +189,8 @@ class TradeSimulator:
             worse = min(self.stop, candle.open) if sign > 0 else max(self.stop, candle.open)
             price = worse - sign * (order.half_spread + order.stop_slippage)
             self._exit("stop", candle, self.open_quantity, price, order.taker_fee, True)
+            return
+        if stop_only:
             return
         while self.next_target < len(order.targets):
             target = order.targets[self.next_target]
