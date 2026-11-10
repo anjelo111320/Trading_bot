@@ -33,6 +33,7 @@ from trading_intel.backtesting.engine import (
     CostModel,
     FundingEvent,
     Strategy,
+    funding_events,
 )
 from trading_intel.backtesting.metrics import Metrics
 from trading_intel.backtesting.report import STATEMENT, metrics_table
@@ -101,15 +102,16 @@ async def load(symbol: str, end: datetime = END) -> Inputs:
         return await candles.range(provider, instrument.id, timeframe, LOAD_FROM, end)
 
     rows = await MarketRepository(engine).funding_between(provider, instrument.id, START, end)
+    fills = await candles_of(Timeframe.M15)
     inputs = Inputs(
         symbol=symbol,
         instrument=instrument,
         rules=rules,
-        fills=await candles_of(Timeframe.M15),
+        fills=fills,
         hours=await candles_of(Timeframe.H1),
         four_hours=await candles_of(Timeframe.H4),
         days=await candles_of(Timeframe.D1),
-        funding=[FundingEvent(at, rate, mark) for at, rate, mark in rows if mark is not None],
+        funding=funding_events(rows, fills),
     )
     await engine.dispose()
     return inputs

@@ -71,3 +71,5 @@ What this says:
 - Several strategies have now been tested, so a borderline interval like BTC's is not proof.
 
 Decision: no rule changes. It runs forward in paper trading beside the pattern strategy, and its first real evidence will come from there.
+
+Correction, 2026-11-10: these runs charged no funding from 2020 to early 2023, because those stored rates have no mark price (docs/10, costs). With funding charged, BTC made +0.44R a trade (-0.03 to +0.98) and ETH +0.37R (-0.07 to +0.89), as in the corrected six-coin study (docs/33). The reports above are kept as they were run.

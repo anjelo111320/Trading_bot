@@ -110,6 +110,8 @@ What this says:
 
 Decision: nothing is tuned from these results. Next, the strategy runs forward in paper trading as the 1H rule baseline that Claude's account (D030) is measured against.
 
+Correction, 2026-11-10: these runs charged no funding from 2020 to early 2023, because those stored rates have no mark price (docs/10, costs). With funding charged, trial 1 made +0.14R a trade on BTC (-0.13 to +0.42) and +0.12R on ETH (-0.14 to +0.38), as in the corrected six-coin study (docs/33). The holdout year had mark prices and is unaffected. The reports above are kept as they were run.
+
 ### Holdout Year
 
 The single holdout run, 2025-11-01 to 2026-11-01, on 2026-11-04 (D037). Full table: [pattern-holdout.md](reports/pattern-holdout.md).

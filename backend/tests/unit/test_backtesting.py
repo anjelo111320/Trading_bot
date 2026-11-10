@@ -6,7 +6,12 @@ from typing import Any
 import pytest
 
 from tests.quant_data import START, candle
-from trading_intel.backtesting.engine import AsOfCandles, BacktestEngine, CostModel
+from trading_intel.backtesting.engine import (
+    AsOfCandles,
+    BacktestEngine,
+    CostModel,
+    funding_events,
+)
 from trading_intel.backtesting.metrics import (
     ClosedTrade,
     bootstrap_interval,
@@ -138,6 +143,24 @@ def test_four_hour_value_changes_only_after_its_close() -> None:
     access = AsOfCandles(rows)
     inside = rows[2].open_time + timedelta(hours=2)
     assert access.closed_by(inside, 10)[-1] is rows[1]
+
+
+def test_funding_without_a_mark_price_is_charged_at_the_last_close() -> None:
+    """Regression: events without a mark, all of 2020 to early 2023, were dropped unpaid."""
+    rows = candles(Timeframe.M15, 10, 15)
+    at = rows[4].close_time + timedelta(milliseconds=1)
+    events = funding_events(
+        [
+            (rows[0].open_time, D("0.0001"), None),
+            (at, D("0.0003"), None),
+            (at + timedelta(hours=8), D("0.0002"), D("123.4")),
+        ],
+        rows,
+    )
+    assert [(e.at, e.rate, e.mark) for e in events] == [
+        (at, D("0.0003"), rows[4].close),
+        (at + timedelta(hours=8), D("0.0002"), D("123.4")),
+    ]
 
 
 def test_the_engine_produces_trades_and_is_reproducible() -> None:

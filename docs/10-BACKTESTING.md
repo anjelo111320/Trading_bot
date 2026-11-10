@@ -129,7 +129,7 @@ Higher-timeframe strategies are simulated on 1-minute candles, so order and fill
 | Fees | Dated `fee_schedules`, taker unless a limit fill is confirmed by the rules above |
 | Spread | Recorded distribution by hour and volatility bucket. Before recording begins, a conservative assumption of at least the 90th percentile of recorded values |
 | Slippage | Per [08-RISK-MANAGEMENT.md](08-RISK-MANAGEMENT.md), calibrated where data allows |
-| Funding | Actual historical rates at each funding time, for positions open at that time |
+| Funding | Actual historical rates at each funding time, for positions open at that time. Binance's history has no mark price before March 2023, so the last fill candle's close stands in (`funding_events`). Before 2026-11-10 those events were dropped, so earlier reports charged no funding for 2020 to early 2023 |
 
 Every result is also reported with costs at 1.5× and 2×. A strategy that fails at 1.5× costs is not robust.
 

@@ -72,3 +72,20 @@ What this says:
 - The daily trend replicated. Its edge on BTC and ETH was not specific to those two coins. Only XRP's result was known in advance, and the other three new coins pooled are also positive.
 - The pattern breakout did not clearly replicate. Its BTC and ETH profit looks more like those coins' history than a general effect.
 - docs/29 found that 2020 made most of the trend's BTC and ETH profit, and that its shorts lost. This study did not test either again, so both still apply.
+
+## Correction, 2026-11-10
+
+The run above charged no funding from 2020 to early 2023. Binance's funding history has no mark price before March 2023, and the loader dropped every event without one. In 2021, BTC longs paid about 30% of their size in funding over the year, so long trades in those years looked better than they were. The loader now uses the last 15M close as the mark (docs/10, costs), with a regression test.
+
+The same study was run again at 01:52 UTC with nothing else changed. The first run's full tables are kept in [coin-replication-uncorrected.md](reports/coin-replication-uncorrected.md), and [coin-replication.md](reports/coin-replication.md) now holds the corrected run.
+
+| Expectancy in R, 95% interval | First run | With funding |
+|---|---|---|
+| Daily trend, six coins | +0.44, +0.20 to +0.70 | +0.40, +0.16 to +0.65 |
+| Daily trend, four new coins | +0.42, +0.09 to +0.77 | +0.39, +0.07 to +0.74 |
+| Daily trend, six coins at 2× costs | +0.43 | +0.38 |
+| Pattern breakout, six coins | +0.09, -0.03 to +0.22 | +0.08, -0.04 to +0.20 |
+| Pattern breakout, four new coins | +0.05 | +0.04 |
+| Pattern breakout, six coins at 2× costs | +0.06 | +0.05 |
+
+The decision rule gives the same shares: daily trend full, pattern breakout half, no coin left out. The money plan is unchanged.

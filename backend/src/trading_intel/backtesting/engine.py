@@ -80,6 +80,27 @@ class FundingEvent:
     mark: Decimal
 
 
+def funding_events(
+    rows: Sequence[tuple[datetime, Decimal, Decimal | None]], candles: Sequence[ClosedCandle]
+) -> list[FundingEvent]:
+    """Stored funding, with the last close standing in where the mark price is missing.
+
+    Binance's funding history has no mark price before March 2023. The mark stays within a
+    small basis of the last price, so the stand-in moves a charge far less than dropping the
+    event, which charged no funding at all. Events before the first candle are dropped.
+    """
+    close_times = [candle.close_time for candle in candles]
+    events: list[FundingEvent] = []
+    for at, rate, mark in rows:
+        if mark is None:
+            position = bisect_right(close_times, at) - 1
+            if position < 0:
+                continue
+            mark = candles[position].close
+        events.append(FundingEvent(at, rate, mark))
+    return events
+
+
 class AsOfCandles:
     """Time-gated access. Candles closing after the moment simply cannot be reached."""
 

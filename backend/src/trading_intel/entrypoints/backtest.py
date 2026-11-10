@@ -4,7 +4,12 @@ import argparse
 import asyncio
 from datetime import UTC, datetime, timedelta
 
-from trading_intel.backtesting.engine import BacktestEngine, BacktestResult, CostModel, FundingEvent
+from trading_intel.backtesting.engine import (
+    BacktestEngine,
+    BacktestResult,
+    CostModel,
+    funding_events,
+)
 from trading_intel.backtesting.report import render
 from trading_intel.backtesting.windows import refuse_holdout
 from trading_intel.core.settings import REPOSITORY_ROOT, load_settings
@@ -36,7 +41,7 @@ async def run(symbol: str, start: datetime, end: datetime) -> str:
     middle = await load(Timeframe.H1)
     higher = await load(Timeframe.H4)
     rows = await MarketRepository(engine).funding_between(provider, instrument.id, start, end)
-    funding = [FundingEvent(at, rate, mark) for at, rate, mark in rows if mark is not None]
+    funding = funding_events(rows, minutes)
     await engine.dispose()
 
     results: dict[str, BacktestResult] = {}
