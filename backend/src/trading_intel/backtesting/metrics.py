@@ -97,6 +97,24 @@ def bootstrap_interval(values: Sequence[float]) -> tuple[float, float] | None:
     return means[int(BOOTSTRAP_RUNS * 0.025)], means[int(BOOTSTRAP_RUNS * 0.975) - 1]
 
 
+def difference_interval(
+    first: Sequence[float], second: Sequence[float]
+) -> tuple[float, float] | None:
+    """A seeded 95% interval for the first group's mean minus the second's.
+
+    Each group is resampled on its own, since they are separate sets of trades.
+    """
+    if len(first) < 2 or len(second) < 2:
+        return None
+    rng = random.Random(BOOTSTRAP_SEED)  # noqa: S311
+    gaps = sorted(
+        sum(rng.choices(first, k=len(first))) / len(first)
+        - sum(rng.choices(second, k=len(second))) / len(second)
+        for _ in range(BOOTSTRAP_RUNS)
+    )
+    return gaps[int(BOOTSTRAP_RUNS * 0.025)], gaps[int(BOOTSTRAP_RUNS * 0.975) - 1]
+
+
 def compute_metrics(
     trades: Sequence[ClosedTrade],
     equity_curve: Sequence[Decimal],

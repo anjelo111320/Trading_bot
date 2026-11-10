@@ -73,4 +73,24 @@ Every condition's own result is also reported, for and against, as a description
 
 ## Results
 
-Not run yet.
+The registration was committed as `c0482f3` at 02:02 UTC on 2026-11-10. The study ran once, from 02:03 to 02:04 UTC, with `uv run python -m trading_intel.entrypoints.signal_score` in `backend/`. Simulated results. A profitable backtest is not proof of future profitability. Full tables: [signal-score.md](reports/signal-score.md).
+
+Of 1,134 filled trades, 1,098 were scored and 36 had an unknown condition. 411 were weak.
+
+| Check | Result | Passed |
+|---|---|---|
+| 1. Strong minus weak, pooled, interval above zero | +0.09R, -0.15 to +0.32 | No |
+| 2. Above zero for each strategy | Daily trend +0.14R, pattern breakout +0.07R | Yes |
+| 3. Above zero on the four new coins | +0.02R | Yes |
+| 4. Above zero among longs and among shorts | Longs +0.18R, shorts -0.15R | No |
+| 5. Above zero in at least 4 of the 6 years | 2 of 6, 2020 and 2024 | No |
+| 6. Scored sizing has a higher return to drawdown | 5.4 against 6.0 unscored | No |
+
+**The score does not pass, so nothing changes in trading.** The money plan keeps one share per strategy (docs/33).
+
+What this says:
+
+- Strong signals made +0.19R a trade and weak ones +0.10R. The gap could be luck, and it changed sign from year to year.
+- Weak signals still made money on average. Halving them cut the total from +149R to +130R, while the largest fall barely moved, from 24.7R to 23.9R.
+- Among shorts, weak signals did better than strong ones, so the score added nothing beyond the known long and short result.
+- Each condition on its own pointed different ways for the two strategies. For the daily trend, signals with the coin's and Bitcoin's long-term trend made more than those against it. For the pattern breakout, they made less. These slices were described, not tested, so they cannot change trading. A rule built from one would need forward data to test.

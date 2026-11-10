@@ -15,7 +15,7 @@ from trading_intel.backtesting.metrics import Metrics
 from trading_intel.backtesting.report import STATEMENT
 from trading_intel.backtesting.windows import refuse_holdout
 from trading_intel.entrypoints import pattern_backtest, trend_backtest
-from trading_intel.entrypoints.pattern_backtest import END, REPORT_DIR, START, load
+from trading_intel.entrypoints.pattern_backtest import END, REPORT_DIR, START, Inputs, load
 from trading_intel.risk_management.allocation import (
     QUARTER_SHARE,
     Evidence,
@@ -38,8 +38,12 @@ Runs = dict[tuple[str, str, str], list[BacktestTrade]]
 
 
 async def run_coin(symbol: str) -> Runs:
+    return runs_of(await load(symbol))
+
+
+def runs_of(inputs: Inputs) -> Runs:
     """Both strategies at both cost levels, with the parameters that trade live."""
-    inputs = await load(symbol)
+    symbol = inputs.symbol
     tick = inputs.rules.tick_size
     pattern = PatternStrategy(inputs.hours, inputs.four_hours, inputs.days, tick)
     trend = DailyTrendStrategy(inputs.days, tick, trend_backtest.PARAMETERS)

@@ -467,6 +467,20 @@ Consequences:
 - The signal score is the next accuracy step. It needs its own pre-registration and a test on history before it can change size.
 Revisit conditions: the study's shares are replaced by forward paper results after enough trades per strategy, a tested signal score passes, or the owner wants different limits.
 
+### D046: Signal score, tested and not adopted
+Date: 2026-11-10.
+Status: Studied at the owner's request, who chose that a passing score may only lower risk on weak signals. Not adopted by its own pre-registered rule.
+Context: The money plan (D045) gives every signal from one strategy the same share. The owner asked for more money on the signals with the most potential, and for Python to become more accurate before Claude is added.
+Decision:
+- The study in [34-SIGNAL-SCORE.md](34-SIGNAL-SCORE.md) scored every tested trade on six coins from 2020 to 2025. The four conditions were the coin's and Bitcoin's 200-day trend, volume and funding, and a signal was weak with two or more against it. The rules were committed before the run, as `c0482f3`.
+- Strong signals made +0.19R a trade and weak ones +0.10R, with an interval for the gap of -0.15 to +0.32. Among shorts the gap reversed, and it was positive in only 2 of 6 years. Halving weak signals would have cut profit more than drawdown. Four of the six checks failed, so nothing changes in trading.
+- While preparing the study, the backtests were found to charge no funding from 2020 to early 2023, because Binance's history has no mark price before March 2023. The loader now uses the last 15M close as the mark. The corrected six-coin study gives the same shares (docs/33), with the daily trend at +0.40R a trade instead of +0.44R.
+Consequences:
+- `trade_signals/signal_score.py` and the study stay, with their tests, so the run can be reproduced and the conditions can be recorded forward later.
+- Python's setup score in `trade_signals/quality.py` is still a checklist of mostly fixed numbers, and it sets no size.
+- Earlier reports for docs/27 and docs/29 were run without that funding, and are kept as they were, with corrected figures beside them.
+Revisit conditions: none for this version. A changed score is a new trial, tested on forward paper results.
+
 ## Owner Decisions, 2026-11-05 Model Forecasts
 
 ### D040: Kronos forecasts are labelled evidence, never prices
