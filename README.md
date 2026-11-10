@@ -41,6 +41,17 @@ cd frontend && pnpm build && pnpm start   # Dashboard on http://127.0.0.1:3000
 
 Log in with `OWNER_EMAIL` and `OWNER_PASSWORD` from `.env`.
 
+To keep it running instead, `make autostart` runs the ingestor, quant worker, API and dashboard as launchd agents. They start at every login, restart within 30 seconds if one stops, and keep the computer awake as `make soak` did. OrbStack is set to start at login, which brings PostgreSQL and Redis back. Logs go to `data/logs`.
+
+```sh
+scripts/autostart.sh status              # What is running
+scripts/autostart.sh restart quant-worker   # After a backend change: also api, ingestor
+scripts/autostart.sh rebuild-web         # After a frontend change
+scripts/autostart.sh uninstall           # Stop everything and start nothing at login
+```
+
+After a reboot nothing runs until you log in, so turn on automatic login if the computer should recover alone.
+
 Checks:
 
 ```sh
@@ -50,7 +61,7 @@ make drill         # Inject real faults into the running stack
 make soak-report SINCE=2026-11-02T09:47:00Z   # Compare stored data with Binance
 ```
 
-To stop everything: `pkill -f entrypoints`, stop the dashboard, then `make down`. Data is kept unless you run `make reset`.
+To stop everything: `scripts/autostart.sh uninstall` if it was installed, otherwise `pkill -f entrypoints` and stop the dashboard, then `make down`. Data is kept unless you run `make reset`.
 
 ## Status
 

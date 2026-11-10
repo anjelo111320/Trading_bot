@@ -1,5 +1,5 @@
 .DEFAULT_GOAL := help
-.PHONY: quant backfill drill soak soak-report help bootstrap check check-backend check-frontend test up down reset migrate api ingestor web openapi types secrets audit bundle-scan
+.PHONY: quant backfill drill soak soak-report autostart help bootstrap check check-backend check-frontend test up down reset migrate api ingestor web openapi types secrets audit bundle-scan
 
 COMPOSE := docker compose -f infra/docker-compose.yml
 
@@ -16,6 +16,7 @@ help:
 	@echo "backfill   load the 90-day test window of history"
 	@echo "ingestor   run the market-data ingestor"
 	@echo "web        run the dashboard"
+	@echo "autostart  run everything at login and restart what stops"
 
 .env:
 	cp .env.example .env
@@ -91,6 +92,9 @@ types: openapi
 
 soak:
 	./scripts/soak.sh
+
+autostart:
+	./scripts/autostart.sh install
 
 soak-report:
 	cd backend && uv run python scripts/soak_report.py --since $(SINCE)

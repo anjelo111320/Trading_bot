@@ -482,6 +482,19 @@ Consequences:
 - Earlier reports for docs/27 and docs/29 were run without that funding, and are kept as they were, with corrected figures beside them.
 Revisit conditions: none for this version. A changed score is a new trial, tested on forward paper results.
 
+### D047: The stack starts at login and restarts what stops
+Date: 2026-11-10.
+Status: Accepted by the owner, who wants Python running whenever the computer is on.
+Context: The ingestor, quant worker, API and dashboard were started by hand with `nohup`, so a crash or a restart stopped trading until someone noticed. OrbStack, which runs PostgreSQL and Redis, did not start at login.
+Decision:
+- `scripts/autostart.sh install` (`make autostart`) runs each part as a launchd user agent that starts at login and restarts within 30 seconds if it stops. A fifth agent runs `caffeinate -i -s`, as `scripts/soak.sh` did, and OrbStack is set to start at login.
+- The agents hold paths only. The services read `.env` themselves, so no secret is written into them.
+Consequences:
+- After a reboot, nothing runs until the owner logs in. Automatic login would close that gap, and is the owner's choice.
+- Stopping a service by hand no longer works, because launchd starts it again. `scripts/autostart.sh` restarts, rebuilds or removes them.
+- The ingestor soak started on 2026-11-06 ended at the switch, and a new run began under launchd.
+Revisit conditions: the stack moves to Railway (D026).
+
 ## Owner Decisions, 2026-11-05 Model Forecasts
 
 ### D040: Kronos forecasts are labelled evidence, never prices
