@@ -72,3 +72,5 @@ Fewer than 150 readings by 2027-01-31, or fewer than 30 on one side, is **inconc
 ## Results
 
 Not run yet.
+
+Note added 2026-11-11, outside the registration above: by the owner's choice, the news move strategy (D056, [40-NEWS-MOVE-STRATEGY.md](40-NEWS-MOVE-STRATEGY.md)) now uses this reading to confirm Python's price moves. The test above is unchanged.

@@ -482,6 +482,28 @@ Consequences:
 - Earlier reports for docs/27 and docs/29 were run without that funding, and are kept as they were, with corrected figures beside them.
 Revisit conditions: none for this version. A changed score is a new trial, tested on forward paper results.
 
+### D056: The news move strategy: a strong 1H move confirmed by news, trading on Binance demo
+Date: 2026-11-11.
+Status: Accepted by the owner, who chose "Price move + news agree" and "Binance demo now" over the recommended shadow run. **Amends D055**: news may now confirm a Python move, but still never starts a trade alone.
+Context: The owner asked whether Python trades when the news signal comes. It did not. They asked for a strategy.
+- Research:
+  - In stocks, moves with public news tend to continue, and big moves without news tend to reverse (Chan, 2003).
+  - For Bitcoin, news sentiment has some value over days and weeks, and no clear intraday edge after costs.
+  - There is no labelled news history here, so the news part cannot be backtested.
+Decision:
+- The rules were pre-registered in [40-NEWS-MOVE-STRATEGY.md](40-NEWS-MOVE-STRATEGY.md) before any code or run. At each 1H close:
+  1. Python finds a strong move: a body of at least 1.5 ATR, with a strong close.
+  2. The signal service asks the injected news reading (D055) whether it agrees with the move.
+  3. If it does, the move trades at market with a 1.5 ATR stop and targets at 2R and 3R. A neutral, opposite or failed reading means no trade.
+- It joins the money plan at the smallest share, as an untested strategy (D045). That is 0.5 USDT risk a trade on Binance demo, and 0.25% in the paper money plan. Every trade goes through the risk engine.
+- The trading code still never imports the news module: the reading comes through the injected interface. The import rule is renamed "trading reads news only through the injected reading (D055, D056)".
+- **Context run once:** the price rules alone on six coins, 2020 to 2025, made +0.017R a trade over 4,555 trades, with a 95% interval of −0.028 to +0.059. That is no edge, so any edge must come from the news check.
+- **Stop rule:** after 30 closed paper trades, the strategy is removed if its mean R is below zero with 95% confidence.
+Consequences:
+- The strategy will trade rarely, mostly BTC and ETH, which most of the news is about.
+- A planted or wrong story can confirm a move, but cannot open a trade without one.
+Revisit conditions: 30 and 60 closed paper trades (docs/40), or the news signal test (docs/39).
+
 ### D055: A news signal, recorded and tested forward, never trading
 Date: 2026-11-11.
 Status: Accepted by the owner ("yes, get the signal from news too"), after being told that news changes no trade and why a news signal should be tested first.

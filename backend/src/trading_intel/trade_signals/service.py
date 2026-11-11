@@ -68,6 +68,11 @@ from trading_intel.trade_signals.fvg_choch_strategy import STRATEGY_NAME as FVG_
 from trading_intel.trade_signals.fvg_choch_strategy import STRATEGY_VERSION as FVG_VERSION
 from trading_intel.trade_signals.fvg_choch_strategy import FvgChochStrategy
 from trading_intel.trade_signals.lifecycle import dedupe_key
+from trading_intel.trade_signals.news_move_strategy import STRATEGY_NAME as NEWS_MOVE_NAME
+from trading_intel.trade_signals.news_move_strategy import (
+    STRATEGY_VERSION as NEWS_MOVE_VERSION,
+)
+from trading_intel.trade_signals.news_move_strategy import NewsMoveStrategy
 from trading_intel.trade_signals.pattern_strategy import STRATEGY_NAME as PATTERN_NAME
 from trading_intel.trade_signals.pattern_strategy import STRATEGY_VERSION as PATTERN_VERSION
 from trading_intel.trade_signals.pattern_strategy import PatternStrategy
@@ -98,6 +103,8 @@ HOLD_FUNDING_INTERVALS: Final = 1
 MAKER_FEE_FALLBACK: Final = Decimal("0.0002")
 # History each live strategy reads at a close, as the dashboard's analysis does.
 PATTERN_HOURS: Final = 1440
+# Enough 1H candles for Wilder's ATR(14) to settle before the move (docs/40).
+NEWS_MOVE_HOURS: Final = 200
 PATTERN_FOURS: Final = 1200
 PATTERN_DAYS: Final = 3000
 TREND_DAYS: Final = 1000
@@ -193,8 +200,9 @@ def _room(state: AccountState, profile: RiskProfile) -> tuple[Decimal, Decimal, 
 class NewsEvidence(Protocol):
     """What the news said about a coin at a moment, and whether it agrees with a side (D055).
 
-    Provided by the news module through the entrypoints, which this module never imports, so
-    news can only be stored beside a signal, never feed a decision.
+    Provided by the news module through the entrypoints, which this module never imports. It
+    is stored beside every signal, and it confirms the news move strategy's moves (D056). It
+    never starts a trade: that strategy's price move comes first.
     """
 
     async def alignment(
@@ -219,8 +227,9 @@ class SignalService:
     ) -> None:
         """`bitcoin` is the perpetual whose trend the signal score reads for other coins.
 
-        `news` gives what the news said about a coin, stored beside each signal and never
-        read by any trading decision (D055). Without it, signals record news as unavailable.
+        `news` gives what the news said about a coin, stored beside each signal (D055). Only
+        the news move strategy acts on it, to confirm a move (D056). Without it, signals record
+        news as unavailable and that strategy never trades.
         """
         self._candles = candles
         self._snapshots = snapshots
@@ -274,6 +283,59 @@ class SignalService:
         identity = StrategyIdentity(PATTERN_NAME, PATTERN_VERSION, strategy.parameters.as_dict())
         decision = strategy.decide(hours[-1].close_time)
         return Setup(instrument, rules, decision, identity, Timeframe.H1)
+
+    async def news_move_setup(
+        self, provider_id: int, instrument: Instrument, as_of: datetime
+    ) -> Setup | None:
+        """The news move strategy at a 1H close (docs/40, D056): Python finds a strong move,
+        and it becomes a trade only if the coin's news agrees with it."""
+        hours = await self._candles.for_analysis(
+            provider_id, instrument.id, Timeframe.H1, as_of, NEWS_MOVE_HOURS
+        )
+        rules = await self._rules.as_of(provider_id, instrument.id, as_of)
+        if not hours or rules is None:
+            return None
+        strategy = NewsMoveStrategy(hours, rules.tick_size)
+        identity = StrategyIdentity(
+            NEWS_MOVE_NAME, NEWS_MOVE_VERSION, strategy.parameters.as_dict()
+        )
+        decision = strategy.decide(hours[-1].close_time)
+        if decision.proposal is not None:
+            decision = await self._news_confirms(instrument, decision)
+        return Setup(instrument, rules, decision, identity, Timeframe.H1)
+
+    async def _news_confirms(
+        self, instrument: Instrument, decision: BaselineDecision
+    ) -> BaselineDecision:
+        """A move stays a trade only if the coin's news reading agrees with its side (D056).
+
+        A neutral, opposite or failed reading means no trade, so news can confirm a move
+        Python found but never start one.
+        """
+        assert decision.proposal is not None
+        refused = None
+        if self._news is None:
+            refused = "no news reading"
+        else:
+            try:
+                found, context = await self._news.alignment(
+                    instrument.id, decision.proposal.side, decision.as_of
+                )
+            except Exception as error:
+                log.error(
+                    "news_alignment_failed",
+                    instrument=instrument.symbol,
+                    error=type(error).__name__,
+                    detail=str(error)[:300],
+                )
+                refused = "the news reading failed"
+            else:
+                said = f"news is {context.get('direction', 'unknown')}"
+                if found != "aligned":
+                    refused = f"{said}, not with the move"
+                else:
+                    return replace(decision, reasons=(*decision.reasons, f"{said}, with the move"))
+        return BaselineDecision(Action.NO_TRADE, decision.as_of, (*decision.reasons, refused))
 
     async def fvg_setup(
         self, provider_id: int, instrument: Instrument, as_of: datetime
@@ -441,7 +503,10 @@ class SignalService:
                     await self.fvg_setup(provider_id, instrument, close_time),
                 ]
             case Timeframe.H1:
-                return [await self.pattern_setup(provider_id, instrument, close_time)]
+                return [
+                    await self.pattern_setup(provider_id, instrument, close_time),
+                    await self.news_move_setup(provider_id, instrument, close_time),
+                ]
             case _:
                 return [await self.trend_setup(provider_id, instrument, close_time)]
 

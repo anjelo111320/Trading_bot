@@ -75,7 +75,9 @@ const NOTE =
   "exchange, trading as if the account held 100 USDT, with the owner's limits: at most 2% " +
   "risk per trade and 3% across open trades, positions up to 3 times the budget, isolated " +
   "margin at the lowest leverage that fits, up to 3x, with the stop and targets held by " +
-  "Binance. New trades stop for good once 20 USDT is lost, until the owner decides again. " +
+  "Binance. Five strategies trade here; the news move trades a strong 1H move only when the " +
+  "coin's news agrees, untested, at the smallest share. " +
+  "New trades stop for good once 20 USDT is lost, until the owner decides again. " +
   "Leverage changes the margin held, not what a stop loses. The risk engine decides every " +
   "trade. Backtests are not proof of future profit. No real money is used.";
 

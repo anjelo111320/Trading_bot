@@ -20,6 +20,7 @@ const STRATEGY_LABEL: Record<string, string> = {
   pattern_breakout: "1H pattern",
   trend_break_baseline: "15M rule",
   fvg_choch: "4H gap + 15M CHoCH",
+  news_move: "News move",
 };
 // Every bot account risks at most 1% of equity per trade, before the money plan's share.
 const RISK_PER_TRADE = 1;

@@ -332,17 +332,21 @@ async def test_a_waiting_entry_takes_its_coin_and_counts_its_risk(world: World) 
         ("pattern_breakout", D(1), "market"),
         ("fvg_choch", D(1), "limit"),
         ("trend_break_baseline", D("0.5"), "market"),
+        ("news_move", D("0.5"), "market"),
     ],
 )
 async def test_every_strategy_trades_on_binance_at_its_share_of_two_percent(
     world: World, strategy: str, risk: D, entry: str
 ) -> None:
-    """The owner's request on 2026-11-11: all four strategies trade on Binance demo, each at
-    its evidence share of the 2% (D053, D054)."""
+    """The owner's request on 2026-11-11: every strategy trades on Binance demo, each at its
+    evidence share of the 2% (D053, D054). The untested news move gets the smallest (D056)."""
     account = await demo_account(world, EXCHANGE_DEMO_PROFILE)
-    identity = {"daily_trend": TREND, "pattern_breakout": PATTERN, "fvg_choch": GAP}.get(
-        strategy, BASELINE
-    )
+    identity = {
+        "daily_trend": TREND,
+        "pattern_breakout": PATTERN,
+        "fvg_choch": GAP,
+        "news_move": StrategyIdentity("news_move", 1, {"test": True}),
+    }.get(strategy, BASELINE)
     setup = await (
         limit_setup(world) if strategy == "fvg_choch" else plan_setup(world, identity, "98.00")
     )

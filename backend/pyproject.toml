@@ -192,7 +192,7 @@ forbidden_modules = [
 ]
 
 [[tool.importlinter.contracts]]
-name = "news is evidence only (D055)"
+name = "trading reads news only through the injected reading (D055, D056)"
 type = "forbidden"
 source_modules = [
     "trading_intel.trade_signals",

@@ -23,7 +23,7 @@ News is shown on the News page and changes no trade.
 
 ## News Signal
 
-Since 2026-11-11 (D055), Python adds up Claude's labels on each coin's stories from the last 12 hours into a reading: bullish, bearish or neutral. The rule is fixed in [39-NEWS-SIGNAL.md](39-NEWS-SIGNAL.md). The reading is stored beside every Python signal and at every 4H close, to be tested forward. No trading code reads it, and an import rule keeps it that way. The Bot page shows it, labelled untested.
+Since 2026-11-11 (D055), Python adds up Claude's labels on each coin's stories from the last 12 hours into a reading: bullish, bearish or neutral. The rule is fixed in [39-NEWS-SIGNAL.md](39-NEWS-SIGNAL.md). The reading is stored beside every Python signal and at every 4H close, to be tested forward. Since D056 one strategy, the news move ([40-NEWS-MOVE-STRATEGY.md](40-NEWS-MOVE-STRATEGY.md)), trades a strong 1H move only when the reading agrees. News never opens a trade without Python's move. The trading code reaches the reading only through an injected interface, and an import rule keeps it that way. The Bot page shows the reading, labelled untested.
 
 ## News Processing
 1. Retrieve.
