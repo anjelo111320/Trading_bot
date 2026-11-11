@@ -230,10 +230,12 @@ describe("demo bot trades", () => {
       rejection_codes: ["RR_BELOW_MIN"],
       risk_share: "1",
       signal_score: weak,
+      news_alignment: "conflicting",
     } as unknown as Signal;
     render(<Decisions signals={[signal]} symbols={new Map([[3, "SOLUSDT"]])} />);
     expect(screen.getByText(/^Score weak, 2 of 4 against/)).toBeTruthy();
-    expect(screen.getByText(/never changes a trade's size/)).toBeTruthy();
+    expect(screen.getByText("News was against this trade")).toBeTruthy();
+    expect(screen.getByText(/both are recorded to test on live results and never change a trade/)).toBeTruthy();
   });
 });
 

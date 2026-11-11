@@ -9,6 +9,8 @@ from trading_intel.api.auth import Owner
 from trading_intel.api.container import Container, get_container
 from trading_intel.api.schemas.trading import (
     FillView,
+    NewsSignalView,
+    NewsStoryView,
     NewsView,
     PaperSummary,
     PositionView,
@@ -32,6 +34,7 @@ from trading_intel.database.repositories.signals import (
 )
 from trading_intel.domain.candles import Timeframe
 from trading_intel.domain.events import plain
+from trading_intel.news_intelligence.reading import RULE_VERSION, THRESHOLD, WINDOW, NewsSignal
 from trading_intel.risk_management.models import RiskProfile
 from trading_intel.trade_signals.portfolio import EXCHANGE_DEMO_PROFILE, PLAN_PROFILE
 
@@ -142,6 +145,32 @@ async def news(
         )
         for row in await services.news.visible_at(services.clock.now(), limit)
     ]
+
+
+@router.get("/news/signal", response_model=NewsSignalView)
+async def news_signal(_: Owner, services: Services, instrument_id: int) -> NewsSignalView:
+    """The coin's news reading now: Python's sum of Claude's labels (D055). Untested."""
+    reading = await NewsSignal(services.news).reading(instrument_id, services.clock.now())
+    return NewsSignalView(
+        instrument_id=instrument_id,
+        at=reading.at,
+        rule_version=RULE_VERSION,
+        direction=reading.direction,
+        score=plain(reading.score),
+        threshold=plain(THRESHOLD),
+        window_hours=int(WINDOW.total_seconds() // 3600),
+        stories=[
+            NewsStoryView(
+                headline=story.headline,
+                published_at=story.published_at,
+                sentiment=story.sentiment,
+                impact=story.impact,
+                relevance=plain(story.relevance),
+                weight=plain(story.weight),
+            )
+            for story in reading.stories
+        ],
+    )
 
 
 @router.get("/paper-trading/positions", response_model=list[PositionView])

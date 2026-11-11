@@ -1,5 +1,6 @@
-"""News, classifications and API usage."""
+"""News, classifications, API usage and the news signal's readings."""
 
+import json
 from dataclasses import dataclass
 from datetime import datetime
 from decimal import Decimal
@@ -8,6 +9,8 @@ from uuid import UUID, uuid7
 
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncEngine
+
+from trading_intel.news_intelligence.reading import RULE_VERSION, LabelledStory, NewsReading
 
 
 @dataclass(frozen=True)
@@ -191,6 +194,73 @@ class NewsRepository:
                 )
             ).scalar_one()
         return value
+
+    async def labelled_stories(
+        self, instrument_id: int, at: datetime, since: datetime
+    ) -> list[LabelledStory]:
+        """The coin's stories published after `since`, each once, with the label it had at `at`.
+
+        A story counts only if it was both seen and labelled by `at`, so a reading never uses
+        what came later. A story linked through several articles keeps its highest relevance.
+        """
+        query = text(
+            """SELECT DISTINCT ON (a.cluster_id) a.id, a.headline, a.published_at,
+                      l.relevance_score, c.sentiment, c.potential_impact, c.possibly_misleading
+               FROM news_article_instruments l
+               JOIN news_articles a ON a.id = l.article_id
+               JOIN LATERAL (
+                 SELECT x.* FROM news_classifications x JOIN news_articles b ON b.id = x.article_id
+                 WHERE b.cluster_id = a.cluster_id AND x.classified_at <= :at
+                 ORDER BY x.classified_at DESC LIMIT 1
+               ) c ON true
+               WHERE l.instrument_id = :instrument AND a.cluster_id IS NOT NULL
+                 AND a.published_at > :since AND GREATEST(a.published_at, a.first_seen_at) <= :at
+               ORDER BY a.cluster_id, l.relevance_score DESC, a.published_at"""
+        )
+        async with self._engine.connect() as connection:
+            rows = (
+                await connection.execute(
+                    query, {"instrument": instrument_id, "at": at, "since": since}
+                )
+            ).all()
+        return [
+            LabelledStory(
+                article_id=row.id,
+                headline=row.headline,
+                published_at=row.published_at,
+                sentiment=row.sentiment,
+                impact=row.potential_impact,
+                possibly_misleading=row.possibly_misleading,
+                relevance=Decimal(str(row.relevance_score)),
+            )
+            for row in rows
+        ]
+
+    async def record_reading(
+        self, instrument_id: int, decided_at: datetime, close_price: Decimal, reading: NewsReading
+    ) -> bool:
+        """One reading per coin and 4H close, kept to test the news signal (D055)."""
+        async with self._engine.begin() as connection:
+            result = await connection.execute(
+                text(
+                    """INSERT INTO news_readings (instrument_id, decided_at, rule_version,
+                         direction, score, stories, close_price, context)
+                       VALUES (:instrument, :at, :version, :direction, :score, :stories,
+                               :price, CAST(:context AS jsonb))
+                       ON CONFLICT DO NOTHING RETURNING 1"""
+                ),
+                {
+                    "instrument": instrument_id,
+                    "at": decided_at,
+                    "version": RULE_VERSION,
+                    "direction": reading.direction,
+                    "score": reading.score,
+                    "stories": len(reading.stories),
+                    "price": close_price,
+                    "context": json.dumps(reading.context()),
+                },
+            )
+            return result.scalar_one_or_none() is not None
 
     async def visible_at(self, moment: datetime, limit: int = 50) -> list[dict[str, Any]]:
         """News as it could be known then: the later of publication and first sighting."""

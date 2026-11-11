@@ -176,6 +176,17 @@ function reading(value: Reading): string {
  * The signal score's conditions in words (docs/34). It failed its test (D046), so it is shown
  * as information beside the decision and never changes a trade's size.
  */
+const NEWS_TEXT: Record<string, string> = {
+  aligned: "News agreed with this trade",
+  conflicting: "News was against this trade",
+  neutral: "News was neutral",
+};
+
+/** What the news said beside a signal (D055). Older signals were not checked, so say nothing. */
+export function newsText(alignment: string | null | undefined): string | null {
+  return alignment ? (NEWS_TEXT[alignment] ?? null) : null;
+}
+
 export function scoreText(score: SignalScore | null | undefined): string | null {
   if (!score) return null;
   const conditions: [string, Reading][] = [

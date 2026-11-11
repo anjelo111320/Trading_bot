@@ -6,6 +6,7 @@ import {
   type ExchangeStatus,
   type ExitReviews,
   type NewsItem,
+  type NewsSignal,
   type PaperSummary,
   type Position,
   type Signal,
@@ -88,6 +89,16 @@ export function useExitReviews(enabled: boolean) {
     queryFn: () => apiGet<ExitReviews>("/api/v1/ai/exit-reviews?limit=50"),
     refetchInterval: BOT_REFRESH_MS,
     enabled,
+  });
+}
+
+/** A coin's news reading now (D055): Python's sum of Claude's labels. Untested. */
+export function useNewsSignal(instrumentId: number) {
+  return useQuery({
+    queryKey: ["news-signal", instrumentId],
+    queryFn: () => apiGet<NewsSignal>(`/api/v1/news/signal?instrument_id=${instrumentId}`),
+    refetchInterval: 60_000,
+    enabled: instrumentId > 0,
   });
 }
 

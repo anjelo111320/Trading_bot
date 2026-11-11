@@ -13,7 +13,13 @@ import { DataWarning } from "@/components/status/Banners";
 import { useForecastView } from "@/features/forecast/queries";
 import { useCandles, useMarketStatus } from "@/features/market/queries";
 import { useLiveMarket } from "@/features/market/useLiveMarket";
-import { useExchangeOrders, useExchangeStatus, useExitReviews, useSignals } from "@/features/trading/queries";
+import {
+  useExchangeOrders,
+  useExchangeStatus,
+  useExitReviews,
+  useNewsSignal,
+  useSignals,
+} from "@/features/trading/queries";
 import { ApiError, type Instrument, type Timeframe } from "@/lib/api/client";
 
 import { ANALYSIS_SPAN, botMarkers, chartSlots, rightRoom } from "./analysis";
@@ -21,7 +27,7 @@ import { binanceLines, binanceMarkers, waitingEntry } from "./binance";
 import { BinanceAccount, BinanceOrders, BinancePosition } from "./BinancePanels";
 import { BotAnalysis } from "./BotAnalysis";
 import { ClaudeAdvice } from "./ClaudeAdvice";
-import { Decisions, lookups } from "./BotPanels";
+import { Decisions, NewsSignalCard, lookups } from "./BotPanels";
 
 const TIMEFRAMES: Timeframe[] = ["1m", "5m", "15m", "1h"];
 const PROVIDER = "binance_usdm";
@@ -97,6 +103,7 @@ export function BotScreen({ instruments }: { instruments: Instrument[] }) {
   const signals = useSignals("binance", 8);
   const exitReviews = useExitReviews(side === "claude");
   const forecast = useForecastView(PROVIDER, coin?.id ?? 0);
+  const news = useNewsSignal(coin?.id ?? 0);
 
   const candles = useMemo(
     () => mergeCandles((history.data?.pages ?? []).map((page) => page.items)),
@@ -267,6 +274,7 @@ export function BotScreen({ instruments }: { instruments: Instrument[] }) {
                   Python checks again at the next 15M close.
                 </p>
               ) : null}
+              {news.data ? <NewsSignalCard reading={news.data} symbol={coin.symbol} /> : null}
               <Decisions signals={signals.data ?? []} symbols={symbols} />
             </>
           )}

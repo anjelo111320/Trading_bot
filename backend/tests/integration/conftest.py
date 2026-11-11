@@ -29,6 +29,7 @@ CLEANED = (
     "backtest_runs",
     "dataset_versions",
     "model_forecasts",
+    "news_readings",
 )
 
 

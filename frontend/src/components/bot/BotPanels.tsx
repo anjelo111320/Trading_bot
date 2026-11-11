@@ -1,10 +1,11 @@
-import type { Instrument, PaperSummary, Signal, Trade } from "@/lib/api/client";
+import type { Instrument, NewsSignal, PaperSummary, Signal, Trade } from "@/lib/api/client";
 import { formatPrice, formatUtc } from "@/lib/format";
 
 import {
   actionOf,
   averageExit,
   inTrade,
+  newsText,
   openPnl,
   percentOf,
   realizedPnl,
@@ -178,8 +179,8 @@ export function Decisions({ signals, symbols }: { signals: Signal[]; symbols: Ma
       <h2 className="mb-1 text-sm font-semibold">Python&apos;s latest signals</h2>
       <p className="mb-2 text-xs text-muted">
         Every setup Python found, and what the risk engine decided. Closes with no setup are not
-        listed. The score failed its test on 2020 to 2025 history, so it is recorded to test on
-        live results and never changes a trade&apos;s size.
+        listed. The score failed its test on 2020 to 2025 history, and the news signal is untested,
+        so both are recorded to test on live results and never change a trade.
       </p>
       {signals.length === 0 ? (
         <p className="text-sm text-muted">No setups yet. Python checks every coin at each 15M close.</p>
@@ -202,10 +203,54 @@ export function Decisions({ signals, symbols }: { signals: Signal[]; symbols: Ma
               {scoreText(signal.signal_score) && (
                 <div className="text-xs text-muted">{scoreText(signal.signal_score)}</div>
               )}
+              {newsText(signal.news_alignment) && (
+                <div className="text-xs text-muted">{newsText(signal.news_alignment)}</div>
+              )}
             </li>
           ))}
         </ul>
       )}
+    </section>
+  );
+}
+
+const DIRECTION_TONE: Record<string, string> = { bullish: "text-up", bearish: "text-down", neutral: "text-muted" };
+
+function signed(value: string): string {
+  const number = Number(value);
+  return `${number > 0 ? "+" : ""}${number.toFixed(1)}`;
+}
+
+/** The coin's news reading now (D055): Python adds up Claude's labels. Untested. */
+export function NewsSignalCard({ reading, symbol }: { reading: NewsSignal; symbol: string }) {
+  const word = reading.direction[0]!.toUpperCase() + reading.direction.slice(1);
+  return (
+    <section aria-label="News signal" className="rounded border border-line bg-panel p-3">
+      <h2 className="mb-1 text-sm font-semibold">News signal, {symbol}</h2>
+      <p className={`text-sm font-semibold ${DIRECTION_TONE[reading.direction] ?? ""}`}>
+        {word}, score {signed(reading.score)}{" "}
+        <span className="font-normal text-muted">(needs {reading.threshold} either way)</span>
+      </p>
+      <p className="mb-2 text-xs text-muted">
+        {reading.stories.length === 0
+          ? `No labelled stories about ${symbol} in the last ${reading.window_hours} hours.`
+          : `${reading.stories.length} labelled ${reading.stories.length === 1 ? "story" : "stories"} in the last ${reading.window_hours} hours.`}
+      </p>
+      {reading.stories.length > 0 ? (
+        <ul className="mb-2 space-y-1 text-xs">
+          {reading.stories.slice(0, 6).map((story) => (
+            <li key={`${story.published_at}:${story.headline}`}>
+              <span className={DIRECTION_TONE[story.sentiment] ?? ""}>{story.sentiment}</span>,{" "}
+              {story.impact} impact, {signed(story.weight)}: {story.headline}{" "}
+              <span className="text-muted">{formatUtc(story.published_at)}</span>
+            </li>
+          ))}
+        </ul>
+      ) : null}
+      <p className="text-xs text-muted">
+        Untested. Claude labels each story; Python adds the labels up by a fixed rule. It is
+        recorded at every 4H close and beside every signal to test it, and it never changes a trade.
+      </p>
     </section>
   );
 }

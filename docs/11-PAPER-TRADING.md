@@ -77,6 +77,7 @@ The Binance demo account (D048) trades on Binance, not in this simulator. Since 
 - The budget, equity, profit and free margin.
 - The loss stop and how much is left above it, with a warning once it is reached.
 - A limit entry still waiting, as a dashed line with its stop and targets, and a note beside the chart.
+- The coin's news signal now (D055): bullish, bearish or neutral, with the stories behind it, labelled untested. Beside each of Python's signals, whether the news agreed with it. Neither changes a trade.
 - Each open position, with the stop and targets Binance holds, drawn on the chart.
 - Entries Binance filled, as arrows.
 - Every order sent, with what Binance did with it.

@@ -192,6 +192,18 @@ forbidden_modules = [
 ]
 
 [[tool.importlinter.contracts]]
+name = "news is evidence only (D055)"
+type = "forbidden"
+source_modules = [
+    "trading_intel.trade_signals",
+    "trading_intel.risk_management",
+    "trading_intel.execution",
+    "trading_intel.paper_trading",
+    "trading_intel.backtesting",
+]
+forbidden_modules = ["trading_intel.news_intelligence"]
+
+[[tool.importlinter.contracts]]
 name = "backtests never reach providers"
 type = "forbidden"
 source_modules = ["trading_intel.backtesting"]

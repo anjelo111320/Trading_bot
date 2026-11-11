@@ -73,6 +73,9 @@ class NewRecommendation:
     expires_at: datetime
     risk_inputs: dict[str, Any]
     signal_score: dict[str, Any] | None = None
+    # What the news said about the coin then (D055). Information only, like the score.
+    news_alignment: str = "unavailable"
+    news_context: dict[str, Any] | None = None
 
 
 class SignalRepository:
@@ -257,14 +260,15 @@ class SignalRepository:
                          is_countertrend, dedupe_key, setup_quality_score, news_alignment,
                          data_reliability_score, technical_explanation, fundamental_explanation,
                          supporting_evidence, conflicting_evidence, invalidation_conditions,
-                         data_as_of, data_age_ms, created_at, expires_at, signal_score)
+                         data_as_of, data_age_ms, created_at, expires_at, signal_score,
+                         news_context)
                        VALUES (:id, 1, :strategy, :account, :provider, :instrument,
                          CAST(:timeframe AS timeframe_t), CAST(:action AS action_t),
                          CAST(:entry_type AS entry_type_t), :market_price, :entry, :stop,
-                         :countertrend, :key, :quality, 'unavailable', :reliability, :technical,
+                         :countertrend, :key, :quality, :news, :reliability, :technical,
                          :fundamental, CAST(:evidence AS jsonb), CAST(:conflicting AS jsonb),
                          CAST(:invalidation AS jsonb), :data_as_of, :age, :created, :expires,
-                         CAST(:score AS jsonb))"""
+                         CAST(:score AS jsonb), CAST(:news_context AS jsonb))"""
                 ),
                 {
                     "id": recommendation,
@@ -281,9 +285,10 @@ class SignalRepository:
                     "countertrend": new.proposal.is_countertrend,
                     "key": new.dedupe_key,
                     "quality": new.quality_score,
+                    "news": new.news_alignment,
                     "reliability": new.data_reliability,
                     "technical": new.technical_explanation,
-                    "fundamental": "News is not used by the rule baseline.",
+                    "fundamental": "News is recorded beside the signal and never changes it.",
                     "evidence": json.dumps(list(new.evidence)),
                     "conflicting": json.dumps(list(new.conflicting)),
                     "invalidation": json.dumps(list(new.proposal.invalidation_conditions)),
@@ -292,6 +297,9 @@ class SignalRepository:
                     "created": new.created_at,
                     "expires": new.expires_at,
                     "score": None if new.signal_score is None else json.dumps(new.signal_score),
+                    "news_context": None
+                    if new.news_context is None
+                    else json.dumps(new.news_context),
                 },
             )
             if sizing is not None and len(sizing.target_reward_risk) == len(new.proposal.targets):

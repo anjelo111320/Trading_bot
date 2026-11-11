@@ -1843,6 +1843,109 @@
         "title": "MarketStatusView",
         "type": "object"
       },
+      "NewsSignalView": {
+        "description": "A coin's news reading now, from Claude's labels, added up by Python (D055).\n\nUntested, and never read by any trade. Recorded at each 4H close to be tested.",
+        "properties": {
+          "at": {
+            "format": "date-time",
+            "title": "At",
+            "type": "string"
+          },
+          "direction": {
+            "enum": [
+              "bullish",
+              "bearish",
+              "neutral"
+            ],
+            "title": "Direction",
+            "type": "string"
+          },
+          "instrument_id": {
+            "title": "Instrument Id",
+            "type": "integer"
+          },
+          "rule_version": {
+            "title": "Rule Version",
+            "type": "integer"
+          },
+          "score": {
+            "title": "Score",
+            "type": "string"
+          },
+          "stories": {
+            "items": {
+              "$ref": "#/components/schemas/NewsStoryView"
+            },
+            "title": "Stories",
+            "type": "array"
+          },
+          "threshold": {
+            "title": "Threshold",
+            "type": "string"
+          },
+          "untested": {
+            "const": true,
+            "default": true,
+            "title": "Untested",
+            "type": "boolean"
+          },
+          "window_hours": {
+            "title": "Window Hours",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "instrument_id",
+          "at",
+          "rule_version",
+          "direction",
+          "score",
+          "threshold",
+          "window_hours",
+          "stories"
+        ],
+        "title": "NewsSignalView",
+        "type": "object"
+      },
+      "NewsStoryView": {
+        "properties": {
+          "headline": {
+            "title": "Headline",
+            "type": "string"
+          },
+          "impact": {
+            "title": "Impact",
+            "type": "string"
+          },
+          "published_at": {
+            "format": "date-time",
+            "title": "Published At",
+            "type": "string"
+          },
+          "relevance": {
+            "title": "Relevance",
+            "type": "string"
+          },
+          "sentiment": {
+            "title": "Sentiment",
+            "type": "string"
+          },
+          "weight": {
+            "title": "Weight",
+            "type": "string"
+          }
+        },
+        "required": [
+          "headline",
+          "published_at",
+          "sentiment",
+          "impact",
+          "relevance",
+          "weight"
+        ],
+        "title": "NewsStoryView",
+        "type": "object"
+      },
       "NewsView": {
         "properties": {
           "ai_summary": {
@@ -4386,6 +4489,49 @@
           }
         },
         "summary": "News",
+        "tags": [
+          "trading"
+        ]
+      }
+    },
+    "/api/v1/news/signal": {
+      "get": {
+        "description": "The coin's news reading now: Python's sum of Claude's labels (D055). Untested.",
+        "operationId": "news_signal_api_v1_news_signal_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "instrument_id",
+            "required": true,
+            "schema": {
+              "title": "Instrument Id",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NewsSignalView"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Default Response"
+          }
+        },
+        "summary": "News Signal",
         "tags": [
           "trading"
         ]

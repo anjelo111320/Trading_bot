@@ -9,7 +9,7 @@ Status, 2026-11-11 (D052). The terms and measurements are in [crypto-news.md](pr
 | Source | State |
 |---|---|
 | Federal Reserve RSS | Collected every 15 minutes |
-| Finnhub crypto news | Built. Polled every 2 minutes once `FINNHUB_API_KEY` is set |
+| Finnhub crypto news | Live since 2026-11-11 12:11 UTC, polled every 2 minutes. The first pull stored 92 articles |
 | Binance announcements | Built. Pushed live once a read-only `BINANCE_READ_API_KEY` and secret are set. A key that can trade, withdraw or transfer is refused |
 | Publisher RSS: CoinDesk, Cointelegraph, The Block, Decrypt, CryptoSlate | Refused: their terms forbid automated collection or AI processing |
 
@@ -20,6 +20,10 @@ Every item goes through the same pipeline every 2 minutes:
 - Relevant stories are classified once by Claude Haiku 5.5, within the shared $3 daily limit.
 
 News is shown on the News page and changes no trade.
+
+## News Signal
+
+Since 2026-11-11 (D055), Python adds up Claude's labels on each coin's stories from the last 12 hours into a reading: bullish, bearish or neutral. The rule is fixed in [39-NEWS-SIGNAL.md](39-NEWS-SIGNAL.md). The reading is stored beside every Python signal and at every 4H close, to be tested forward. No trading code reads it, and an import rule keeps it that way. The Bot page shows it, labelled untested.
 
 ## News Processing
 1. Retrieve.

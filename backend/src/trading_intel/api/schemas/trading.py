@@ -150,6 +150,32 @@ class PaperSummary(BaseModel):
     daily_profit_stop: str | None
 
 
+class NewsStoryView(BaseModel):
+    headline: str
+    published_at: UtcDatetime
+    sentiment: str
+    impact: str
+    relevance: str
+    weight: str  # Signed: what this story adds to the score.
+
+
+class NewsSignalView(BaseModel):
+    """A coin's news reading now, from Claude's labels, added up by Python (D055).
+
+    Untested, and never read by any trade. Recorded at each 4H close to be tested.
+    """
+
+    untested: Literal[True] = True
+    instrument_id: int
+    at: UtcDatetime
+    rule_version: int
+    direction: Literal["bullish", "bearish", "neutral"]
+    score: str
+    threshold: str
+    window_hours: int
+    stories: list[NewsStoryView]
+
+
 class NewsView(BaseModel):
     id: str
     headline: str

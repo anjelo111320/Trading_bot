@@ -357,3 +357,32 @@ async def test_every_strategy_trades_on_binance_at_its_share_of_two_percent(
     assert risk * D("0.97") < row["max_account_risk"] <= risk
     assert any(call[0] == entry for call in exchange.calls)
     assert any(call[0] == "STOP_MARKET" for call in exchange.calls)
+
+
+class NewsSays:
+    """A stand-in for the news signal (D055), so a test sets what the news said."""
+
+    def __init__(self, found: str = "conflicting", fails: bool = False) -> None:
+        self.found, self.fails = found, fails
+
+    async def alignment(self, instrument_id: int, side: Any, at: Any) -> tuple[str, dict[str, Any]]:
+        if self.fails:
+            raise RuntimeError("news store unreachable")
+        return self.found, {"rule_version": 1, "direction": "bearish", "score": "-2.7"}
+
+
+@pytest.mark.parametrize(
+    ("news", "stored"), [(NewsSays(), "conflicting"), (NewsSays(fails=True), "unavailable")]
+)
+async def test_the_news_is_stored_beside_a_signal_and_never_changes_the_trade(
+    world: World, news: NewsSays, stored: str
+) -> None:
+    """D055: a long with bearish news still trades at its full share; only the record differs."""
+    world.signals._news = news
+    _, outcomes = await run(world, FakeGateway(filled=None), limits=EXCHANGE_DEMO_PROFILE)
+    assert outcomes[0].approved
+    [row] = await assessments()
+    assert D("1.96") < row["max_account_risk"] <= D(2), "the same 2% as without news"
+    [recorded] = await rows("SELECT news_alignment, news_context FROM trade_recommendations")
+    assert recorded["news_alignment"] == stored
+    assert (recorded["news_context"] is None) == (stored == "unavailable")

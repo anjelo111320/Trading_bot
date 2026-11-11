@@ -58,6 +58,7 @@ from trading_intel.execution.binance_futures import (
     signer_for,
 )
 from trading_intel.execution.trader import Budget, FuturesTrader, describe
+from trading_intel.news_intelligence.reading import NewsSignal
 from trading_intel.paper_trading.service import PaperService
 from trading_intel.pattern_detection.pipeline import detect_patterns
 from trading_intel.technical_analysis.pipeline import (
@@ -97,6 +98,39 @@ class ExchangeLink:
     orders: ExchangeRepository
 
 
+class NewsReadings:
+    """Each coin's news reading at every 4H close, with the close price, so the news signal
+    can be tested forward (D055, docs/39). Stored only: no trade reads it."""
+
+    def __init__(self, candles: CandleRepository, news: NewsRepository, signal: NewsSignal) -> None:
+        self._candles = candles
+        self._news = news
+        self._signal = signal
+
+    async def record(self, provider_id: int, instrument: Instrument, close_time: datetime) -> None:
+        if Timeframe.H4.close_time(Timeframe.H4.floor(close_time)) != close_time:
+            return
+        opened = Timeframe.M15.floor(close_time)
+        closing = await self._candles.range(
+            provider_id, instrument.id, Timeframe.M15, opened, opened + Timeframe.M15.delta
+        )
+        if not closing:
+            log.warning("news_reading_skipped", instrument=instrument.symbol, reason="no candle")
+            return
+        reading = await self._signal.reading(instrument.id, close_time)
+        stored = await self._news.record_reading(
+            instrument.id, close_time, closing[-1].close, reading
+        )
+        log.info(
+            "news_reading_recorded",
+            instrument=instrument.symbol,
+            direction=reading.direction,
+            score=str(reading.score),
+            stories=len(reading.stories),
+            stored=stored,
+        )
+
+
 class TradingLoop:
     """Paper fills on every minute, the pattern strategy at each 1H close, and the daily trend
     strategy at each daily close, after tightening its open stops (D008: perpetuals only).
@@ -113,6 +147,8 @@ class TradingLoop:
 
     At each 15M close, Claude's exit advice on the coin's open paper trades is recorded, in
     shadow mode only, and finished trades' advice is scored (D051).
+
+    At each 4H close, each coin's news reading is stored to test the news signal (D055).
     """
 
     def __init__(
@@ -127,8 +163,10 @@ class TradingLoop:
         sleep: Callable[[float], Awaitable[None]] = asyncio.sleep,
         exchange: ExchangeLink | None = None,
         exits: ExitReviewService | None = None,
+        news: NewsReadings | None = None,
     ) -> None:
         self._clock = clock
+        self._news = news
         self._exchange = exchange
         self._exits = exits
         self._scored: datetime | None = None
@@ -230,6 +268,22 @@ class TradingLoop:
                     detail=str(error)[:300],
                 )
             await self._review_exits(provider_id, instrument, close_time)
+            await self._record_news(provider_id, instrument, close_time)
+
+    async def _record_news(
+        self, provider_id: int, instrument: Instrument, close_time: datetime
+    ) -> None:
+        if self._news is None:
+            return
+        try:
+            await self._news.record(provider_id, instrument, close_time)
+        except Exception as error:
+            log.error(
+                "news_reading_failed",
+                instrument=instrument.symbol,
+                error=type(error).__name__,
+                detail=str(error)[:300],
+            )
 
     async def _review_exits(
         self, provider_id: int, instrument: Instrument, close_time: datetime
@@ -444,6 +498,8 @@ async def build_service(
     paper = PaperRepository(engine)
     accounts = SignalRepository(engine)
     listed = await reference.provider_instruments("binance_usdm")
+    news = NewsRepository(engine)
+    news_signal = NewsSignal(news)
     signals = SignalService(
         candles,
         SnapshotRepository(engine),
@@ -454,12 +510,12 @@ async def build_service(
         paper,
         clock,
         bitcoin=next((i.instrument for i in listed if i.instrument.symbol == BITCOIN), None),
+        news=news_signal,
     )
     # Without a key, checks are still recorded as not asked, which counts them for free.
     reviewer = ClaudeExitReviewer(AsyncAnthropic(api_key=anthropic_key)) if anthropic_key else None
     exits = ExitReviewService(
-        candles, market, paper, ExitReviewRepository(engine), NewsRepository(engine), clock,
-        reviewer,
+        candles, market, paper, ExitReviewRepository(engine), news, clock, reviewer,
     )  # fmt: skip
     log.info("exit_reviews_enabled", asking=reviewer is not None)
     trading = TradingLoop(
@@ -472,6 +528,7 @@ async def build_service(
         clock,
         exchange=exchange,
         exits=exits,
+        news=NewsReadings(candles, news, news_signal),
     )
     return QuantService(candles, AnalysisRepository(engine), provider_ids, trading)
 

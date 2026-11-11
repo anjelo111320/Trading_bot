@@ -13,7 +13,7 @@ from collections.abc import Sequence
 from dataclasses import dataclass, replace
 from datetime import datetime, timedelta
 from decimal import ROUND_CEILING, ROUND_FLOOR, Decimal
-from typing import Any, Final
+from typing import Any, Final, Protocol
 from uuid import UUID
 
 import structlog
@@ -190,6 +190,18 @@ def _room(state: AccountState, profile: RiskProfile) -> tuple[Decimal, Decimal, 
     return risk, exposure, profile.max_open_positions - state.open_positions
 
 
+class NewsEvidence(Protocol):
+    """What the news said about a coin at a moment, and whether it agrees with a side (D055).
+
+    Provided by the news module through the entrypoints, which this module never imports, so
+    news can only be stored beside a signal, never feed a decision.
+    """
+
+    async def alignment(
+        self, instrument_id: int, side: Side, at: datetime
+    ) -> tuple[str, dict[str, Any]]: ...
+
+
 class SignalService:
     def __init__(
         self,
@@ -203,8 +215,13 @@ class SignalService:
         clock: Clock,
         parameters: BaselineParameters | None = None,
         bitcoin: Instrument | None = None,
+        news: NewsEvidence | None = None,
     ) -> None:
-        """`bitcoin` is the perpetual whose trend the signal score reads for other coins."""
+        """`bitcoin` is the perpetual whose trend the signal score reads for other coins.
+
+        `news` gives what the news said about a coin, stored beside each signal and never
+        read by any trading decision (D055). Without it, signals record news as unavailable.
+        """
         self._candles = candles
         self._snapshots = snapshots
         self._market = market
@@ -212,6 +229,7 @@ class SignalService:
         self._rules = rules
         self._signals = signals
         self._paper = paper
+        self._news = news
         self._clock = clock
         self._parameters = parameters or BaselineParameters()
         self._bitcoin = bitcoin
@@ -846,6 +864,7 @@ class SignalService:
         proposal, fees = prepared.request.proposal, prepared.request.fees
         quality = self._quality(assessment.sizing)
         score = await self._score_record(provider_id, instrument, timeframe, as_of, proposal.side)
+        news, news_context = await self._news_record(instrument, as_of, proposal.side)
         strategy_id = await self._signals.ensure_strategy(
             identity.name, identity.version, identity.parameters
         )
@@ -885,6 +904,8 @@ class SignalService:
                     **(plan or {}),
                 },
                 signal_score=score,
+                news_alignment=news,
+                news_context=news_context,
             )
         )
         if open_paper and assessment.approved and assessment.sizing is not None:
@@ -903,6 +924,26 @@ class SignalService:
         return SignalOutcome(
             action, recommendation, assessment.approved, tuple(c.value for c in assessment.codes)
         )
+
+    async def _news_record(
+        self, instrument: Instrument, as_of: datetime, side: Side
+    ) -> tuple[str, dict[str, Any] | None]:
+        """What the news said at this close, after the risk engine has decided (D055).
+
+        A failure here must not lose the signal, so it is logged and recorded as unavailable.
+        """
+        if self._news is None:
+            return "unavailable", None
+        try:
+            return await self._news.alignment(instrument.id, side, as_of)
+        except Exception as error:
+            log.error(
+                "news_alignment_failed",
+                instrument=instrument.symbol,
+                error=type(error).__name__,
+                detail=str(error)[:300],
+            )
+            return "unavailable", None
 
     async def _score_record(
         self,

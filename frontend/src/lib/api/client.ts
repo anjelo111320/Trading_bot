@@ -38,6 +38,8 @@ export type ExchangeOpenOrder = Schemas["ExchangeOpenOrderView"];
 export type ExchangeOrder = Schemas["ExchangeOrderView"];
 export type ExitReviews = Schemas["ExitReviewsView"];
 export type ExitReview = Schemas["ExitReviewView"];
+export type NewsSignal = Schemas["NewsSignalView"];
+export type NewsStory = Schemas["NewsStoryView"];
 
 export class ApiError extends Error {
   constructor(

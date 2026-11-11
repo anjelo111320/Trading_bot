@@ -482,6 +482,21 @@ Consequences:
 - Earlier reports for docs/27 and docs/29 were run without that funding, and are kept as they were, with corrected figures beside them.
 Revisit conditions: none for this version. A changed score is a new trial, tested on forward paper results.
 
+### D055: A news signal, recorded and tested forward, never trading
+Date: 2026-11-11.
+Status: Accepted by the owner ("yes, get the signal from news too"), after being told that news changes no trade and why a news signal should be tested first.
+Context: Finnhub crypto news went live that day and Claude labels each story. The owner asked whether positive news makes the AI tell Python to trade. It does not. They then agreed to record news beside each signal for a test, and asked for a signal from the news as well.
+Decision:
+- **The reading:** Python adds up Claude's labels on each coin's stories from the last 12 hours, weighted by impact and relevance, by a fixed rule (version 1, `news_intelligence/reading.py`). A score of +1.5 or more is bullish, −1.5 or less bearish, otherwise neutral. A story counts only once it was seen and labelled, so nothing from later is used. Pre-registered in [39-NEWS-SIGNAL.md](39-NEWS-SIGNAL.md) with its pass rule.
+- **Every Python signal**, in every account, stores whether the news agreed with it (`news_alignment`) and the reading behind it (`news_context`, migration 0017). The signal service gets this through an injected interface after the risk engine has decided. A failed reading is stored as "unavailable" and loses nothing.
+- **At every 4H close**, each coin's reading is stored in `news_readings` with the close price, to be scored forward.
+- **No trading code reads news.** A new import rule, "news is evidence only (D055)", keeps the trading, risk, execution, paper trading and backtest code from importing the news module, as D040 does for forecasts.
+- **The Bot page** shows the coin's reading now with its stories, labelled untested, and says beside each signal whether the news agreed.
+Consequences:
+- No cost beyond the labels Claude already makes for the News page.
+- A pass lets the owner choose that conflicting news skips or halves a trade. News never starts a trade or raises risk.
+Revisit conditions: the docs/39 test runs, at 150 bullish or bearish readings or on 2027-01-31.
+
 ### D054: Every strategy trades on Binance demo, limit entries included, and the Bot page shows Binance only
 Date: 2026-11-11.
 Status: Done at the owner's request: "remove the money plan, 1000 USDT tab and demo, 100 USDT tabs and make sure that all the strategies work in the binance demo". **Amends D048's version 1 limit** of market entries only, and D049's note that the gap strategy is refused on Binance.

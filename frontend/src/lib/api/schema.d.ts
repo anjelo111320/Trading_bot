@@ -300,6 +300,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/news/signal": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * News Signal
+         * @description The coin's news reading now: Python's sum of Claude's labels (D055). Untested.
+         */
+        get: operations["news_signal_api_v1_news_signal_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/paper-trading/positions": {
         parameters: {
             query?: never;
@@ -1011,6 +1031,60 @@ export interface components {
             feeds: components["schemas"]["FeedStatusView"][];
             /** Usable */
             usable: boolean;
+        };
+        /**
+         * NewsSignalView
+         * @description A coin's news reading now, from Claude's labels, added up by Python (D055).
+         *
+         *     Untested, and never read by any trade. Recorded at each 4H close to be tested.
+         */
+        NewsSignalView: {
+            /**
+             * At
+             * Format: date-time
+             */
+            at: string;
+            /**
+             * Direction
+             * @enum {string}
+             */
+            direction: "bullish" | "bearish" | "neutral";
+            /** Instrument Id */
+            instrument_id: number;
+            /** Rule Version */
+            rule_version: number;
+            /** Score */
+            score: string;
+            /** Stories */
+            stories: components["schemas"]["NewsStoryView"][];
+            /** Threshold */
+            threshold: string;
+            /**
+             * Untested
+             * @default true
+             * @constant
+             */
+            untested: true;
+            /** Window Hours */
+            window_hours: number;
+        };
+        /** NewsStoryView */
+        NewsStoryView: {
+            /** Headline */
+            headline: string;
+            /** Impact */
+            impact: string;
+            /**
+             * Published At
+             * Format: date-time
+             */
+            published_at: string;
+            /** Relevance */
+            relevance: string;
+            /** Sentiment */
+            sentiment: string;
+            /** Weight */
+            weight: string;
         };
         /** NewsView */
         NewsView: {
@@ -2091,6 +2165,37 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["NewsView"][];
+                };
+            };
+            /** @description Default Response */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    news_signal_api_v1_news_signal_get: {
+        parameters: {
+            query: {
+                instrument_id: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["NewsSignalView"];
                 };
             };
             /** @description Default Response */
