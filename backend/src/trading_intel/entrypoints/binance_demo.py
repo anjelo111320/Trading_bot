@@ -32,7 +32,7 @@ from trading_intel.execution.binance_futures import (
     signer_for,
 )
 from trading_intel.execution.trader import Budget, FuturesTrader
-from trading_intel.trade_signals.portfolio import PLAN_PROFILE
+from trading_intel.trade_signals.portfolio import EXCHANGE_DEMO_PROFILE
 
 
 def _usdt(value: Decimal) -> str:
@@ -95,7 +95,7 @@ async def run(command: str, confirmed: bool) -> None:
             settings.owner_email,
             EXCHANGE_DEMO_ACCOUNT,
             EXCHANGE_DEMO_BUDGET,
-            PLAN_PROFILE,
+            EXCHANGE_DEMO_PROFILE,
             mode=EXCHANGE_DEMO_MODE,
         )
         if command == "check":

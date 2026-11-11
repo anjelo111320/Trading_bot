@@ -24,6 +24,18 @@ PLAN_PROFILE: Final = RiskProfile(
     daily_profit_stop_fraction=Decimal("0.03"),
 )
 
+# The owner's choice for Binance demo trading on 2026-11-11 (D053): 2% risk per trade, open
+# risk still at most 3%, positions up to 3 times the budget at the leverage that fits, and no
+# new trades for good once 20% of the starting budget is lost.
+EXCHANGE_DEMO_PROFILE: Final = RiskProfile.model_validate(
+    {
+        **PLAN_PROFILE.model_dump(),
+        "max_risk_fraction": Decimal("0.02"),
+        "max_total_exposure_fraction": Decimal(3),
+        "max_total_loss_fraction": Decimal("0.2"),
+    }
+)
+
 # Set once by the study's pre-registered rule, run on 2026-11-09 (docs/33). The 4H gap and 15M
 # CHoCH strategy took its share by the same rule in its own study, run on 2026-11-10 (docs/35).
 EVIDENCE_SHARES: Final[dict[str, Decimal]] = {

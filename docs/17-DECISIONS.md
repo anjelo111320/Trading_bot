@@ -149,7 +149,7 @@ Consequences: Indicator outputs are converted deliberately at the boundary and n
 Revisit conditions: none expected.
 
 ### D016: Hard-coded paper mode and no exchange keys
-Date: 2026-11-02. Status: Adopted. Amended on 2026-11-10 by D048: Binance demo trading keys and orders exist, with test funds only. Real money is still unrepresentable.
+Date: 2026-11-02. Status: Adopted. Amended on 2026-11-10 by D048: Binance demo trading keys and orders exist, with test funds only. Real money is still unrepresentable. Amended on 2026-11-11 by D052: one read-only key from the owner's main Binance account, used only for Binance's announcement stream, and refused if it can trade, withdraw or transfer.
 Context: A setting that can say "live" can be changed by mistake or by an attacker.
 Options considered: a `TRADING_MODE` setting; a mode with only one possible value.
 Decision: `TradingMode` has one member, `PAPER`. No exchange credentials exist anywhere, and no order path is written.
@@ -304,7 +304,7 @@ Revisit conditions: forward results show 1H setups are too rare to evaluate.
 
 ### D032: News sources
 Date: 2026-11-03.
-Status: Accepted by the owner in intent. Each source is conditional on its terms.
+Status: Accepted by the owner in intent. Each source is conditional on its terms. **On 2026-11-11 (D052)** the publisher RSS feeds were refused by their terms, and Finnhub and Binance's announcement stream were built, each off until its key is set.
 Context: News today comes only from the Federal Reserve archive.
 Decision: Add crypto news RSS feeds such as CoinDesk and Cointelegraph, official sources such as SEC releases, US Treasury releases and the BLS release calendar, and one news API such as CryptoPanic or Finnhub using a key from the owner.
 Consequences:
@@ -315,7 +315,7 @@ Revisit conditions: a source's terms forbid this use, or the owner's key is not 
 
 ### D033: Coin universe with news-driven candidates
 Date: 2026-11-03.
-Status: Accepted by the owner on 2026-11-04. **SOLUSDT, XRPUSDT, BNBUSDT and DOGEUSDT were added on 2026-11-06** at the owner's request (migration 0008), each checked that day as a trading perpetual listed in 2020 and outside Binance Alpha. The candidate screen is not built yet.
+Status: Accepted by the owner on 2026-11-04. **SOLUSDT, XRPUSDT, BNBUSDT and DOGEUSDT were added on 2026-11-06** at the owner's request (migration 0008), each checked that day as a trading perpetual listed in 2020 and outside Binance Alpha. **ZECUSDT and 1000PEPEUSDT were added on 2026-11-11** (D052, migration 0014) after passing the screen by hand on Binance's public data, which makes eight. The automatic candidate screen is not built yet.
 Context: The owner asked which coins people trade now, and for a way to add coins when news makes them relevant. Research is in [26-PATTERN-RESEARCH.md](26-PATTERN-RESEARCH.md), section 7.
 Options considered: a fixed list; automatic adds; screened suggestions that the owner approves.
 Proposal:
@@ -482,6 +482,101 @@ Consequences:
 - Earlier reports for docs/27 and docs/29 were run without that funding, and are kept as they were, with corrected figures beside them.
 Revisit conditions: none for this version. A changed score is a new trial, tested on forward paper results.
 
+### D054: Every strategy trades on Binance demo, limit entries included, and the Bot page shows Binance only
+Date: 2026-11-11.
+Status: Done at the owner's request: "remove the money plan, 1000 USDT tab and demo, 100 USDT tabs and make sure that all the strategies work in the binance demo". **Amends D048's version 1 limit** of market entries only, and D049's note that the gap strategy is refused on Binance.
+Context:
+- Three of the four strategies already traded on Binance demo with market entries. The daily trend and the 1H pattern had traded; the 15M rule had had no setup since Binance went live.
+- The 4H gap and 15M CHoCH strategy enters with a limit order, and was refused there.
+Tested on Binance demo trading on 2026-11-11, with orders far from the price, all cancelled within seconds:
+- A GTD limit entry was accepted.
+- A whole-position stop was refused while no position was open (`-4509`).
+- A reduce-only stop and take-profit with a quantity were accepted.
+Decision:
+- A limit entry goes to Binance as GTD until its signal expires, so Binance cancels it unfilled. With it go a reduce-only stop for the full planned size and the take-profits. A fill is protected from the first contract, even while the Mac sleeps.
+- If that stop is refused, the entry is cancelled, and anything already filled is closed.
+- The minute check keeps a waiting entry's stop and targets. It cancels a waiting entry that has lost its stop. Once the entry has expired, it cancels any orders left on a flat coin, as before.
+- A waiting entry counts as the coin's trade: no second signal on that coin, and its size and its loss at the stop count toward exposure and open risk. Margin Binance holds for it is not free.
+- Limit entries are sized with the taker fee, as on paper.
+- Stop entries would still be refused; no strategy uses them.
+- The Bot page shows only the Binance demo account. The `Portfolio`, `Demo` and `Paper` accounts keep running. They are the 1% comparison, and Claude's shadow exit advice (D051) reviews their trades.
+- The page draws a waiting entry as a dashed "BUY limit, waiting" line with its stop and targets. It gets no arrow until a fill is reported.
+Consequences:
+- Binance may fill a limit that price only touched, which the paper simulator never assumes. So Binance can fill trades that paper does not.
+- If an entry fills only in part and then expires, its targets were sized for the full plan. They are reduce-only, so they close at most what is held; the first target can close a larger share than 50%.
+- If price reaches the stop before the entry fills, the stop finds no position and is used up. The minute check then cancels the waiting entry, because it has no stop left.
+- A fill is not reported back yet, so the page shows it as the waiting line becoming the position.
+Revisit conditions: Binance's user data stream is built, or a strategy needs stop entries.
+
+### D053: Binance demo at 2% a trade, up to 3x exposure, with a 20 USDT loss stop
+Date: 2026-11-11.
+Status: Accepted by the owner, who chose each option on 2026-11-11 after the numbers below. **Amends D048's limits** for the Binance demo account only.
+Context:
+- The owner asked whether ×10 leverage on 100 USDT means 1,000 USDT of position and more profit, and set a goal of 10 USDT a day.
+- With risk set by the stop, leverage changes only the margin held and how near liquidation sits. Every trade so far had used ×1.
+- On 2020 to 2025 backtests (first six coins, 1,389 trades, about 0.65 a day), the three tested strategies averaged +0.146R a trade. That is about 0.1 USDT a day on 100 USDT at 1% risk, so 10 USDT a day would need about 105% risk per trade.
+- Replayed from 100 USDT one trade after another, the account ended at:
+  - 591 USDT at 1% risk, with its deepest fall 37%;
+  - 2,161 at 2% (fall 61%);
+  - 7,897 at 5% (fall 93%);
+  - 38 USDT at 10%, wiped out.
+  - The longest losing run was 21 trades. Overlapping trades were counted one after another, so real falls would be deeper.
+- On the liquidation test (2.5% maintenance margin), ×10 liquidates before the stop on 83% of daily trend trades, 12% of 1H pattern trades and none of the 15M gap and CHoCH trades.
+Options considered:
+- Where: Binance demo first, or real 100 USDT now.
+- Risk per trade: 1%, 2%, 5% (above the 2% hard ceiling), or every trade fully at ×10.
+- Loss stop: 20, 50 or 100 USDT.
+- The 10 USDT goal: grow toward it, every day from 100 USDT, or a daily +10 USDT ceiling.
+- Open risk: keep 3% or raise it to 6%.
+- Exposure: keep 1× the budget, or allow 3× with ×3 leverage.
+Decision:
+- The owner chose Binance demo first, 2% per trade, a stop at −20 USDT, growing toward the goal, open risk kept at 3%, and exposure up to 3× with ×3 leverage.
+- `EXCHANGE_DEMO_PROFILE` in `trade_signals/portfolio.py`, and version 2 of the account's stored profile (migration 0016):
+  - `max_risk_fraction` 0.02;
+  - `max_total_exposure_fraction` 3;
+  - a new setting, `max_total_loss_fraction` 0.2.
+  - Every other limit is unchanged: at most ×3 leverage, 3% open risk, the 3% daily loss limit, the +3% daily stop, and 10 positions.
+  - The evidence shares now apply to 2%: the daily trend risks 2%, the 1H pattern and the 4H gap 1%, and the 15M rule 0.5%.
+- The loss stop, in the risk engine:
+  - A trade is shrunk so that every open stop together cannot take equity below 80 USDT. `LOSS_STOP_REACHED` refuses a trade when no room is left.
+  - Once equity is at or below 80 USDT, `exchange_loss_stops` records it against the profile version, and nothing trades until the owner sets a new version.
+  - Open trades keep their stops and targets.
+- The paper accounts keep 1%, 1× exposure and no loss stop.
+Consequences:
+- Leverage still never changes what a stop loses. It now lets tight-stop trades hold positions above the budget: up to 300 USDT of position on 100 USDT.
+- A crash that skips the stops can lose more than the 20 USDT stop. A sudden 10% move on 3× exposure is about 30 USDT. On 10 October 2025, Binance futures fell between 12.9% (BTC) and 67.6% (PEPE) within about 75 minutes.
+- The stop is the account's line, not a guarantee: a stop can fill worse than planned.
+- At 2% per trade, the 3% open-risk limit allows about one and a half full-share trades at once, so profit does not simply double.
+- 10 USDT a day stays a long-term goal. At the backtested rate it needs an account near 5,000 USDT at 2%.
+Revisit conditions: the stop is reached; a month of forward demo results; or the owner wants real money, which needs a new decision replacing D016 and rule 13 in `CLAUDE.md`.
+
+### D052: Two trending coins, and keyed news sources instead of publisher feeds
+Date: 2026-11-11.
+Status: Accepted by the owner, who chose ZEC and PEPE, trading them right away, and all three news sources offered. The publisher RSS feeds were then refused by their own terms.
+Context: The owner asked for more trending coins and a free real-time news API. News came only from the Federal Reserve, and was linked only to BTC and ETH.
+Decision:
+- Coins:
+  - ZECUSDT and 1000PEPEUSDT perpetuals, from the D033 screen on Binance's public data at 06:46 UTC. Their 30-day medians were 1,762M and 297M USDT a day, and their last 7 days 1.41× and 1.37× the month.
+  - Both passed every condition: trading, listed in 2020 and 2023, not tagged Alpha, and listed on Binance spot.
+  - Migration 0014. That makes eight coins, D033's limit.
+- The owner chose to trade them right away, in every account including Binance demo, at the same shares as the six coins. No strategy has been tested on them; docs/33 covered six coins.
+- History loaded: 15M and above from listing, and the 90-day window at every timeframe, 796,763 rows. Free disk went from 3.0 to 2.7 GB.
+- News, migration 0015:
+  - Finnhub's crypto news and Binance's announcement stream are built. Each stays off until its key is set.
+  - The five publisher RSS feeds recommended first are not collected. CoinDesk, Cointelegraph, The Block, Decrypt and CryptoSlate each forbid automated collection, caching or AI processing ([crypto-news.md](providers/crypto-news.md)).
+- Binance's stream needs a key from the owner's main Binance account, which must be read-only:
+  - Before every connection its permissions are checked with Binance. A key that can trade, withdraw or transfer is refused.
+  - A test keeps the key to that check and the stream.
+  - This amends D016: the project holds one real-account key, and it cannot place orders.
+- News is linked to all eight coins by name and contract symbol. The news pipeline runs every 2 minutes instead of 15.
+Consequences:
+- News stays information only. It changes no trade.
+- Classification on Haiku measured $0.00016 an item on 2026-11-11, over 41 items. At about 100 relevant items a day that is about $0.50 a month, within the shared $3 daily limit.
+- Binance announcements published while the computer is off are missed, because the stream does not resend them.
+- Results on ZEC and PEPE are untested. PEPE has 2.5 years of history before the holdout.
+- Each coin adds about 0.5 MB of candles a day.
+Revisit conditions: the owner wants the new coins tested (the docs/33 test can run on them), a coin falls below the D033 volume floor for 30 days, or a publisher grants written permission.
+
 ### D051: An AI exit manager on Claude Haiku 5.5, in shadow mode
 Date: 2026-11-11.
 Status: Accepted by the owner ("start"), after D050. They chose the lowest model, Haiku 5.5, to keep tokens low.
@@ -554,6 +649,7 @@ Consequences:
   - Order state is checked by REST once a minute, not by Binance's user data stream.
   - The dashboard shows the account from a snapshot the quant worker saves once a minute (migration 0012), so the API never holds the keys. Stops and targets that Binance triggers are not reported back yet; they show as the position disappearing.
 Revisit conditions: forward demo results per strategy, the owner wants real money (a new decision replacing D016 and rule 13 in `CLAUDE.md`), or the dashboard view is built.
+Later: D053 (2026-11-11) changed the account's limits to 2% a trade, up to 3× exposure, and a 20 USDT loss stop. D054 (2026-11-11) added limit entries.
 
 ### D049: The 4H gap and 15M CHoCH strategy joins the money plan at a half share
 Date: 2026-11-10.
@@ -562,7 +658,7 @@ Context: The owner asked for a strategy that finds a 4H fair value gap, then a 1
 Decision:
 - The study pooled six coins from 2020 to 2025: +0.020R a trade, 95% interval -0.18 to +0.23, 255 trades. That is above zero, so by its rule it joins the money plan's `Portfolio` account at a half share, beside the 15M rule baseline at each 15M close.
 - Its entries are limit orders at the 15M gap, valid for two hours. The shared simulator now counts only the stop in the candle where a limit fills (docs/10).
-- Binance demo trading sends market entries only, so it refuses these limit orders with that reason.
+- Binance demo trading sends market entries only, so it refuses these limit orders with that reason. Since D054 (2026-11-11) they are sent as limit entries.
 Consequences:
 - The evidence is weak: the result turned negative at 1.5× costs, and only longs made money. Forward paper results decide whether it stays.
 - The study's code, tests and report stay so the run can be reproduced.

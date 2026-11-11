@@ -209,6 +209,8 @@ Haiku is cheap enough that the priority is not over-engineering this.
 
 At 800 input and 200 output tokens per article, 300 articles a day cost about $1.64 a month, and 100 a day about $0.55.
 
+Measured on 2026-11-11, once the owner's key was set: 41 Federal Reserve stories averaged 1,030 input and 105 output tokens, $0.00016 each on Haiku 5.5. The classifier does not cache its instructions, which are about 250 tokens, below Haiku's 512-token caching minimum anyway. Since D052 news links to eight coins, and Finnhub and Binance announcements can add stories once their keys are set. At 100 relevant stories a day that is about $0.50 a month.
+
 ## 10. Budget Guardrails
 
 These cap the damage when something goes wrong, such as a bug that loops.
@@ -260,7 +262,7 @@ Monthly cost by volume and average cost per call:
 | 20 | $30 | $49 | $73 |
 | 40 | $61 | $97 | $146 |
 
-Measured on 2026-11-11 for the planned exit manager (docs/37). On 2020 to 2025 trades, its price checks fired about 2 times per open trade-day: about 20 a day at 10 open trades, before CHoCH, news and event checks. On Claude Haiku 5.5, the owner's choice for now, an exit check of about 2,300 input and 450 output tokens costs about $0.0005, so 20 a day is about $0.30 a month.
+Measured on 2026-11-11 for the planned exit manager (docs/37). On 2020 to 2025 trades, its price checks fired about 2 times per open trade-day: about 20 a day at 10 open trades, before CHoCH, news and event checks. On Claude Haiku 5.5, the owner's choice for now, an exit check of about 2,300 input and 450 output tokens costs about $0.0005, so 20 a day is about $0.30 a month. The first real call, on 2026-11-11, used 606 input tokens, 1,194 written to the cache and 84 output tokens, for $0.00025, so 20 a day is about $0.15 a month.
 
 ## 12. Measurement
 

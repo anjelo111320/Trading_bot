@@ -639,6 +639,10 @@ export interface components {
             day_start_equity?: string | null;
             /** Equity */
             equity?: string | null;
+            /** Loss Floor */
+            loss_floor?: string | null;
+            /** Loss Stopped At */
+            loss_stopped_at?: string | null;
             /**
              * Orders
              * @default []

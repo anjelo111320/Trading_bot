@@ -46,6 +46,12 @@ class Settings(BaseSettings):
 
     anthropic_api_key: SecretStr = SecretStr("")
     newsdata_api_key: SecretStr = SecretStr("")
+    # Free personal key from finnhub.io for its crypto news (D032). Empty keeps it off.
+    finnhub_api_key: SecretStr = SecretStr("")
+    # A read-only HMAC key from the owner's main Binance account, for Binance's announcement
+    # stream only (D032). A key that can trade, withdraw or transfer is refused at startup.
+    binance_read_api_key: SecretStr = SecretStr("")
+    binance_read_api_secret: SecretStr = SecretStr("")
     # Binance demo trading keys, from demo.binance.com: test funds only (D048). Empty keeps the
     # futures bot off. The host is fixed in code, so no setting can point these at real money.
     binance_demo_api_key: SecretStr = SecretStr("")
@@ -87,6 +93,9 @@ class Settings(BaseSettings):
             self.owner_password,
             self.anthropic_api_key,
             self.newsdata_api_key,
+            self.finnhub_api_key,
+            self.binance_read_api_key,
+            self.binance_read_api_secret,
             self.binance_demo_api_key,
             self.binance_demo_api_secret,
         )

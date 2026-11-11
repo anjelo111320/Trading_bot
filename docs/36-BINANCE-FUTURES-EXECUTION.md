@@ -67,14 +67,39 @@ Example on 1,000 USDT, a BTC short with its stop 1.5% above entry: 1% risk is 10
 | Targets | Up to three take-profits on Binance at Python's targets, 50%, 30% and 20%, plus the daily +3% stop on new trades |
 | Leverage | Isolated, the lowest that fits, at most 3x |
 
-Built as designed above, with these version 1 limits: market entries only, and a REST check once a minute instead of Binance's user data stream. Keys can be self-generated Ed25519, recommended, or system-generated HMAC. The dashboard does not show the Binance demo account yet.
+Built as designed above, with these version 1 limits: market entries only (limit entries added on 2026-11-11, see below), and a REST check once a minute instead of Binance's user data stream. Keys can be self-generated Ed25519, recommended, or system-generated HMAC. The dashboard does not show the Binance demo account yet.
 
-Since 2026-11-10 the bot trades a **100 USDT budget** of the demo account's 5,000 test USDT: 100 USDT plus its own profit and loss, at most 1 USDT of risk per trade (D048). BTC's smallest order, 0.001 BTC or about 74 USDT, is too large for most of its signals at that size.
+Since 2026-11-10 the bot trades a **100 USDT budget** of the demo account's 5,000 test USDT: 100 USDT plus its own profit and loss (D048). BTC's smallest order, 0.001 BTC or about 74 USDT, is too large for most of its signals at that size.
 
 Two fixes on 2026-11-11, both found on the first daily trend trade, a SOL short:
 
 - **The daily trend's stop trails on Binance too.** Its exit is the 10-day extreme, moved at each daily close (D039), and only paper stops were moved, so the Binance trade kept its first stop. Now, at each daily close, the worker cancels the trade's stop on Binance and places one at the new level straight after, because Binance holds one whole-position stop per side. If the new stop is refused, the old price goes back. Only if no stop is left at all is the position closed. The stop held afterwards is recorded, so the minute check restores that one. The Bot page lists the cancel as "Stop cancelled".
 - **A target outside Binance's price filter is not sent.** On a short, the daily trend's 10R cap can reach past zero, so it is floored at one tick, 0.01 USDT. Binance's lowest SOL price is 0.42, and it refused the order (`-4013`). Price cannot reach such a target, and the stop covers the whole position, so leaving it out changes no exit.
+
+## Owner Decisions, 2026-11-11 (D053)
+
+| Question | Chosen |
+|---|---|
+| Risk per trade | 2% of the budget, at most 2 USDT a trade. The evidence shares give the daily trend 2%, the 1H pattern and the 4H gap 1%, and the 15M rule 0.5% |
+| Open risk | Kept at 3% across open trades |
+| Exposure | Positions may total up to 3 times the budget, at the lowest leverage that fits, still at most 3x |
+| Loss stop | No new trades once 20 USDT is lost: at 80 USDT, until the owner sets new limits |
+| Real money | Not yet. Demo results first |
+
+Leverage still never changes what a stop loses. It lets a tight-stop trade hold a position larger than the budget. Every open stop together is kept above 80 USDT, but a stop that fills badly in a crash can take the account lower. The Bot page shows the stop and how much is left above it.
+
+## Limit Entries, 2026-11-11 (D054)
+
+The 4H gap and 15M CHoCH strategy enters with a limit order, so it was refused here until the owner asked for every strategy to trade on Binance demo. Binance demo was tested first, with orders far from the price that were all cancelled at once:
+
+| Order, with no position open | Binance |
+|---|---|
+| Limit entry, GTD | Accepted |
+| Stop closing the whole position | Refused, `-4509`: only with an open position |
+| Reduce-only stop with a quantity | Accepted |
+| Reduce-only take-profit with a quantity | Accepted |
+
+So a limit entry is sent as GTD until its signal expires, together with a reduce-only stop for the full planned size and its take-profits. Whatever fills is protected at once, even while the Mac sleeps. If that stop is refused, the entry is cancelled. The minute check keeps a waiting entry's orders, and cancels an entry that has no stop left. A waiting entry takes its coin and counts toward open risk and exposure. Its fill is not reported back yet, so the Bot page shows it as the dashed waiting line becoming the position.
 
 ## Setting It Up
 

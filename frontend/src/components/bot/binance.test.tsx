@@ -4,7 +4,15 @@ import { afterEach, describe, expect, it } from "vitest";
 
 import type { ExchangeOrder, ExchangeStatus } from "@/lib/api/client";
 
-import { binanceLines, binanceMarkers, budgetProfit, heldOnBinance, protection } from "./binance";
+import {
+  aboveLossStop,
+  binanceLines,
+  binanceMarkers,
+  budgetProfit,
+  heldOnBinance,
+  protection,
+  waitingEntry,
+} from "./binance";
 import { BinanceAccount, BinanceOrders, BinancePosition } from "./BinancePanels";
 
 /** A Binance demo snapshot, as the quant worker saves it. Test data, not market data. */
@@ -19,6 +27,8 @@ const STATUS: ExchangeStatus = {
   equity: "101.20",
   day_start_equity: "100",
   available: "59.30",
+  loss_floor: "80",
+  loss_stopped_at: null,
   positions: [
     {
       symbol: "SOLUSDT",
@@ -100,6 +110,59 @@ describe("Binance demo on the Bot page", () => {
     expect(screen.getByText("101.20 USDT")).toBeTruthy();
     expect(screen.getByText(/Test funds on Binance: 5001.20 USDT/)).toBeTruthy();
     expect(screen.getByText(/Checked on Binance 20s ago/)).toBeTruthy();
+  });
+
+  it("gives an unfilled limit entry no arrow", () => {
+    const placed: ExchangeOrder = {
+      created_at: "2026-11-11T12:00:10Z",
+      symbol: "ETHUSDT",
+      kind: "entry",
+      side: "BUY",
+      type: "LIMIT",
+      quantity: "0.02",
+      trigger: null,
+      executed: "0",
+      average_price: null,
+      outcome: "accepted",
+      error: null,
+    };
+    expect(binanceMarkers([placed], "ETHUSDT", 900)).toEqual([]);
+    expect(binanceMarkers([{ ...placed, executed: "0.02" }], "ETHUSDT", 900)).toHaveLength(1);
+  });
+
+  it("draws a waiting limit entry with the stop and targets already placed for it (D054)", () => {
+    const waiting: ExchangeStatus = {
+      ...STATUS,
+      positions: [],
+      orders: [
+        { symbol: "ETHUSDT", type: "STOP_MARKET", side: "SELL", trigger: "2040", quantity: "0.02", close_position: false },
+        { symbol: "ETHUSDT", type: "TAKE_PROFIT_MARKET", side: "SELL", trigger: "2120", quantity: "0.01", close_position: false },
+        { symbol: "ETHUSDT", type: "LIMIT", side: "BUY", trigger: "2058.4", quantity: "0.02", close_position: false },
+      ],
+    };
+    expect(waitingEntry(waiting, "ETHUSDT")?.trigger).toBe("2058.4");
+    expect(waitingEntry(waiting, "SOLUSDT")).toBeNull();
+    const { stop, targets } = protection(waiting, "ETHUSDT");
+    expect(stop?.trigger).toBe("2040");
+    expect(targets.map((item) => item.trigger)).toEqual(["2120"]);
+    expect(binanceLines(waiting, "ETHUSDT").map((line) => [line.title, line.price])).toEqual([
+      ["BUY limit, waiting", 2058.4],
+      ["Stop", 2040],
+      ["TP1", 2120],
+    ]);
+  });
+
+  it("shows the loss stop and what is left above it (D053)", () => {
+    expect(aboveLossStop(STATUS)).toBeCloseTo(21.2, 6);
+    expect(aboveLossStop({ ...STATUS, equity: "79" })).toBe(0);
+    expect(aboveLossStop({ ...STATUS, loss_floor: null })).toBeNull();
+    render(<BinanceAccount status={STATUS} />);
+    expect(screen.getByText("80.00 USDT")).toBeTruthy();
+    expect(screen.getByText("21.20 USDT")).toBeTruthy();
+    expect(screen.queryByRole("alert")).toBeNull();
+    cleanup();
+    render(<BinanceAccount status={{ ...STATUS, loss_stopped_at: "2026-11-12T03:00:00Z" }} />);
+    expect(screen.getByRole("alert").textContent).toMatch(/Stopped by the loss stop at .*until the owner sets/);
   });
 
   it("warns when the worker has stopped checking, and waits before the first check", () => {

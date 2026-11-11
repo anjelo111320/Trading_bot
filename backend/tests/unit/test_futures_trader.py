@@ -253,3 +253,76 @@ def test_the_budget_is_the_capital_plus_the_bots_own_profit_and_loss() -> None:
     assert budget.available == D(80)  # 110 less the 30 the open position holds.
     poor = ExchangeView(equity=D(5010), available=D(20), positions={})
     assert Budget.of(poor, D(100), D(5000), D(5000)).available == D(20), "Binance's own limit"
+
+
+UNTIL = 1_800_007_200_000
+
+
+def resting(symbol: str = "SOLUSDT", side: str = "BUY", filled: str = "0") -> dict[str, Any]:
+    """A limit entry waiting in Binance's book, as `openOrders` reports it."""
+    return {
+        "symbol": symbol,
+        "type": "LIMIT",
+        "side": side,
+        "price": "83.2",
+        "origQty": "0.5",
+        "executedQty": filled,
+        "reduceOnly": False,
+        "clientOrderId": "ati-wait-entry",
+    }
+
+
+async def test_a_limit_entry_waits_with_its_stop_and_targets_already_on_binance() -> None:
+    """D054: the stop is reduce-only for the planned size, so a fill is protected at once."""
+    exchange = FakeGateway()
+    result = await FuturesTrader(exchange).open_trade(plan(limit=D("100"), good_till_ms=UNTIL))
+    assert result.protected and result.waiting and result.filled == 0
+    assert exchange.calls == [
+        ("isolated", "BTCUSDT"),
+        ("leverage", "BTCUSDT", 1),
+        ("limit", "BTCUSDT", "BUY", D("0.010"), D("100"), UNTIL),
+        ("STOP_MARKET", "BTCUSDT", "SELL", D("95"), D("0.010")),
+        ("TAKE_PROFIT_MARKET", "BTCUSDT", "SELL", D("110"), D("0.005")),
+        ("TAKE_PROFIT_MARKET", "BTCUSDT", "SELL", D("115"), D("0.003")),
+        ("TAKE_PROFIT_MARKET", "BTCUSDT", "SELL", D("120"), D("0.002")),
+    ]
+    entry, stop = result.records[0], result.records[1]
+    assert entry.request["type"] == "LIMIT" and entry.request["goodTillDate"] == UNTIL
+    assert stop.request["reduceOnly"] is True and "closePosition" not in stop.request
+
+
+async def test_a_limit_entry_whose_stop_is_refused_is_cancelled() -> None:
+    refused = BinanceError(400, -4509, "Binance 400 -4509: GTE can only be used with positions")
+    exchange = FakeGateway(fails={"STOP_MARKET": refused})
+    result = await FuturesTrader(exchange).open_trade(plan(limit=D("100"), good_till_ms=UNTIL))
+    assert not result.protected and not result.waiting
+    assert exchange.calls[-1] == ("cancel entry", "BTCUSDT", plan().entry_id)
+    assert not any(call[0] == "TAKE_PROFIT_MARKET" for call in exchange.calls)
+
+
+async def test_the_minute_check_keeps_a_waiting_entrys_orders_and_cancels_one_without_a_stop() -> (
+    None
+):
+    stop = {"symbol": "SOLUSDT", "orderType": "STOP_MARKET", "quantity": "0.5"}
+    target = {"symbol": "SOLUSDT", "orderType": "TAKE_PROFIT_MARKET"}
+    kept = FakeGateway(algo=[stop, target], entries=[resting()])
+    assert await FuturesTrader(kept).reconcile({}) == []
+    assert kept.calls == [], "a waiting entry keeps its stop and targets"
+
+    bare = FakeGateway(algo=[target], entries=[resting()])
+    [cancel] = await FuturesTrader(bare).reconcile({})
+    assert bare.calls == [("cancel entry", "SOLUSDT", "ati-wait-entry")]
+    assert cancel.request == {"cancel": "order", "origClientOrderId": "ati-wait-entry"}
+
+
+async def test_the_view_counts_a_waiting_entry_and_the_margin_it_holds() -> None:
+    row = {**position("SOLUSDT", "0"), "openOrderInitialMargin": "41.6"}
+    exchange = FakeGateway(positions=[row], entries=[resting(filled="0.2"), resting("ETHUSDT")])
+    exchange._entries.append({**resting("XRPUSDT"), "reduceOnly": True})  # Closes only.
+    view = await FuturesTrader(exchange).view()
+    assert sorted(view.pending) == ["ETHUSDT", "SOLUSDT"] and view.positions == {}
+    sol = view.pending["SOLUSDT"]
+    assert sol.side is Side.LONG and sol.quantity == D("0.3") and sol.notional == D("24.96")
+    assert view.order_margin == D("41.6")
+    budget = Budget.of(view, capital=D(100), baseline=D(5000), day_start=D(5000))
+    assert budget.available == D("58.4"), "margin held for a waiting entry is not free"

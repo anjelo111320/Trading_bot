@@ -17,6 +17,7 @@ from trading_intel.risk_management.calculators.linear import (
     SUPPORTED,
     daily_profit_reached,
     remaining_daily_budget,
+    remaining_loss_room,
     remaining_open_risk,
     size_trade,
 )
@@ -152,6 +153,9 @@ def _policy_checks(request: RiskRequest) -> list[Code]:
     room = remaining_open_risk(account, profile)
     if room is not None and room <= 0:
         codes.append(Code.OPEN_RISK_FULL)
+    above_stop = remaining_loss_room(account, profile)
+    if above_stop is not None and above_stop <= 0:
+        codes.append(Code.LOSS_STOP_REACHED)
     if account.open_positions >= profile.max_open_positions:
         codes.append(Code.MAX_OPEN_POSITIONS)
     is_spot = request.instrument.instrument_type is InstrumentType.SPOT

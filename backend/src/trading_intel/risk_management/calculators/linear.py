@@ -41,6 +41,22 @@ def remaining_open_risk(account: AccountState, profile: RiskProfile) -> Decimal 
     return account.equity * profile.max_open_risk_fraction - account.open_risk
 
 
+def loss_floor(start: Decimal | None, profile: RiskProfile) -> Decimal | None:
+    """The equity at which an account stops for good (D053), if it has a loss stop."""
+    stop = profile.max_total_loss_fraction
+    if stop is None or start is None:
+        return None
+    return start * (1 - stop)
+
+
+def remaining_loss_room(account: AccountState, profile: RiskProfile) -> Decimal | None:
+    """What may still be lost above the loss stop once every open trade reaches its stop."""
+    floor = loss_floor(account.start_equity, profile)
+    if floor is None:
+        return None
+    return account.equity - account.open_risk - floor
+
+
 def daily_profit_reached(account: AccountState, profile: RiskProfile) -> bool:
     """The money plan stops new trades for the UTC day once it is this far up (D045)."""
     stop = profile.daily_profit_stop_fraction
@@ -110,9 +126,9 @@ def size_trade(
         account.equity * profile.max_risk_fraction * proposal.risk_share,
         remaining_daily_budget(account, profile),
     )
-    room = remaining_open_risk(account, profile)
-    if room is not None:
-        budget = min(budget, room)
+    for room in (remaining_open_risk(account, profile), remaining_loss_room(account, profile)):
+        if room is not None:
+            budget = min(budget, room)
     usable = risk_per_unit > 0 and budget > 0
     quantity = floor_to_step(budget / risk_per_unit, rules.lot_step) if usable else ZERO
 

@@ -1,7 +1,7 @@
 import type { ExchangeOrder, ExchangePosition, ExchangeStatus } from "@/lib/api/client";
 import { formatPrice, formatUtc } from "@/lib/format";
 
-import { budgetProfit, heldOnBinance, protection, STALE_SECONDS } from "./binance";
+import { aboveLossStop, budgetProfit, heldOnBinance, protection, STALE_SECONDS } from "./binance";
 import { percent, Stat, tone, usdt } from "./BotPanels";
 
 function money(value: string | null | undefined): string {
@@ -30,6 +30,7 @@ export function BinanceAccount({ status }: { status: ExchangeStatus }) {
   const profit = budgetProfit(status) ?? 0;
   const held = heldOnBinance(status.positions);
   const stale = (status.age_seconds ?? 0) > STALE_SECONDS;
+  const room = aboveLossStop(status);
   return (
     <section aria-label="Binance demo account" className="rounded border border-line bg-panel p-3">
       <h2 className="mb-2 text-sm font-semibold">Binance demo account</h2>
@@ -42,7 +43,15 @@ export function BinanceAccount({ status }: { status: ExchangeStatus }) {
         <Stat label="Margin held" value={`${held.margin.toFixed(2)} USDT`} />
         <Stat label="Free for margin" value={money(status.available)} />
         <Stat label="Open positions" value={String(status.positions.length)} />
+        {status.loss_floor ? <Stat label="Loss stop at" value={money(status.loss_floor)} /> : null}
+        {room !== null ? <Stat label="Left above the stop" value={`${room.toFixed(2)} USDT`} /> : null}
       </dl>
+      {status.loss_stopped_at ? (
+        <p role="alert" className="mt-2 text-xs font-semibold text-warn">
+          Stopped by the loss stop at {formatUtc(status.loss_stopped_at)}. No new trades until the owner sets
+          new limits; open trades keep their stops and targets.
+        </p>
+      ) : null}
       <p className="mt-2 text-xs text-muted">
         Test funds on Binance: {money(status.binance_equity)}. The bot uses only its {Number(status.capital).toFixed(0)}{" "}
         USDT budget plus its own profit and loss. Isolated margin; stops and targets are held by Binance.

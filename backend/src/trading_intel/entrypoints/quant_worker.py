@@ -66,7 +66,7 @@ from trading_intel.technical_analysis.pipeline import (
     values_at,
 )
 from trading_intel.technical_analysis.series import CandleSeries
-from trading_intel.trade_signals.portfolio import PLAN_PROFILE
+from trading_intel.trade_signals.portfolio import EXCHANGE_DEMO_PROFILE, PLAN_PROFILE
 from trading_intel.trade_signals.service import SignalService
 
 log = structlog.get_logger(__name__)
@@ -305,7 +305,7 @@ class TradingLoop:
 
     async def _exchange_account(self) -> Account | None:
         return await self._accounts.ensure_account(
-            self._owner_email, EXCHANGE_DEMO_ACCOUNT, EXCHANGE_DEMO_BUDGET, PLAN_PROFILE,
+            self._owner_email, EXCHANGE_DEMO_ACCOUNT, EXCHANGE_DEMO_BUDGET, EXCHANGE_DEMO_PROFILE,
             mode=EXCHANGE_DEMO_MODE,
         )  # fmt: skip
 

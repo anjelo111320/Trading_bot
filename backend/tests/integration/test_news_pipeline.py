@@ -53,7 +53,7 @@ async def seeded(clean_database: None) -> AsyncIterator[tuple[AsyncEngine, list[
     connection = await asyncpg.connect(SUPERUSER_URL)
     row = await connection.fetchrow(
         "SELECT p.id AS provider, s.id AS source FROM providers p "
-        "JOIN news_sources s ON s.provider_id = p.id"
+        "JOIN news_sources s ON s.provider_id = p.id WHERE p.code = 'federal_reserve'"
     )
     await connection.execute("TRUNCATE news_articles CASCADE")
     await connection.execute(

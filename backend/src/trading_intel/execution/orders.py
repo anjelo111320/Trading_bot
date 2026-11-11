@@ -81,7 +81,11 @@ class TargetOrder:
 
 @dataclass(frozen=True)
 class TradePlan:
-    """One trade on Binance: a market entry, a stop for the whole position, and targets."""
+    """One trade on Binance: an entry, a stop for the whole position, and targets.
+
+    The entry is at market, or, with `limit`, a limit order that Binance cancels at
+    `good_till_ms` if it has not filled (D054).
+    """
 
     key: str
     symbol: str
@@ -95,6 +99,8 @@ class TradePlan:
     min_qty: Decimal
     min_price: Decimal = Decimal(0)
     max_price: Decimal | None = None
+    limit: Decimal | None = None
+    good_till_ms: int | None = None
 
     @property
     def entry_id(self) -> str:

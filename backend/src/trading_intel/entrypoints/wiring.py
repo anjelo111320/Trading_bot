@@ -29,6 +29,9 @@ EARLIEST: Final[dict[tuple[str, str], datetime]] = {
     (BINANCE_USDM, "BNBUSDT"): datetime(2020, 2, 10, tzinfo=UTC),
     (BINANCE_USDM, "DOGEUSDT"): datetime(2020, 7, 10, tzinfo=UTC),
     (BINANCE_USDM, "SOLUSDT"): datetime(2020, 9, 14, tzinfo=UTC),
+    # First 1M candles, verified 2026-11-11 (D033).
+    (BINANCE_USDM, "ZECUSDT"): datetime(2020, 2, 5, tzinfo=UTC),
+    (BINANCE_USDM, "1000PEPEUSDT"): datetime(2023, 5, 5, tzinfo=UTC),
 }
 
 

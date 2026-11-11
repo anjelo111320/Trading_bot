@@ -75,8 +75,11 @@ Limits are stored per account in `risk_profiles`, so each change is a new audite
 | `target_allocation` | 50/30/20 | Must sum to 1 | Proposed |
 | `max_open_risk_fraction` | None. The money plan uses 0.03 | From `max_risk_fraction` to 0.1 | D045 |
 | `daily_profit_stop_fraction` | None. The money plan uses 0.03 | Above 0 | D045 |
+| `max_total_loss_fraction` | None. Binance demo uses 0.2 | Above 0 and below 1 | D053 |
 
-The proposed defaults are starting points to be reviewed, not validated settings. The two D045 limits are kept in the profile's `settings`, and an account without them behaves as before.
+The proposed defaults are starting points to be reviewed, not validated settings. The D045 and D053 limits are kept in the profile's `settings`, and an account without them behaves as before.
+
+Since D053 the Binance demo account has its own profile: 2% risk per trade, `max_total_exposure_fraction` 3 at up to ×3 leverage, and a loss stop 20% below its 100 USDT budget. Its other limits are the money plan's. The paper accounts are unchanged.
 
 ### Inputs and Outputs
 
@@ -141,6 +144,8 @@ N = Q × E × m               notional
 
 `w` is the proposal's `risk_share`, from above 0 to 1, and 1 unless the money plan sets it (D045). It can only lower risk. `open_risk_room` applies only to accounts with `max_open_risk_fraction`: `equity × max_open_risk_fraction - open risk`, where open risk is what every open or pending trade would lose at its current stop.
 
+For an account with a loss stop (D053), `B` is also capped by `equity - open risk - start × (1 - max_total_loss_fraction)`, where `start` is the account's starting balance. All open stops together then cannot take equity below the stop.
+
 Quantity is always rounded down, so actual risk never exceeds the budget. If `Q` falls below the minimum quantity, or notional falls below the minimum notional, the trade is rejected rather than increased.
 
 Formula by instrument type:
@@ -199,6 +204,7 @@ For accounts that set them (D045):
 
 - **Open risk.** What all open and pending trades would lose at their current stops stays at or below `max_open_risk_fraction` of equity. A trade is shrunk to the room left, and refused as `OPEN_RISK_FULL` when none is left. Per trade it is the engine's own `U × Q`, until a stop move makes it the distance to the new stop.
 - **Daily profit stop.** Once equity is `daily_profit_stop_fraction` above the day's starting equity, new entries are refused as `DAILY_PROFIT_REACHED` until the next UTC day. Open trades keep their stops and targets. It is a ceiling, not a goal: nothing trades more to reach it.
+- **Loss stop (D053).** A trade is shrunk to the room above the stop, and refused as `LOSS_STOP_REACHED` when none is left. Once equity is at or below the stop, the signal service records it against the profile version, and the account takes no new trade until the owner sets a new version. Open trades keep their stops and targets. A stop that fills worse than planned can still take equity below the line.
 - **Signals that arrive together** are split before the engine sees them (`risk_management/allocation.py`). Each asks for its strategy's evidence share of the 1% risk. The highest share is served first, and signals with the same share split what is left in proportion, within the open-risk room, the remaining daily loss budget, the exposure room and the free position slots. The engine then checks each one, counting the trades approved before it at the same close.
 
 ### Exposure Limits
@@ -246,6 +252,7 @@ A new trade is rejected if it would exceed `max_open_positions` or `max_total_ex
 | `DAILY_LOSS_REACHED` | Daily loss limit hit |
 | `DAILY_PROFIT_REACHED` | The money plan's daily profit stop was reached (D045) |
 | `OPEN_RISK_FULL` | No room left under the money plan's open-risk limit (D045) |
+| `LOSS_STOP_REACHED` | No room left above the account's loss stop once every open stop is counted (D053) |
 | `MAX_OPEN_POSITIONS` | Too many positions |
 | `EXPOSURE_EXCEEDED` | Exposure limit exceeded |
 | `LEVERAGE_EXCEEDED` | Leverage above the limit |

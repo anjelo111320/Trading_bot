@@ -3,7 +3,7 @@
 import argparse
 import asyncio
 import signal
-from typing import Final
+from typing import Final, Protocol
 
 import structlog
 from anthropic import AsyncAnthropic
@@ -41,19 +41,27 @@ from trading_intel.market_data.ingest import (
 )
 from trading_intel.market_data.instrument_rules import RuleSnapshotService
 from trading_intel.market_data.reconcile import ReconcileService
+from trading_intel.news_intelligence.binance_announcements import BinanceAnnouncementCollector
 from trading_intel.news_intelligence.classifier import ClaudeClassifier
+from trading_intel.news_intelligence.finnhub import FinnhubNewsCollector
 from trading_intel.news_intelligence.official_sources import NewsArchive, OfficialSourceCollector
 from trading_intel.news_intelligence.pipeline import NewsPipeline
 
 log = structlog.get_logger(__name__)
 
-NEWS_SECONDS: Final = 900
+# Linking and clustering are cheap database work. Each story is still classified only once,
+# so a short cycle classifies a listing within minutes at the same cost.
+NEWS_SECONDS: Final = 120
 LOCK_KEYS: Final = {BINANCE_SPOT: 7101, BINANCE_USDM: 7102, SYNTHETIC: 7103}
 ROUTES: Final = {
     BINANCE_SPOT: ("spot",),
     BINANCE_USDM: ("market", "public"),
     SYNTHETIC: ("synthetic",),
 }
+
+
+class Collector(Protocol):
+    async def run(self) -> None: ...
 
 
 async def build_ingestor(
@@ -100,18 +108,42 @@ async def build_ingestor(
     )
 
 
-async def build_collector(engine: AsyncEngine) -> OfficialSourceCollector:
+async def news_archive(engine: AsyncEngine, code: str) -> NewsArchive:
     async with engine.connect() as connection:
         row = (
             await connection.execute(
                 text(
                     """SELECT p.id AS provider, s.id AS source FROM providers p
                        JOIN news_sources s ON s.provider_id = p.id
-                       WHERE p.code = 'federal_reserve'"""
-                )
+                       WHERE p.code = :code"""
+                ),
+                {"code": code},
             )
         ).one()
-    return OfficialSourceCollector(NewsArchive(engine, row.provider, row.source), SystemClock())
+    return NewsArchive(engine, row.provider, row.source)
+
+
+async def news_collectors(settings: Settings, engine: AsyncEngine) -> list[Collector]:
+    """The Federal Reserve always, and each keyed source once its key is set (D032)."""
+    clock = SystemClock()
+    collectors: list[Collector] = [
+        OfficialSourceCollector(await news_archive(engine, "federal_reserve"), clock)
+    ]
+    finnhub = settings.finnhub_api_key.get_secret_value()
+    if finnhub:
+        archive = await news_archive(engine, "finnhub")
+        collectors.append(FinnhubNewsCollector(archive, clock, finnhub))
+    key = settings.binance_read_api_key.get_secret_value()
+    secret = settings.binance_read_api_secret.get_secret_value()
+    if key and secret:
+        archive = await news_archive(engine, "binance_announcements")
+        collectors.append(BinanceAnnouncementCollector(archive, clock, key, secret))
+    log.info(
+        "news_sources_enabled",
+        finnhub=bool(finnhub),
+        binance_announcements=bool(key and secret),
+    )
+    return collectors
 
 
 async def run_news(settings: Settings, engine: AsyncEngine) -> None:
@@ -148,7 +180,10 @@ async def run(codes: list[str]) -> None:
     engine = create_engine(settings.ingest_database_url, pool_size=8)
     redis: Redis = Redis.from_url(settings.redis_url.get_secret_value())
     tasks = [asyncio.create_task(run_one(code, settings, engine, redis)) for code in codes]
-    tasks.append(asyncio.create_task((await build_collector(engine)).run()))
+    tasks.extend(
+        asyncio.create_task(collector.run())
+        for collector in await news_collectors(settings, engine)
+    )
     tasks.append(asyncio.create_task(run_news(settings, create_engine(settings.database_url))))
 
     stop = asyncio.Event()

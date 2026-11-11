@@ -37,7 +37,7 @@ Each strategy holds at most one position per coin and account. The two tested st
 
 ## Money Plan
 
-Since 2026-11-09 (D045), a third paper account, `Portfolio`, starts with 1,000 USDT and runs every Python strategy on every core coin. At each 15M close the worker decides all six coins together: the 15M rule baseline always, the 1H pattern breakout at each 1H close, and the daily trend at each daily close. A coin whose candle for that close is not stored yet is skipped and logged, never decided on the candle before.
+Since 2026-11-09 (D045), a third paper account, `Portfolio`, starts with 1,000 USDT and runs every Python strategy on every core coin. At each 15M close the worker decides all coins together, eight since ZECUSDT and 1000PEPEUSDT were added on 2026-11-11 (D052): the 15M rule baseline always, the 1H pattern breakout at each 1H close, and the daily trend at each daily close. A coin whose candle for that close is not stored yet is skipped and logged, never decided on the candle before.
 
 | Strategy | Share of the 1% risk per trade | Evidence |
 |---|---|---|
@@ -45,13 +45,17 @@ Since 2026-11-09 (D045), a third paper account, `Portfolio`, starts with 1,000 U
 | 1H pattern breakout | Half: 0.5% | Positive on six coins pooled, but not clearly on the new four |
 | 15M rule baseline | Quarter: 0.25% | Not testable on history before the holdout. Enters at the live price, as in D044 |
 
+ZEC and PEPE trade at the same shares as the other coins, by the owner's choice, although the evidence above was measured on the first six coins only.
+
 Signals at the same close share the account's room, the strongest evidence first (docs/08, Money Plan Limits). At most 3% of equity is at risk across open trades, the same as the daily loss limit, and new trades stop for the UTC day once the account is 3% up. Up to 10 positions, one per strategy and coin, and total size within equity, so no leverage. The risk engine decides every trade and stores each refusal with its reason. Shares weigh backtest evidence; they are not win probabilities.
 
 A decision waits 10 seconds after its close so the minute's order book is stored. A close older than its freshness window (5 minutes for 15M, 15 for 1H, an hour for 1D) is never traded.
 
 ## Demo Bot Page
 
-The dashboard's Bot page (`/bot`) switches between the money plan account and the demo account, and shows one coin at a time on a live candle chart. An arrow marks each entry, BUY below the bar and SELL above it. A dot marks each exit, green at a target and red at the stop. Lines mark the open trade's entry, current stop and the targets still ahead. Beside the chart are the account (profit in USDT and as a share of its start), the open trade with its strategy, risk and live profit, and Python's latest setups with the risk engine's decision. Each setup also shows its signal score in words, such as "Score weak, 2 of 4 against", labelled as recorded to test on live results and never changing a trade's size (D046). For the money plan the account also shows today's profit against the +3% stop and the risk in open trades against its 3% limit. The trade history table lists every coin with its strategy and the USDT it risked. All of it is labelled simulated, and the demo's strategy is labelled untested.
+Since 2026-11-11 (D054), at the owner's request, the Bot page shows only the Binance demo account, described at the end of this section. The money plan and demo paper accounts keep running and recording trades. They are the 1% comparison, and Claude's shadow exit advice reviews them. They are no longer on the Bot page. The rest of this section describes the page as it was for the paper accounts.
+
+The dashboard's Bot page (`/bot`) switched between the money plan account and the demo account, and showed one coin at a time on a live candle chart. An arrow marks each entry, BUY below the bar and SELL above it. A dot marks each exit, green at a target and red at the stop. Lines mark the open trade's entry, current stop and the targets still ahead. Beside the chart are the account (profit in USDT and as a share of its start), the open trade with its strategy, risk and live profit, and Python's latest setups with the risk engine's decision. Each setup also shows its signal score in words, such as "Score weak, 2 of 4 against", labelled as recorded to test on live results and never changing a trade's size (D046). For the money plan the account also shows today's profit against the +3% stop and the risk in open trades against its 3% limit. The trade history table lists every coin with its strategy and the USDT it risked. All of it is labelled simulated, and the demo's strategy is labelled untested.
 
 Since 2026-11-10, at the owner's request, the Bot page also shows the Forecast page's analysis for the coin on the chart. It is Python's view at the latest 1H close, from the same `/forecasts/latest` endpoint:
 
@@ -68,9 +72,11 @@ Advice on the coin on the chart comes first. The advice never changes a trade (d
 
 The Bot page also shows the USDT held in trades: each open trade's size at its entry price, and what it loses at the stop; the account's total in open trades and what is left; and an "In trade USDT" column in the history. Paper trades use leverage 1, so that size is also the margin they hold.
 
-The Binance demo account (D048) trades on Binance, not in this simulator. The Bot page's third account, "Binance demo, 100 USDT", shows it from the snapshot the quant worker saves each minute:
+The Binance demo account (D048) trades on Binance, not in this simulator. Since D053 it has the owner's own limits: 2% risk per trade, positions up to 3 times its budget, and a loss stop at 80 USDT. The paper accounts keep 1%. All four strategies trade there; the gap strategy's limit entries wait on Binance with their stop and targets already placed (D054). The Bot page, "Binance demo, 100 USDT", shows it from the snapshot the quant worker saves each minute:
 
 - The budget, equity, profit and free margin.
+- The loss stop and how much is left above it, with a warning once it is reached.
+- A limit entry still waiting, as a dashed line with its stop and targets, and a note beside the chart.
 - Each open position, with the stop and targets Binance holds, drawn on the chart.
 - Entries Binance filled, as arrows.
 - Every order sent, with what Binance did with it.

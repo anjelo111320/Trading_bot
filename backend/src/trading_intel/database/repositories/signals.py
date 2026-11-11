@@ -35,7 +35,11 @@ EXCHANGE_DEMO_MODE: Final = "exchange_demo"
 # The owner trades it as if it held only this much, whatever test funds Binance gives (D048).
 EXCHANGE_DEMO_BUDGET: Final = Decimal(100)
 # Limits newer than the profile's columns, kept in its settings.
-PLAN_SETTINGS: Final = ("max_open_risk_fraction", "daily_profit_stop_fraction")
+PLAN_SETTINGS: Final = (
+    "max_open_risk_fraction",
+    "daily_profit_stop_fraction",
+    "max_total_loss_fraction",
+)
 ACTIVE_STATES: Final = ("CANDIDATE", "VALIDATED", "ACTIVE", "ENTRY_TRIGGERED", "TP1_HIT", "TP2_HIT")
 
 
@@ -444,6 +448,7 @@ def _profile_of(row: Any) -> RiskProfile:
     return RiskProfile(
         max_open_risk_fraction=setting("max_open_risk_fraction"),
         daily_profit_stop_fraction=setting("daily_profit_stop_fraction"),
+        max_total_loss_fraction=setting("max_total_loss_fraction"),
         max_risk_fraction=row["max_risk_fraction"],
         min_reward_risk=row["min_reward_risk"],
         max_daily_loss_fraction=row["max_daily_loss_fraction"],

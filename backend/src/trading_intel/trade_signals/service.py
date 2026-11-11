@@ -37,9 +37,10 @@ from trading_intel.domain.candles import Timeframe
 from trading_intel.domain.instruments import Instrument, InstrumentRules
 from trading_intel.domain.signals import Action, EntryType, Side
 from trading_intel.execution.orders import TradePlan, price_limits
-from trading_intel.execution.trader import Budget, FuturesTrader, Position
+from trading_intel.execution.trader import Budget, FuturesTrader, PendingEntry, Position
 from trading_intel.risk_management.allocation import Claim, split
 from trading_intel.risk_management.calculators.linear import (
+    loss_floor,
     remaining_daily_budget,
     remaining_open_risk,
 )
@@ -501,11 +502,13 @@ class SignalService:
     ) -> list[SignalOutcome]:
         """The money plan on Binance demo trading (D048), with Binance's account as the truth.
 
-        Each signal asks for its strategy's evidence share of the 1% risk, strongest first, as
-        in the paper plan. Binance holds one position per coin in one-way mode, so a coin with
-        a position takes no new signal. The risk engine sizes each trade at the lowest leverage
-        whose margin fits, up to the profile's maximum, and only an approved trade is sent:
-        a market entry, a stop for the whole position, and a take-profit per target.
+        Each signal asks for its strategy's evidence share of the profile's risk per trade,
+        strongest first, as in the paper plan. Binance holds one position per coin in one-way
+        mode, so a coin with a position or a waiting limit entry takes no new signal. The risk
+        engine sizes each trade at the lowest leverage whose margin fits, up to the profile's
+        maximum, and only an approved trade is sent: a market or limit entry, a stop for the
+        whole position, and a take-profit per target (D054). Once the account's loss stop is
+        reached, nothing trades until the owner sets a new profile version (D053).
         """
         view = await trader.view()
         if view.equity <= 0:
@@ -517,18 +520,35 @@ class SignalService:
         budget = Budget.of(view, account.starting_balance, baseline, day_start)
         if budget.equity <= 0 or budget.day_start_equity <= 0:
             return [SignalOutcome(Action.NO_TRADE, None, False, ("the budget is used up",))]
+        # The loss stop holds until the owner decides again, as a new profile version (D053).
+        reached = await orders.loss_stop(account.id, account.risk_profile_id)
+        floor = loss_floor(account.starting_balance, account.profile)
+        if reached is None and floor is not None and budget.equity <= floor:
+            reached = self._clock.now()
+            await orders.record_loss_stop(
+                account.id, account.risk_profile_id, reached, budget.equity, floor
+            )
+            log.warning("loss_stop_reached", equity=str(budget.equity), floor=str(floor))
+        if reached is not None:
+            stopped = (
+                f"stopped by its loss stop at {reached:%Y-%m-%d %H:%M} UTC, until the owner decides"
+            )
+            return [SignalOutcome(Action.NO_TRADE, None, False, (stopped,))]
         stops = await orders.stops(account.id)
+        # A limit entry waiting on Binance counts as a trade: its coin, size and risk (D054).
         state = AccountState(
             equity=budget.equity,
             day_start_equity=budget.day_start_equity,
-            open_positions=len(view.positions),
-            gross_exposure=sum((p.notional for p in view.positions.values()), ZERO),
-            open_risk=sum(
-                (_risk_at_stop(p, stops.get(s)) for s, p in view.positions.items()), ZERO
-            ),
+            open_positions=len(set(view.positions) | set(view.pending)),
+            gross_exposure=sum((p.notional for p in view.positions.values()), ZERO)
+            + sum((e.notional for e in view.pending.values()), ZERO),
+            open_risk=sum((_risk_at_stop(p, stops.get(s)) for s, p in view.positions.items()), ZERO)
+            + sum((_entry_risk(e, stops.get(s)) for s, e in view.pending.items()), ZERO),
             available_margin=budget.available * MARGIN_USE,
+            start_equity=account.starting_balance,
         )
         taken = set(view.positions)
+        waiting = set(view.pending) - taken
         outcomes: list[SignalOutcome] = []
         ready = sorted(
             (s for s in setups if s.decision.proposal is not None and s.decision.setup_atr),
@@ -543,8 +563,10 @@ class SignalService:
                 if (name, symbol) in LEFT_OUT
                 else "a position on this coin is open on Binance"
                 if symbol in taken
-                else "only market entries are sent to Binance"
-                if proposal.entry_type is not EntryType.MARKET
+                else "a limit entry on this coin is waiting on Binance"
+                if symbol in waiting
+                else "only market and limit entries are sent to Binance"
+                if proposal.entry_type is EntryType.STOP
                 else None
             )
             if refused:
@@ -576,6 +598,9 @@ class SignalService:
                 continue
             sent = prepared.request.proposal
             lowest, highest = price_limits(setup.rules.raw)
+            # Binance cancels a limit entry itself when the signal expires.
+            expires = prepared.now + setup.timeframe.delta * (sent.expiry_candles or 1)
+            is_limit = sent.entry_type is EntryType.LIMIT
             plan = TradePlan(
                 key=prepared.key,
                 symbol=symbol,
@@ -589,6 +614,8 @@ class SignalService:
                 min_qty=setup.rules.min_qty,
                 min_price=lowest,
                 max_price=highest,
+                limit=sent.entry if is_limit else None,
+                good_till_ms=int(expires.timestamp() * 1000) if is_limit else None,
             )
             result = await trader.open_trade(plan)
             for record in result.records:
@@ -604,10 +631,11 @@ class SignalService:
                 strategy=name,
                 filled=str(result.filled),
                 protected=result.protected,
+                waiting=result.waiting,
                 leverage=leverage,
             )
-            if result.filled > 0:
-                taken.add(symbol)
+            if result.filled > 0 or result.waiting:
+                (waiting if result.waiting else taken).add(symbol)
                 state = state.model_copy(
                     update={
                         "open_positions": state.open_positions + 1,
@@ -960,6 +988,13 @@ def _risk_at_stop(position: Position, stop: tuple[Decimal, str] | None) -> Decim
     if stop is None:
         return position.notional
     return abs(position.entry_price - stop[0]) * abs(position.amount)
+
+
+def _entry_risk(entry: PendingEntry, stop: tuple[Decimal, str] | None) -> Decimal:
+    """What a waiting limit entry would lose at its stop once filled, or its whole value."""
+    if stop is None:
+        return entry.notional
+    return abs(entry.price - stop[0]) * entry.quantity
 
 
 def _against(side: Side, price: Decimal, tick: Decimal) -> Decimal:

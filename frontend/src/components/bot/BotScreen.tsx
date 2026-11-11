@@ -13,28 +13,19 @@ import { DataWarning } from "@/components/status/Banners";
 import { useForecastView } from "@/features/forecast/queries";
 import { useCandles, useMarketStatus } from "@/features/market/queries";
 import { useLiveMarket } from "@/features/market/useLiveMarket";
-import {
-  useExchangeOrders,
-  useExchangeStatus,
-  useExitReviews,
-  usePaperSummary,
-  useSignals,
-  useTrades,
-} from "@/features/trading/queries";
+import { useExchangeOrders, useExchangeStatus, useExitReviews, useSignals } from "@/features/trading/queries";
 import { ApiError, type Instrument, type Timeframe } from "@/lib/api/client";
 
 import { ANALYSIS_SPAN, botMarkers, chartSlots, rightRoom } from "./analysis";
-import { binanceLines, binanceMarkers } from "./binance";
+import { binanceLines, binanceMarkers, waitingEntry } from "./binance";
 import { BinanceAccount, BinanceOrders, BinancePosition } from "./BinancePanels";
 import { BotAnalysis } from "./BotAnalysis";
 import { ClaudeAdvice } from "./ClaudeAdvice";
-import { BotAccount, Decisions, OpenTrade, TradeHistory, lookups } from "./BotPanels";
-import { inOpenTrades, isOpen, openLines, tradeMarkers } from "./trades";
+import { Decisions, lookups } from "./BotPanels";
 
 const TIMEFRAMES: Timeframe[] = ["1m", "5m", "15m", "1h"];
 const PROVIDER = "binance_usdm";
 
-type BotAccountName = "portfolio" | "demo" | "binance";
 type SideView = "trades" | "analysis" | "claude";
 
 const SIDE_VIEWS: Record<SideView, string> = { trades: "Trades", analysis: "Analysis", claude: "Claude" };
@@ -71,43 +62,16 @@ function Switch<T extends string>({
   );
 }
 
-const ACCOUNTS: Record<BotAccountName, { label: string; title: string; note: string }> = {
-  portfolio: {
-    label: "Money plan, 1,000 USDT",
-    title: "Money plan account",
-    note:
-      "Money plan, simulated. Python runs four strategies on all six coins in a 1,000 USDT " +
-      "paper account. The daily trend risks the full 1% per trade, the 1H pattern and the 4H gap " +
-      "with 15M CHoCH half, and the 15M rule a quarter, set by six-coin backtests. Signals at the " +
-      "same close share the room, " +
-      "at most 3% is at risk at once, and new trades stop for the day at +3%. The risk engine " +
-      "decides every trade. Backtests are not proof of future profit. No real orders are placed.",
-  },
-  demo: {
-    label: "Demo, 100 USDT",
-    title: "Demo account",
-    note:
-      "Demo bot, simulated. Python's 15M rule strategy trades all six coins on live Binance " +
-      "prices, through the risk engine, in a 100 USDT paper account. This strategy is untested " +
-      "and showed no edge in backtests. No real orders are placed.",
-  },
-  binance: {
-    label: "Binance demo, 100 USDT",
-    title: "Binance demo account",
-    note:
-      "Binance demo trading, test funds. Python's money plan sends real orders to Binance's demo " +
-      "exchange, trading as if the account held 100 USDT: at most 1% risk per trade, isolated " +
-      "margin at the lowest leverage that fits, with the stop and targets held by Binance. The " +
-      "risk engine decides every trade. Backtests are not proof of future profit. No real money " +
-      "is used.",
-  },
-};
-
-const ACCOUNT_LABELS: Record<BotAccountName, string> = {
-  portfolio: ACCOUNTS.portfolio.label,
-  demo: ACCOUNTS.demo.label,
-  binance: ACCOUNTS.binance.label,
-};
+// The Bot page shows the Binance demo account only, at the owner's request on 2026-11-11.
+// The paper accounts still run, for comparison and Claude's shadow exit advice.
+const NOTE =
+  "Binance demo trading, test funds. Python's money plan sends real orders to Binance's demo " +
+  "exchange, trading as if the account held 100 USDT, with the owner's limits: at most 2% " +
+  "risk per trade and 3% across open trades, positions up to 3 times the budget, isolated " +
+  "margin at the lowest leverage that fits, up to 3x, with the stop and targets held by " +
+  "Binance. New trades stop for good once 20 USDT is lost, until the owner decides again. " +
+  "Leverage changes the margin held, not what a stop loses. The risk engine decides every " +
+  "trade. Backtests are not proof of future profit. No real money is used.";
 
 export function BotScreen({ instruments }: { instruments: Instrument[] }) {
   const coins = useMemo(
@@ -119,7 +83,6 @@ export function BotScreen({ instruments }: { instruments: Instrument[] }) {
   );
   const [selectedId, setSelectedId] = useState(coins[0]?.id ?? 0);
   const [timeframe, setTimeframe] = useState<Timeframe>("15m");
-  const [account, setAccount] = useState<BotAccountName>("portfolio");
   const [hoverTime, setHoverTime] = useState<number | null>(null);
   const [side, setSide] = useState<SideView>("trades");
   const [layers, setLayers] = useState<Layers>(ALL_LAYERS);
@@ -129,14 +92,9 @@ export function BotScreen({ instruments }: { instruments: Instrument[] }) {
   const history = useCandles(PROVIDER, coin?.id ?? 0, timeframe);
   const live = useLiveMarket(PROVIDER, coin?.id ?? 0, timeframe);
   const status = useMarketStatus();
-  const onBinance = account === "binance";
-  // Paper data is not read for the Binance account, whose positions live on Binance.
-  const paperAccount = account === "binance" ? "portfolio" : account;
-  const summary = usePaperSummary(paperAccount, !onBinance);
-  const trades = useTrades(paperAccount, !onBinance);
-  const exchange = useExchangeStatus(onBinance);
-  const exchangeOrders = useExchangeOrders(onBinance);
-  const signals = useSignals(account, 8);
+  const exchange = useExchangeStatus(true);
+  const exchangeOrders = useExchangeOrders(true);
+  const signals = useSignals("binance", 8);
   const exitReviews = useExitReviews(side === "claude");
   const forecast = useForecastView(PROVIDER, coin?.id ?? 0);
 
@@ -151,53 +109,38 @@ export function BotScreen({ instruments }: { instruments: Instrument[] }) {
     }
   }, [fetchNextPage, hasNextPage, isFetchingNextPage]);
 
-  const allTrades = useMemo(() => (onBinance ? [] : (trades.data ?? [])), [onBinance, trades.data]);
-  const coinTrades = useMemo(
-    () => allTrades.filter((trade) => trade.instrument_id === coin?.id),
-    [allTrades, coin?.id],
-  );
   const view = forecast.data ?? null;
   const sent = exchangeOrders.data;
   const markers = useMemo(() => {
     const step = STEP_SECONDS[timeframe];
-    const own = onBinance ? binanceMarkers(sent ?? [], coin?.symbol ?? "", step) : tradeMarkers(coinTrades, step);
-    return botMarkers(own, view, layers, timeframe);
-  }, [onBinance, sent, coin?.symbol, coinTrades, timeframe, view, layers]);
+    return botMarkers(binanceMarkers(sent ?? [], coin?.symbol ?? "", step), view, layers, timeframe);
+  }, [sent, coin?.symbol, timeframe, view, layers]);
   const liveOpen = live.candle?.openTime ?? null;
   const slots = useMemo(() => chartSlots(candles, liveOpen), [candles, liveOpen]);
   useEffect(() => {
     overlay.setState({ view, layers, span: ANALYSIS_SPAN, slots, barSeconds: STEP_SECONDS[timeframe] });
   }, [overlay, view, layers, slots, timeframe]);
   const missing = forecast.error instanceof ApiError && forecast.error.status === 404;
-  const levels = useMemo(
-    () => (onBinance ? binanceLines(exchange.data, coin?.symbol ?? "") : openLines(coinTrades)),
-    [onBinance, exchange.data, coin?.symbol, coinTrades],
-  );
-  const openHere = coinTrades.filter(isOpen);
-  const { ticks, symbols } = useMemo(() => lookups(coins), [coins]);
+  const levels = useMemo(() => binanceLines(exchange.data, coin?.symbol ?? ""), [exchange.data, coin?.symbol]);
+  const { symbols } = useMemo(() => lookups(coins), [coins]);
+  const waiting = waitingEntry(exchange.data, coin?.symbol ?? "");
   const ticksBySymbol = useMemo(() => new Map(coins.map((item) => [item.symbol, item.tick_size] as const)), [coins]);
 
-  const price = live.price;
-  const mid = price ? (Number(price.bid) + Number(price.ask)) / 2 : null;
   const feed = status.data?.feeds.find((item) => item.provider === PROVIDER);
   const problem =
     live.connection !== "open"
       ? "the live connection is down, reconnecting"
       : feed && feed.state !== "HEALTHY"
         ? `the ${PROVIDER} feed is ${feed.state}`
-        : onBinance && (exchange.isError || exchangeOrders.isError)
+        : exchange.isError || exchangeOrders.isError
           ? "the Binance demo account cannot be read"
-          : trades.isError || summary.isError
-            ? "the bot account cannot be read"
-            : null;
+          : null;
 
   const hovered = hoverTime
     ? candles.find((candle) => Date.parse(candle.open_time) / 1000 === hoverTime)
     : undefined;
   const showForming = !hovered && Boolean(live.candle) && !live.candle?.isClosed;
   const legendValues = hovered ?? (showForming ? live.candle : candles.at(-1)) ?? null;
-  const balance = summary.data?.starting_balance ?? (account === "demo" ? "100" : "1000");
-  const shown = ACCOUNTS[account];
 
   if (!coin) {
     return <p className="p-6 text-sm text-muted">No perpetual coins are listed.</p>;
@@ -207,13 +150,7 @@ export function BotScreen({ instruments }: { instruments: Instrument[] }) {
       <DataWarning problem={problem} />
       <header className="flex flex-wrap items-center gap-3 border-b border-line px-4 py-2">
         <AppNav current="/bot" />
-        <Switch
-          label="Account"
-          options={ACCOUNT_LABELS}
-          value={account}
-          onChange={setAccount}
-          className="ml-auto"
-        />
+        <span className="ml-auto text-sm font-semibold">Binance demo, 100 USDT</span>
         <label className="flex items-center gap-2 text-xs text-muted">
           Coin
           <select
@@ -248,7 +185,7 @@ export function BotScreen({ instruments }: { instruments: Instrument[] }) {
       </header>
 
       <p role="note" className="border-b border-line bg-raised px-4 py-2 text-xs text-warn">
-        {shown.note}
+        {NOTE}
       </p>
 
       <div className="flex flex-1 flex-col gap-3 p-3 lg:flex-row">
@@ -287,11 +224,7 @@ export function BotScreen({ instruments }: { instruments: Instrument[] }) {
               )}
             </div>
           </section>
-          {onBinance ? (
-            <BinanceOrders orders={exchangeOrders.data ?? []} ticks={ticksBySymbol} />
-          ) : (
-            <TradeHistory trades={allTrades} balance={balance} ticks={ticks} />
-          )}
+          <BinanceOrders orders={exchangeOrders.data ?? []} ticks={ticksBySymbol} />
         </main>
 
         <aside className="flex w-full shrink-0 flex-col gap-3 lg:w-80 xl:w-96">
@@ -305,7 +238,7 @@ export function BotScreen({ instruments }: { instruments: Instrument[] }) {
               missing={missing}
               failed={forecast.isError && !missing}
             />
-          ) : onBinance ? (
+          ) : (
             <>
               {exchange.data ? <BinanceAccount status={exchange.data} /> : null}
               {exchange.data?.positions
@@ -318,28 +251,20 @@ export function BotScreen({ instruments }: { instruments: Instrument[] }) {
                     tickSize={coin.tick_size}
                   />
                 ))}
-              {exchange.data && !exchange.data.positions.some((item) => item.symbol === coin.symbol) ? (
+              {waiting && !exchange.data?.positions.some((item) => item.symbol === coin.symbol) ? (
+                <p className="rounded border border-line bg-panel p-3 text-sm">
+                  A {waiting.side} limit for {waiting.quantity} {coin.symbol} at {waiting.trigger} is waiting on
+                  Binance. Its stop and targets are already placed, so it is protected from the moment it fills.
+                  Binance cancels it if it has not filled when the signal expires.
+                </p>
+              ) : null}
+              {exchange.data && !waiting && !exchange.data.positions.some((item) => item.symbol === coin.symbol) ? (
                 <p className="rounded border border-line bg-panel p-3 text-sm text-muted">
                   No open {coin.symbol} position on Binance.
                   {exchange.data.positions.length
                     ? ` Open on: ${exchange.data.positions.map((item) => item.symbol).join(", ")}.`
                     : ""}{" "}
                   Python checks again at the next 15M close.
-                </p>
-              ) : null}
-              <Decisions signals={signals.data ?? []} symbols={symbols} />
-            </>
-          ) : (
-            <>
-              {summary.data ? (
-                <BotAccount summary={summary.data} title={shown.title} inTrades={inOpenTrades(allTrades)} />
-              ) : null}
-              {openHere.map((trade) => (
-                <OpenTrade key={trade.id} trade={trade} mid={mid} tickSize={coin.tick_size} balance={balance} />
-              ))}
-              {openHere.length === 0 ? (
-                <p className="rounded border border-line bg-panel p-3 text-sm text-muted">
-                  No open {coin.symbol} trade. Python checks again at the next 15M close.
                 </p>
               ) : null}
               <Decisions signals={signals.data ?? []} symbols={symbols} />

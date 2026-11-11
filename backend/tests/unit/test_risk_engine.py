@@ -24,6 +24,7 @@ from trading_intel.risk_management.models import (
     TradeProposal,
 )
 from trading_intel.risk_management.rejections import RejectionCode as Code
+from trading_intel.trade_signals.portfolio import EXCHANGE_DEMO_PROFILE, PLAN_PROFILE
 
 
 def instrument(kind: InstrumentType = InstrumentType.SPOT) -> Instrument:
@@ -311,6 +312,59 @@ def test_the_plan_limits_stay_inside_their_ceilings() -> None:
         RiskProfile(max_open_risk_fraction=D("0.2"))
     with pytest.raises(ValidationError):
         RiskProfile(daily_profit_stop_fraction=D(0))
+
+
+LOSS_STOP = RiskProfile(max_total_loss_fraction=D("0.2"))
+
+
+def test_the_loss_stop_shrinks_a_trade_so_every_stop_together_stays_above_it() -> None:
+    """D053: from 10,000, the stop is 8,000. With 100 at risk in open trades and equity 8,150,
+    a new trade may risk 50, not its usual 1% (81.50)."""
+    near = account(
+        equity=D(8150), day_start_equity=D(8150), start_equity=D(10000), open_risk=D(100)
+    )
+    sizing = assess(request(account=near, profile=LOSS_STOP)).sizing
+    assert sizing is not None
+    assert sizing.risk_budget == D(50)
+    assert sizing.max_account_risk <= D(50)
+
+
+def test_no_room_above_the_loss_stop_refuses_new_trades() -> None:
+    at_stop = account(equity=D(8000), day_start_equity=D(8000), start_equity=D(10000))
+    assert Code.LOSS_STOP_REACHED in assess(request(account=at_stop, profile=LOSS_STOP)).codes
+    covered = account(
+        equity=D(8100), day_start_equity=D(8100), start_equity=D(10000), open_risk=D(100)
+    )
+    refused = codes(assess(request(account=covered, profile=LOSS_STOP)))
+    # Open trades could take it to the stop, so nothing is left to risk: size 0 as well.
+    assert refused == {Code.LOSS_STOP_REACHED, Code.QTY_BELOW_MIN, Code.NOTIONAL_BELOW_MIN}
+
+
+def test_the_loss_stop_is_off_without_a_starting_balance_or_the_setting() -> None:
+    low = account(equity=D(7000), day_start_equity=D(7000))
+    assert assess(request(account=low, profile=LOSS_STOP)).approved
+    started = low.model_copy(update={"start_equity": D(10000)})
+    assert assess(request(account=started)).approved
+
+
+@pytest.mark.parametrize("fraction", [D(0), D(1), D("-0.1")])
+def test_a_loss_stop_must_leave_something_and_stop_somewhere(fraction: D) -> None:
+    with pytest.raises(ValidationError):
+        RiskProfile(max_total_loss_fraction=fraction)
+
+
+def test_the_binance_demo_limits_are_the_owners_choice_and_paper_is_unchanged() -> None:
+    """D053: 2% a trade, open risk still 3%, positions up to 3x at up to 3x leverage, and a
+    loss stop 20% below the start. The paper money plan keeps 1% and no leverage."""
+    demo = EXCHANGE_DEMO_PROFILE
+    assert demo.max_risk_fraction == D("0.02") and demo.max_open_risk_fraction == D("0.03")
+    assert demo.max_total_exposure_fraction == D(3) and demo.max_leverage == D(3)
+    assert demo.max_total_loss_fraction == D("0.2")
+    assert demo.max_daily_loss_fraction == D("0.03")
+    assert demo.daily_profit_stop_fraction == D("0.03")
+    assert PLAN_PROFILE.max_risk_fraction == D("0.01")
+    assert PLAN_PROFILE.max_total_exposure_fraction == D(1)
+    assert PLAN_PROFILE.max_total_loss_fraction is None
 
 
 def test_unsupported_instrument_is_refused() -> None:

@@ -18,8 +18,19 @@ EVENT_KEYWORDS: Final[dict[str, frozenset[str]]] = {
     "token_unlock": frozenset({"unlock", "unlocks", "vesting"}),
     "security_incident": frozenset({"hack", "exploit", "breach", "stolen", "drained"}),
 }
-BITCOIN: Final = frozenset({"bitcoin", "btc"})
-ETHEREUM: Final = frozenset({"ethereum", "ether", "eth"})
+# Names for each traded coin, keyed by its base asset, with its perpetual's symbol so exchange
+# notices such as "Binance Futures Will Launch ZECUSDT" match. "Binance" alone names the
+# exchange, not BNB, so it is left out.
+COIN_NAMES: Final[dict[str, frozenset[str]]] = {
+    "BTC": frozenset({"bitcoin", "btc", "btcusdt"}),
+    "ETH": frozenset({"ethereum", "ether", "eth", "ethusdt"}),
+    "SOL": frozenset({"solana", "sol", "solusdt"}),
+    "XRP": frozenset({"xrp", "ripple", "xrpusdt"}),
+    "BNB": frozenset({"bnb", "bnbusdt"}),
+    "DOGE": frozenset({"dogecoin", "doge", "dogeusdt"}),
+    "ZEC": frozenset({"zcash", "zec", "zecusdt"}),
+    "1000PEPE": frozenset({"pepe", "1000pepe", "1000pepeusdt", "pepeusdt"}),
+}
 CRYPTO: Final = frozenset({"crypto", "cryptocurrency", "stablecoin", "stablecoins"})
 MACRO_EVENTS: Final = frozenset({"monetary_policy", "inflation", "employment", "geopolitical"})
 
@@ -35,17 +46,13 @@ class Relevance:
 
 
 def assess_relevance(headline: str, snippet: str | None) -> Relevance:
-    """Direct mentions score high. Macro news affects both assets, at a lower score."""
+    """Direct mentions score high. General crypto and macro news reach BTC and ETH, lower."""
     words = fingerprint(f"{headline} {snippet or ''}")
     hits = {name: len(words & keys) for name, keys in EVENT_KEYWORDS.items()}
     best = max(hits, key=lambda name: hits[name])
     hint = best if hits[best] else None
 
-    assets: dict[str, float] = {}
-    if words & BITCOIN:
-        assets["BTC"] = 0.9
-    if words & ETHEREUM:
-        assets["ETH"] = 0.9
+    assets = {asset: 0.9 for asset, names in COIN_NAMES.items() if words & names}
     if not assets and words & CRYPTO:
         assets = {"BTC": 0.6, "ETH": 0.6}
     if not assets and hint in MACRO_EVENTS:

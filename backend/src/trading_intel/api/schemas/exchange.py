@@ -42,6 +42,9 @@ class ExchangeStatusView(BaseModel):
     equity: str | None = None
     day_start_equity: str | None = None
     available: str | None = None
+    # Equity at which new trades stop for good, and when that happened (D053).
+    loss_floor: str | None = None
+    loss_stopped_at: UtcDatetime | None = None
     positions: list[ExchangePositionView] = []
     orders: list[ExchangeOpenOrderView] = []
 

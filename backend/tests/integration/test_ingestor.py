@@ -36,6 +36,7 @@ from trading_intel.domain.base import DataOrigin
 from trading_intel.domain.candles import ClosedCandle, FormingCandle, Timeframe
 from trading_intel.domain.instruments import Instrument
 from trading_intel.domain.market import OpenInterest, TopOfBook
+from trading_intel.entrypoints.ingestor import news_archive
 from trading_intel.events.redis_transport import RedisEventBus
 from trading_intel.market_data.gaps import GapRepairService
 from trading_intel.market_data.health import FeedHealth, FeedState
@@ -515,7 +516,8 @@ async def test_archive_keeps_the_first_sighting_of_each_url(ingest_engine: Async
             await connection.execute(
                 text(
                     "SELECT p.id AS provider, s.id AS source FROM providers p "
-                    "JOIN news_sources s ON s.provider_id = p.id"
+                    "JOIN news_sources s ON s.provider_id = p.id "
+                    "WHERE p.code = 'federal_reserve'"
                 )
             )
         ).one()
@@ -523,6 +525,44 @@ async def test_archive_keeps_the_first_sighting_of_each_url(ingest_engine: Async
     item = FeedItem("Headline", f"https://example.test/{uuid7()}", None, START)
     assert await archive.store([item], START) == 1
     assert await archive.store([item], START + timedelta(days=1)) == 0
+
+
+async def test_keyed_sources_store_their_own_id_and_provenance(
+    ingest_engine: AsyncEngine,
+) -> None:
+    archive = await news_archive(ingest_engine, "finnhub")
+    url = f"https://example.test/{uuid7()}"
+    item = FeedItem(
+        "Zcash rallies", url, None, START, external_id="7151", extra={"publisher": "Example"}
+    )
+    assert await archive.store([item], START) == 1
+    async with ingest_engine.connect() as connection:
+        row = (
+            await connection.execute(
+                text("SELECT external_id, raw FROM news_articles WHERE url = :url"), {"url": url}
+            )
+        ).one()
+    assert row.external_id == "7151"
+    assert row.raw == {"publisher": "Example"}
+
+
+async def test_keyed_news_providers_record_their_terms(ingest_engine: AsyncEngine) -> None:
+    async with ingest_engine.connect() as connection:
+        rows = (
+            await connection.execute(
+                text(
+                    """SELECT p.code, p.terms_reviewed_at, p.delete_on_termination,
+                              s.credibility_tier
+                       FROM providers p JOIN news_sources s ON s.provider_id = p.id
+                       WHERE p.code IN ('finnhub', 'binance_announcements') ORDER BY p.code"""
+                )
+            )
+        ).all()
+    assert [(r.code, r.credibility_tier, r.delete_on_termination) for r in rows] == [
+        ("binance_announcements", "official", False),
+        ("finnhub", "aggregator", True),  # Finnhub's terms: delete the data if the plan ends.
+    ]
+    assert all(r.terms_reviewed_at is not None for r in rows)
 
 
 class FlakyCandles(CandleRepository):

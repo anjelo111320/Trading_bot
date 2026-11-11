@@ -14,7 +14,8 @@ export default function NewsPage() {
       <main className="mx-auto max-w-3xl space-y-3 p-4">
         <h1 className="text-lg font-semibold">News</h1>
         <p className="text-sm text-muted">
-          Official Federal Reserve items. Tone describes the text and does not predict price.
+          Federal Reserve releases, plus Finnhub crypto news and Binance announcements once their
+          keys are set. Tone describes the text and does not predict price.
         </p>
         {news.isError ? <p role="alert" className="text-bad">News could not be loaded.</p> : null}
         {news.data?.map((item) => <NewsCard key={item.id} item={item} />)}

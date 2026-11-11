@@ -6,7 +6,8 @@ Feed XML is untrusted, so defusedxml refuses entity expansion attacks.
 
 import asyncio
 import hashlib
-from collections.abc import Sequence
+import json
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from datetime import datetime
 from email.utils import parsedate_to_datetime
@@ -42,6 +43,8 @@ class FeedItem:
     url: str
     snippet: str | None
     published_at: datetime
+    external_id: str | None = None  # The source's own id, where it has one.
+    extra: Mapping[str, str | int] | None = None  # Provenance kept as data, such as a publisher.
 
     @property
     def content_hash(self) -> str:
@@ -94,15 +97,17 @@ class NewsArchive:
                 "published": item.published_at,
                 "now": now,
                 "hash": item.content_hash,
+                "external": item.external_id,
+                "raw": json.dumps(dict(item.extra)) if item.extra else None,
             }
             for item in items
         ]
         count = text("SELECT count(*) FROM news_articles WHERE provider_id = :provider")
         insert = text(
             """INSERT INTO news_articles (provider_id, source_id, headline, url, snippet,
-                 published_at, retrieved_at, first_seen_at, content_hash)
+                 published_at, retrieved_at, first_seen_at, content_hash, external_id, raw)
                VALUES (:provider, :source, :headline, :url, :snippet, :published, :now, :now,
-                 :hash)
+                 :hash, :external, CAST(:raw AS jsonb))
                ON CONFLICT (provider_id, url) DO NOTHING"""
         )
         async with self._engine.begin() as connection:

@@ -33,7 +33,7 @@ from trading_intel.database.repositories.signals import (
 from trading_intel.domain.candles import Timeframe
 from trading_intel.domain.events import plain
 from trading_intel.risk_management.models import RiskProfile
-from trading_intel.trade_signals.portfolio import PLAN_PROFILE
+from trading_intel.trade_signals.portfolio import EXCHANGE_DEMO_PROFILE, PLAN_PROFILE
 
 router = APIRouter(prefix="/api/v1", tags=["trading"])
 
@@ -47,7 +47,12 @@ ACCOUNTS: Final[dict[str, tuple[str, Decimal, RiskProfile | None, str]]] = {
     "paper": (PAPER_ACCOUNT, STARTING_BALANCE, None, "paper"),
     "demo": (DEMO_ACCOUNT, DEMO_BALANCE, None, "paper"),
     "portfolio": (PORTFOLIO_ACCOUNT, PORTFOLIO_BALANCE, PLAN_PROFILE, "paper"),
-    "binance": (EXCHANGE_DEMO_ACCOUNT, EXCHANGE_DEMO_BUDGET, PLAN_PROFILE, EXCHANGE_DEMO_MODE),
+    "binance": (
+        EXCHANGE_DEMO_ACCOUNT,
+        EXCHANGE_DEMO_BUDGET,
+        EXCHANGE_DEMO_PROFILE,
+        EXCHANGE_DEMO_MODE,
+    ),
 }
 
 

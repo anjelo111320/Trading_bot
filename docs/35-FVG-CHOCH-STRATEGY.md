@@ -121,4 +121,4 @@ What this says:
 - Most CHoCH events were refused before any gap check: 22,152 went against the 4H trend, and 16,405 did not pull back into an open 4H gap.
 - The rule was followed as written. It joins at half share because its rule says so, not because the evidence is strong. Forward paper results decide its future.
 
-Decision: it joins the money plan's `Portfolio` account at a half share from 2026-11-10 (D049). Binance demo trading sends market entries only for now, so its limit orders are refused there with that reason.
+Decision: it joins the money plan's `Portfolio` account at a half share from 2026-11-10 (D049). Binance demo trading sends market entries only for now, so its limit orders are refused there with that reason. Since 2026-11-11 (D054) its limit entries trade on Binance demo too, waiting there with their stop and targets already placed.

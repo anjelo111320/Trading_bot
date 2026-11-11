@@ -270,6 +270,46 @@ class BinanceFuturesGateway:
         )
         return result
 
+    async def limit_order(
+        self,
+        symbol: str,
+        side: OrderSide,
+        quantity: Decimal,
+        price: Decimal,
+        client_id: str,
+        good_till_ms: int,
+    ) -> dict[str, Any]:
+        """A resting entry at `price` that Binance itself cancels at `good_till_ms` (GTD)."""
+        result: dict[str, Any] = await self._signed(
+            "POST",
+            "/fapi/v1/order",
+            {
+                "symbol": symbol,
+                "side": side,
+                "type": "LIMIT",
+                "timeInForce": "GTD",
+                "goodTillDate": good_till_ms,
+                "price": price,
+                "quantity": quantity,
+                "newClientOrderId": client_id,
+                "newOrderRespType": "RESULT",
+            },
+        )
+        return result
+
+    async def open_entry_orders(self, symbol: str | None = None) -> list[dict[str, Any]]:
+        """Orders resting in the book, such as a limit entry waiting to fill."""
+        result: list[dict[str, Any]] = await self._signed(
+            "GET", "/fapi/v1/openOrders", {"symbol": symbol}
+        )
+        return result
+
+    async def cancel_order(self, symbol: str, client_id: str) -> dict[str, Any]:
+        result: dict[str, Any] = await self._signed(
+            "DELETE", "/fapi/v1/order", {"symbol": symbol, "origClientOrderId": client_id}
+        )
+        return result
+
     async def order(self, symbol: str, client_id: str) -> dict[str, Any]:
         result: dict[str, Any] = await self._signed(
             "GET", "/fapi/v1/order", {"symbol": symbol, "origClientOrderId": client_id}
@@ -289,7 +329,9 @@ class BinanceFuturesGateway:
         """A stop or take-profit held by Binance, on the mark price, with price protection.
 
         Without a quantity it closes the whole position, which is how the stop is placed. A
-        take-profit carries its share of the position and can only reduce it.
+        take-profit carries its share of the position and can only reduce it. So does the stop
+        of a limit entry that has not filled yet, because Binance takes a whole-position stop
+        only while a position is open (-4509, tested on demo trading on 2026-11-11).
         """
         whole = quantity is None
         result: dict[str, Any] = await self._signed(

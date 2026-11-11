@@ -36,6 +36,8 @@ class RiskProfile(DomainModel):
     # The money plan's limits (D045). None leaves an account as it was.
     max_open_risk_fraction: Decimal | None = None
     daily_profit_stop_fraction: Decimal | None = None
+    # New trades stop for good once the account is this far below its starting balance (D053).
+    max_total_loss_fraction: Decimal | None = None
 
     @model_validator(mode="after")
     def _within_ceilings(self) -> RiskProfile:
@@ -55,6 +57,9 @@ class RiskProfile(DomainModel):
         profit_stop = self.daily_profit_stop_fraction
         if profit_stop is not None and profit_stop <= 0:
             raise ValueError("daily_profit_stop_fraction must be positive")
+        total_loss = self.max_total_loss_fraction
+        if total_loss is not None and not Decimal(0) < total_loss < Decimal(1):
+            raise ValueError("max_total_loss_fraction is outside its range")
         return self
 
 
@@ -73,6 +78,8 @@ class AccountState(DomainModel):
     # Margin the exchange can still lend this trade, for an account on Binance (D048). None for
     # paper accounts, which hold no margin.
     available_margin: Decimal | None = Field(default=None, ge=0)
+    # The starting balance a loss stop is measured from (D053). None leaves the stop off.
+    start_equity: Decimal | None = Field(default=None, gt=0)
 
 
 class MarketState(DomainModel):

@@ -18,10 +18,11 @@ from trading_intel.database.repositories.signals import (
     EXCHANGE_DEMO_ACCOUNT,
     EXCHANGE_DEMO_BUDGET,
     EXCHANGE_DEMO_MODE,
+    Account,
     SignalRepository,
 )
 from trading_intel.execution.trader import Budget, ExchangeView, OrderRecord, Position, describe
-from trading_intel.trade_signals.portfolio import PLAN_PROFILE
+from trading_intel.trade_signals.portfolio import EXCHANGE_DEMO_PROFILE
 
 pytestmark = pytest.mark.integration
 
@@ -33,14 +34,19 @@ def api(clean_database: None, tmp_path: Path) -> Iterator[TestClient]:
     yield from logged_in(tmp_path, kronos=False)
 
 
-async def account_id() -> UUID:
+async def demo_account() -> Account:
     engine = create_engine(make_settings().database_url)
     account = await SignalRepository(engine).ensure_account(
-        EMAIL, EXCHANGE_DEMO_ACCOUNT, EXCHANGE_DEMO_BUDGET, PLAN_PROFILE, mode=EXCHANGE_DEMO_MODE
-    )
+        EMAIL, EXCHANGE_DEMO_ACCOUNT, EXCHANGE_DEMO_BUDGET, EXCHANGE_DEMO_PROFILE,
+        mode=EXCHANGE_DEMO_MODE,
+    )  # fmt: skip
     await engine.dispose()
     assert account is not None
-    return account.id
+    return account
+
+
+async def account_id() -> UUID:
+    return (await demo_account()).id
 
 
 async def save(account: UUID, records: list[OrderRecord] | None = None) -> None:
@@ -68,6 +74,25 @@ def test_before_the_worker_saves_anything_the_view_says_so(api: TestClient) -> N
     body = response.json()
     assert body["connected"] is False and body["capital"] == "100"
     assert body["test_funds"] is True and body["positions"] == []
+    # D053: new trades stop for good at 80 USDT, 20 below the budget.
+    assert body["loss_floor"] == "80" and body["loss_stopped_at"] is None
+
+
+def test_a_reached_loss_stop_is_shown_with_its_time(api: TestClient) -> None:
+    api.get(STATUS)
+    account = asyncio.run(demo_account())
+
+    async def reach() -> None:
+        engine = create_engine(make_settings().database_url)
+        await ExchangeRepository(engine).record_loss_stop(
+            account.id, account.risk_profile_id, datetime(2026, 11, 12, 3, tzinfo=UTC), D(79),
+            D(80),
+        )  # fmt: skip
+        await engine.dispose()
+
+    asyncio.run(reach())
+    body = api.get(STATUS).json()
+    assert body["loss_stopped_at"] == "2026-11-12T03:00:00Z" and body["loss_floor"] == "80"
 
 
 def test_the_view_shows_the_budget_positions_and_the_stops_binance_holds(api: TestClient) -> None:

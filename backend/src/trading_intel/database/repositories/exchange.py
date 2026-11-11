@@ -1,7 +1,7 @@
 """Every request sent to Binance demo trading and its reply, and each day's starting equity (D048).
 
-Both tables are append-only. A stop's price is kept with its order, so a position that lost
-its stop can be given it back.
+These tables are append-only, as is a reached loss stop (D053). A stop's price is kept with its
+order, so a position that lost its stop can be given it back.
 """
 
 import json
@@ -153,6 +153,45 @@ class ExchangeRepository:
                 )
             ).scalar_one_or_none()
         return None if stored is None else Decimal(stored)
+
+    async def loss_stop(self, account_id: UUID, risk_profile_id: UUID) -> datetime | None:
+        """When the account reached its loss stop under this profile version (D053), if it did."""
+        async with self._engine.connect() as connection:
+            return (
+                await connection.execute(
+                    text(
+                        "SELECT reached_at FROM exchange_loss_stops "
+                        "WHERE account_id = :account AND risk_profile_id = :profile"
+                    ),
+                    {"account": account_id, "profile": risk_profile_id},
+                )
+            ).scalar_one_or_none()
+
+    async def record_loss_stop(
+        self,
+        account_id: UUID,
+        risk_profile_id: UUID,
+        reached_at: datetime,
+        equity: Decimal,
+        floor: Decimal,
+    ) -> None:
+        """Kept until the owner decides again, which takes a new profile version."""
+        async with self._engine.begin() as connection:
+            await connection.execute(
+                text(
+                    """INSERT INTO exchange_loss_stops (account_id, risk_profile_id, equity,
+                         floor, reached_at)
+                       VALUES (:account, :profile, :equity, :floor, :reached)
+                       ON CONFLICT DO NOTHING"""
+                ),
+                {
+                    "account": account_id,
+                    "profile": risk_profile_id,
+                    "equity": equity,
+                    "floor": floor,
+                    "reached": reached_at,
+                },
+            )
 
     async def save_status(self, account_id: UUID, taken_at: datetime, body: dict[str, Any]) -> None:
         """Replace the account's snapshot. Only the latest is kept."""

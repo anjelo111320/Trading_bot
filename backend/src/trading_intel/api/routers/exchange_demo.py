@@ -24,7 +24,8 @@ from trading_intel.database.repositories.signals import (
     Account,
 )
 from trading_intel.domain.events import plain
-from trading_intel.trade_signals.portfolio import PLAN_PROFILE
+from trading_intel.risk_management.calculators.linear import loss_floor
+from trading_intel.trade_signals.portfolio import EXCHANGE_DEMO_PROFILE
 
 router = APIRouter(prefix="/api/v1/exchange-demo", tags=["exchange-demo"])
 
@@ -33,7 +34,7 @@ Services = Annotated[Container, Depends(get_container)]
 
 async def demo_account(owner: Owner, services: Container) -> Account:
     account = await services.signals.ensure_account(
-        owner.email, EXCHANGE_DEMO_ACCOUNT, EXCHANGE_DEMO_BUDGET, PLAN_PROFILE,
+        owner.email, EXCHANGE_DEMO_ACCOUNT, EXCHANGE_DEMO_BUDGET, EXCHANGE_DEMO_PROFILE,
         mode=EXCHANGE_DEMO_MODE,
     )  # fmt: skip
     if account is None:
@@ -45,12 +46,18 @@ async def demo_account(owner: Owner, services: Container) -> Account:
 async def status(owner: Owner, services: Services) -> ExchangeStatusView:
     account = await demo_account(owner, services)
     capital = plain(account.starting_balance.normalize())  # Stored with 18 places.
+    floor = loss_floor(account.starting_balance, account.profile)
+    limits: dict[str, Any] = {
+        "loss_floor": None if floor is None else plain(floor.normalize()),
+        "loss_stopped_at": await services.exchange.loss_stop(account.id, account.risk_profile_id),
+    }
     stored = await services.exchange.status(account.id)
     if stored is None:
-        return ExchangeStatusView(connected=False, capital=capital)
+        return ExchangeStatusView(connected=False, capital=capital, **limits)
     taken_at, body = stored
     binance, budget = body["binance"], body["budget"]
     return ExchangeStatusView(
+        **limits,
         connected=True,
         taken_at=taken_at,
         age_seconds=int((services.clock.now() - taken_at).total_seconds()),

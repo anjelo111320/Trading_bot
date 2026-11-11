@@ -117,6 +117,51 @@ async def test_the_stop_closes_the_whole_position_and_a_target_only_reduces_it()
         assert order["priceProtect"] == "true"
 
 
+async def test_a_limit_entry_rests_until_its_signal_expires_and_can_be_cancelled() -> None:
+    """D054: GTD, so Binance itself cancels an entry that has not filled by the expiry."""
+    seen: list[httpx.Request] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        seen.append(request)
+        if request.url.path == "/fapi/v1/openOrders":
+            return httpx.Response(200, json=[{"symbol": "SOLUSDT", "type": "LIMIT"}])
+        return httpx.Response(200, json={"status": "NEW", "executedQty": "0"})
+
+    exchange = gateway(handler)
+    until = SERVER_MS + 7_200_000
+    await exchange.limit_order(
+        "SOLUSDT", "BUY", Decimal("0.5"), Decimal("83.2"), "ati-y-entry", until
+    )
+    assert await exchange.open_entry_orders() == [{"symbol": "SOLUSDT", "type": "LIMIT"}]
+    await exchange.cancel_order("SOLUSDT", "ati-y-entry")
+    placed, listed, cancelled = seen
+    sent = params(placed)
+    assert placed.method == "POST" and placed.url.path == "/fapi/v1/order"
+    assert sent["type"] == "LIMIT" and sent["timeInForce"] == "GTD"
+    assert sent["goodTillDate"] == str(until) and sent["price"] == "83.2"
+    assert sent["quantity"] == "0.5" and sent["newClientOrderId"] == "ati-y-entry"
+    assert listed.method == "GET" and listed.url.path == "/fapi/v1/openOrders"
+    assert cancelled.method == "DELETE" and cancelled.url.path == "/fapi/v1/order"
+    assert params(cancelled)["origClientOrderId"] == "ati-y-entry"
+
+
+async def test_a_stop_with_a_quantity_only_reduces() -> None:
+    """Binance refuses a whole-position stop before a limit entry fills (-4509), so a waiting
+    entry's stop carries the planned size and is reduce-only."""
+    seen: list[dict[str, str]] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        seen.append(params(request))
+        return httpx.Response(200, json={"algoId": 1})
+
+    await gateway(handler).algo_order(
+        "SOLUSDT", "SELL", "STOP_MARKET", Decimal("82.5"), "ati-y-stop", quantity=Decimal("0.5")
+    )
+    [stop] = seen
+    assert stop["reduceOnly"] == "true" and stop["quantity"] == "0.5"
+    assert "closePosition" not in stop
+
+
 async def test_one_stop_is_cancelled_by_its_algo_id() -> None:
     seen: list[httpx.Request] = []
 

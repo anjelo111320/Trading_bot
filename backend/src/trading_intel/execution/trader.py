@@ -2,6 +2,8 @@
 
 Stops and targets are held by Binance, so a position stays protected while this computer
 sleeps. A position that cannot get its stop is closed at once rather than left unprotected.
+A limit entry waits on Binance with its stop and targets already placed, so it is protected
+from the moment it fills (D054).
 """
 
 from collections.abc import Mapping
@@ -16,6 +18,7 @@ from trading_intel.domain.signals import Side
 from trading_intel.execution.binance_futures import AlgoType, BinanceError, OrderSide
 from trading_intel.execution.orders import (
     OrderKind,
+    TargetOrder,
     TradePlan,
     client_id,
     closing_side,
@@ -54,6 +57,17 @@ class Gateway(Protocol):
         *,
         quantity: Decimal | None = None,
     ) -> dict[str, Any]: ...
+    async def limit_order(
+        self,
+        symbol: str,
+        side: OrderSide,
+        quantity: Decimal,
+        price: Decimal,
+        client_id: str,
+        good_till_ms: int,
+    ) -> dict[str, Any]: ...
+    async def open_entry_orders(self, symbol: str | None = None) -> list[dict[str, Any]]: ...
+    async def cancel_order(self, symbol: str, client_id: str) -> dict[str, Any]: ...
     async def open_algo_orders(self, symbol: str | None = None) -> list[dict[str, Any]]: ...
     async def cancel_algo_orders(self, symbol: str) -> None: ...
     async def cancel_algo_order(self, algo_id: int | str) -> dict[str, Any]: ...
@@ -76,12 +90,29 @@ class Position:
 
 
 @dataclass(frozen=True)
+class PendingEntry:
+    """A limit entry resting on Binance, not yet filled, or only part filled."""
+
+    symbol: str
+    side: Side
+    price: Decimal
+    quantity: Decimal  # What is still to fill.
+    client_id: str
+
+    @property
+    def notional(self) -> Decimal:
+        return self.price * self.quantity
+
+
+@dataclass(frozen=True)
 class ExchangeView:
     """The account as Binance reports it. This, not a paper ledger, is what the risk engine sees."""
 
     equity: Decimal  # Wallet balance plus unrealized profit.
     available: Decimal  # What Binance can still lend as margin.
     positions: Mapping[str, Position]
+    pending: Mapping[str, PendingEntry] = field(default_factory=dict)
+    order_margin: Decimal = ZERO  # What Binance holds for resting entries.
 
 
 @dataclass(frozen=True)
@@ -102,7 +133,7 @@ class Budget:
         cls, view: ExchangeView, capital: Decimal, baseline: Decimal, day_start: Decimal
     ) -> Budget:
         equity = capital + view.equity - baseline
-        in_use = sum((p.margin for p in view.positions.values()), ZERO)
+        in_use = sum((p.margin for p in view.positions.values()), view.order_margin)
         return cls(
             equity=equity,
             day_start_equity=capital + day_start - baseline,
@@ -127,6 +158,7 @@ class OpenResult:
     filled: Decimal = ZERO
     average_price: Decimal | None = None
     protected: bool = False
+    waiting: bool = False  # A limit entry rests on Binance with its stop and targets.
     records: list[OrderRecord] = field(default_factory=list)
 
 
@@ -148,6 +180,21 @@ def _is_stop(order: Mapping[str, Any]) -> bool:
     return str(order.get("orderType", order.get("type"))) in STOP_TYPES
 
 
+def _is_entry(order: Mapping[str, Any]) -> bool:
+    """A resting limit entry. Reduce-only orders only ever close."""
+    return str(order.get("type")) == "LIMIT" and not order.get("reduceOnly")
+
+
+def _pending(order: Mapping[str, Any]) -> PendingEntry:
+    return PendingEntry(
+        str(order["symbol"]),
+        Side.LONG if order.get("side") == "BUY" else Side.SHORT,
+        _decimal(order.get("price")),
+        _decimal(order.get("origQty")) - _decimal(order.get("executedQty")),
+        str(order.get("clientOrderId", "")),
+    )
+
+
 class FuturesTrader:
     def __init__(self, gateway: Gateway) -> None:
         self._gateway = gateway
@@ -155,7 +202,9 @@ class FuturesTrader:
     async def view(self) -> ExchangeView:
         account = await self._gateway.account()
         positions: dict[str, Position] = {}
+        order_margin = ZERO
         for row in await self._gateway.positions():
+            order_margin += _decimal(row.get("openOrderInitialMargin"))
             amount = _decimal(row.get("positionAmt"))
             if amount != 0:
                 symbol = str(row["symbol"])
@@ -171,10 +220,13 @@ class FuturesTrader:
                     _decimal(row.get("unRealizedProfit")),
                     _decimal(row.get("liquidationPrice")),
                 )
+        entries = [o for o in await self._gateway.open_entry_orders() if _is_entry(o)]
         return ExchangeView(
             equity=_decimal(account.get("totalMarginBalance")),
             available=_decimal(account.get("availableBalance")),
             positions=positions,
+            pending={str(o["symbol"]): _pending(o) for o in entries},
+            order_margin=order_margin,
         )
 
     async def open_orders(self) -> list[dict[str, Any]]:
@@ -221,6 +273,8 @@ class FuturesTrader:
                 )
             )
             return result  # Nothing was opened.
+        if plan.limit is not None:
+            return await self._open_limit(plan, result)
         side = opening_side(plan.side)
         sent: dict[str, Any] = {"side": side, "type": "MARKET", "quantity": str(plan.quantity)}
         call = self._gateway.market_order(symbol, side, plan.quantity, plan.entry_id)
@@ -237,35 +291,92 @@ class FuturesTrader:
             return result
         result.protected = True
         for target in plan.target_orders(result.filled):
-            sent = {
-                "side": close,
-                "type": "TAKE_PROFIT_MARKET",
-                "triggerPrice": str(target.trigger),
-                "quantity": str(target.quantity),
-                "reduceOnly": True,
-            }
-            call = self._gateway.algo_order(
-                symbol,
-                close,
-                "TAKE_PROFIT_MARKET",
-                target.trigger,
-                target.client_id,
-                quantity=target.quantity,
-            )
-            await self._record(records, symbol, target.kind, target.client_id, sent, call)
+            await self._target(records, symbol, close, target)
         return result
 
+    async def _open_limit(self, plan: TradePlan, result: OpenResult) -> OpenResult:
+        """A limit entry that waits on Binance, with its stop and targets placed with it.
+
+        Binance takes a whole-position stop only while a position is open, so this stop is
+        reduce-only for the full planned size: it closes whatever fills, from the first fill.
+        If the stop is refused, the entry is cancelled, and anything already filled is closed.
+        """
+        assert plan.limit is not None and plan.good_till_ms is not None
+        records, symbol = result.records, plan.symbol
+        side, close = opening_side(plan.side), closing_side(plan.side)
+        sent: dict[str, Any] = {
+            "side": side,
+            "type": "LIMIT",
+            "price": str(plan.limit),
+            "quantity": str(plan.quantity),
+            "timeInForce": "GTD",
+            "goodTillDate": plan.good_till_ms,
+        }
+        call = self._gateway.limit_order(
+            symbol, side, plan.quantity, plan.limit, plan.entry_id, plan.good_till_ms
+        )
+        entry = await self._record(records, symbol, "entry", plan.entry_id, sent, call)
+        if entry is None:
+            return result
+        result.filled = _decimal(entry.get("executedQty"))
+        result.average_price = _decimal(entry.get("avgPrice")) or None
+        if not await self._stop(records, symbol, close, plan.stop, plan.stop_id, plan.quantity):
+            await self._cancel_entry(records, symbol, plan.entry_id)
+            if result.filled > 0:
+                await self._flatten(
+                    records, symbol, close, result.filled, client_id(plan.key, "close")
+                )
+            return result
+        result.protected = True
+        result.waiting = True
+        for target in plan.target_orders(plan.quantity):
+            await self._target(records, symbol, close, target)
+        return result
+
+    async def _cancel_entry(self, records: list[OrderRecord], symbol: str, cid: str) -> None:
+        request = {"cancel": "order", "origClientOrderId": cid}
+        call = self._gateway.cancel_order(symbol, cid)
+        await self._record(records, symbol, "entry", cid, request, call)
+
+    async def _target(
+        self, records: list[OrderRecord], symbol: str, close: OrderSide, target: TargetOrder
+    ) -> None:
+        sent = {
+            "side": close,
+            "type": "TAKE_PROFIT_MARKET",
+            "triggerPrice": str(target.trigger),
+            "quantity": str(target.quantity),
+            "reduceOnly": True,
+        }
+        call = self._gateway.algo_order(
+            symbol, close, "TAKE_PROFIT_MARKET", target.trigger, target.client_id,
+            quantity=target.quantity,
+        )  # fmt: skip
+        await self._record(records, symbol, target.kind, target.client_id, sent, call)
+
     async def _stop(
-        self, records: list[OrderRecord], symbol: str, side: OrderSide, price: Decimal, cid: str
+        self,
+        records: list[OrderRecord],
+        symbol: str,
+        side: OrderSide,
+        price: Decimal,
+        cid: str,
+        quantity: Decimal | None = None,
     ) -> bool:
-        """A mark-price stop that closes the whole position, whatever its size."""
-        request = {
+        """A mark-price stop that closes the whole position, whatever its size.
+
+        With a quantity it is reduce-only for that size instead, for an entry still waiting.
+        """
+        request: dict[str, Any] = {
             "side": side,
             "type": "STOP_MARKET",
             "triggerPrice": str(price),
-            "closePosition": True,
         }
-        call = self._gateway.algo_order(symbol, side, "STOP_MARKET", price, cid)
+        if quantity is None:
+            request["closePosition"] = True
+        else:
+            request |= {"quantity": str(quantity), "reduceOnly": True}
+        call = self._gateway.algo_order(symbol, side, "STOP_MARKET", price, cid, quantity=quantity)
         return await self._record(records, symbol, "stop", cid, request, call) is not None
 
     async def _flatten(
@@ -319,7 +430,9 @@ class FuturesTrader:
     async def reconcile(self, stops: Mapping[str, tuple[Decimal, str]]) -> list[OrderRecord]:
         """Run every minute. `stops` holds each symbol's recorded stop price and trade key.
 
-        - A coin with no position keeps no stop or target: they are cancelled.
+        - A coin with no position and no waiting entry keeps no stop or target: they are
+          cancelled.
+        - A waiting entry without a stop is cancelled, so it can never fill unprotected.
         - A position without a stop gets its recorded stop back, or is closed if none is known.
         """
         records: list[OrderRecord] = []
@@ -327,7 +440,11 @@ class FuturesTrader:
         orders: dict[str, list[dict[str, Any]]] = {}
         for order in await self._gateway.open_algo_orders():
             orders.setdefault(str(order["symbol"]), []).append(order)
-        for symbol in sorted(set(orders) - set(view.positions)):
+        for symbol, entry in sorted(view.pending.items()):
+            if not any(_is_stop(o) for o in orders.get(symbol, [])):
+                log.error("exchange_entry_without_stop", symbol=symbol)
+                await self._cancel_entry(records, symbol, entry.client_id)
+        for symbol in sorted(set(orders) - set(view.positions) - set(view.pending)):
             try:
                 await self._gateway.cancel_algo_orders(symbol)
                 records.append(
@@ -435,6 +552,17 @@ def describe(
                 "close_position": bool(order.get("closePosition")),
             }
             for order in sorted(orders, key=_order_key)
+        ]
+        + [
+            {
+                "symbol": entry.symbol,
+                "type": "LIMIT",
+                "side": "BUY" if entry.side is Side.LONG else "SELL",
+                "trigger": text(entry.price),
+                "quantity": text(entry.quantity),
+                "close_position": False,
+            }
+            for entry in sorted(view.pending.values(), key=lambda e: e.symbol)
         ],
     }
 

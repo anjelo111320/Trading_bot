@@ -1,11 +1,14 @@
 import io
 import json
+import re
 from datetime import UTC, datetime, timedelta, timezone
+from pathlib import Path
 
 import pytest
 import structlog
 from pydantic import BaseModel, ValidationError
 
+import trading_intel
 from tests.conftest import TEST_SECRET, make_settings
 from trading_intel.core.clock import (
     FixedClock,
@@ -62,8 +65,9 @@ def test_settings_have_no_trading_mode_field() -> None:
     assert not any("trading_mode" in name for name in Settings.model_fields)
 
 
-def test_the_only_exchange_credentials_are_for_demo_trading() -> None:
-    """D016, amended by D048: keys exist only for Binance demo trading, whose host is fixed."""
+def test_the_only_exchange_credentials_are_for_demo_trading_and_reading_news() -> None:
+    """D016, amended by D048 and D032: keys exist for Binance demo trading, whose host is fixed,
+    and one read-only key for Binance's announcement stream, added by the owner on 2026-11-11."""
     secret = ("key", "secret")
     exchange = [
         name
@@ -71,12 +75,30 @@ def test_the_only_exchange_credentials_are_for_demo_trading() -> None:
         if name.startswith("binance") and any(word in name for word in secret)
     ]
     assert exchange == [
+        "binance_read_api_key",
+        "binance_read_api_secret",
         "binance_demo_api_key",
         "binance_demo_api_secret",
         "binance_demo_private_key_file",
     ]
     assert not any("demo" in name and "url" in name for name in Settings.model_fields), (
         "the demo order host must not be configurable"
+    )
+
+
+def test_the_read_only_key_reaches_only_the_announcement_stream() -> None:
+    """The main-account key is read by the ingestor and passed to one module, nothing else."""
+    package = Path(trading_intel.__file__).parent
+    users = sorted(
+        str(path.relative_to(package))
+        for path in package.rglob("*.py")
+        if "binance_read_api" in path.read_text()
+    )
+    assert users == ["core/settings.py", "entrypoints/ingestor.py"]
+    module = (package / "news_intelligence" / "binance_announcements.py").read_text()
+    paths = set(re.findall(r"/(?:sapi|api|fapi|dapi|papi)/[\w/]*", module))
+    assert paths == {"/sapi/v1/account/apiRestrictions", "/sapi/wss"}, (
+        "the read-only key may only check its own permissions and open the announcement stream"
     )
 
 

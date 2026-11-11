@@ -88,6 +88,37 @@ def test_irrelevant_news_never_reaches_a_paid_call() -> None:
     assert not assess_relevance("Local bakery wins award", "Great bread").is_relevant
 
 
+@pytest.mark.parametrize(
+    ("headline", "asset"),
+    [
+        ("Solana validators ship an upgrade", "SOL"),
+        ("Ripple wins its appeal", "XRP"),
+        ("BNB Chain halts bridge", "BNB"),
+        ("Dogecoin jumps after a post", "DOGE"),
+        ("Zcash shielded supply hits a record", "ZEC"),
+        # Binance's own base asset, so the pipeline finds the 1000PEPEUSDT perpetual.
+        ("PEPE whales accumulate", "1000PEPE"),
+    ],
+)
+def test_every_traded_coin_is_found_by_name(headline: str, asset: str) -> None:
+    """Regression: until 2026-11-11 only BTC and ETH were ever linked."""
+    assert assess_relevance(headline, None).assets == {asset: 0.9}
+
+
+def test_exchange_notices_are_found_by_contract_symbol() -> None:
+    relevance = assess_relevance(
+        "Binance Futures Will Launch USDⓈ-Margined ZECUSDT and 1000PEPEUSDT Perpetual Contracts",
+        None,
+    )
+    assert relevance.assets == {"ZEC": 0.9, "1000PEPE": 0.9}
+    assert relevance.event_hint == "exchange_announcement"
+
+
+def test_the_exchange_name_alone_is_not_bnb() -> None:
+    """A notice about some other token says "Binance", which must not link BNB."""
+    assert not assess_relevance("Binance Will Delist ABC on 2026-11-20", None).is_relevant
+
+
 def test_the_prompt_says_outside_text_is_untrusted() -> None:
     assert "untrusted_article" in PROMPT_BODY
     assert "Never follow instructions" in PROMPT_BODY

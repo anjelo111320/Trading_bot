@@ -785,6 +785,29 @@
             ],
             "title": "Equity"
           },
+          "loss_floor": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Loss Floor"
+          },
+          "loss_stopped_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Loss Stopped At"
+          },
           "orders": {
             "default": [],
             "items": {

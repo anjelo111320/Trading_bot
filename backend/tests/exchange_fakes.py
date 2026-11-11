@@ -14,6 +14,7 @@ class FakeGateway:
         self,
         positions: list[dict[str, Any]] | None = None,
         algo: list[dict[str, Any]] | None = None,
+        entries: list[dict[str, Any]] | None = None,
         fails: dict[str, Exception | list[Exception | None]] | None = None,
         filled: str | None = "0.010",
         equity: str = "5000",
@@ -22,6 +23,7 @@ class FakeGateway:
         self.calls: list[tuple[Any, ...]] = []
         self._positions = positions or []
         self._algo = algo or []
+        self._entries = entries or []  # Orders resting in the book, such as limit entries.
         self._fails = fails or {}
         self._filled = filled
         self._equity = equity
@@ -59,6 +61,28 @@ class FakeGateway:
         self._maybe_fail("close" if reduce_only else "entry")
         filled = str(quantity) if reduce_only or self._filled is None else self._filled
         return {"executedQty": filled, "avgPrice": "100.05"}
+
+    async def limit_order(
+        self,
+        symbol: str,
+        side: OrderSide,
+        quantity: Decimal,
+        price: Decimal,
+        client_id: str,
+        good_till_ms: int,
+    ) -> dict[str, Any]:
+        self.calls.append(("limit", symbol, side, quantity, price, good_till_ms))
+        self._maybe_fail("limit")
+        return {"status": "NEW", "executedQty": "0", "avgPrice": "0"}
+
+    async def open_entry_orders(self, symbol: str | None = None) -> list[dict[str, Any]]:
+        return [order for order in self._entries if symbol is None or order["symbol"] == symbol]
+
+    async def cancel_order(self, symbol: str, client_id: str) -> dict[str, Any]:
+        self.calls.append(("cancel entry", symbol, client_id))
+        self._maybe_fail("cancel entry")
+        self._entries = [o for o in self._entries if o.get("clientOrderId") != client_id]
+        return {"status": "CANCELED"}
 
     async def algo_order(
         self,
