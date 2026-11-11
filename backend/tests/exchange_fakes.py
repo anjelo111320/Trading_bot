@@ -7,13 +7,14 @@ from trading_intel.execution.binance_futures import AlgoType, OrderSide
 
 
 class FakeGateway:
-    """Records every call. Failures are set per call name."""
+    """Records every call. Failures are set per call name: one exception for every call, or a
+    list used in turn, where None lets that call through."""
 
     def __init__(
         self,
         positions: list[dict[str, Any]] | None = None,
         algo: list[dict[str, Any]] | None = None,
-        fails: dict[str, Exception] | None = None,
+        fails: dict[str, Exception | list[Exception | None]] | None = None,
         filled: str | None = "0.010",
         equity: str = "5000",
         available: str = "4800",
@@ -27,8 +28,11 @@ class FakeGateway:
         self._available = available
 
     def _maybe_fail(self, name: str) -> None:
-        if name in self._fails:
-            raise self._fails[name]
+        failure = self._fails.get(name)
+        if isinstance(failure, list):
+            failure = failure.pop(0) if failure else None
+        if failure is not None:
+            raise failure
 
     async def account(self) -> dict[str, Any]:
         return {"totalMarginBalance": self._equity, "availableBalance": self._available}
@@ -71,7 +75,13 @@ class FakeGateway:
         return {"algoId": len(self.calls)}
 
     async def open_algo_orders(self, symbol: str | None = None) -> list[dict[str, Any]]:
-        return self._algo
+        return [order for order in self._algo if symbol is None or order["symbol"] == symbol]
 
     async def cancel_algo_orders(self, symbol: str) -> None:
         self.calls.append(("cancel", symbol))
+
+    async def cancel_algo_order(self, algo_id: int | str) -> dict[str, Any]:
+        self.calls.append(("cancel one", algo_id))
+        self._maybe_fail("cancel one")
+        self._algo = [order for order in self._algo if order.get("algoId") != algo_id]
+        return {"algoId": algo_id, "code": "200", "msg": "success"}

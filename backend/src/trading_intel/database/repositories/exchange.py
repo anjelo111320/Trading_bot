@@ -5,6 +5,7 @@ its stop can be given it back.
 """
 
 import json
+from dataclasses import dataclass
 from datetime import date, datetime
 from decimal import Decimal
 from typing import Any, Protocol
@@ -30,6 +31,15 @@ class SentOrder(Protocol):
     def response(self) -> dict[str, Any] | None: ...
     @property
     def error(self) -> str | None: ...
+
+
+@dataclass(frozen=True)
+class ExchangeTrade:
+    """The trade behind a coin's Binance position: its latest filled entry."""
+
+    key: str
+    strategy: str
+    recommendation_id: UUID
 
 
 def _json(value: object) -> str:
@@ -86,6 +96,28 @@ class ExchangeRepository:
                 )
             ).all()
         return {row.symbol: (Decimal(row.stop_price), row.trade_key) for row in rows}
+
+    async def latest_trade(self, account_id: UUID, symbol: str) -> ExchangeTrade | None:
+        """The coin's latest entry Binance answered, and the strategy that sent it."""
+        async with self._engine.connect() as connection:
+            row = (
+                await connection.execute(
+                    text(
+                        """SELECT o.trade_key, c.name, o.recommendation_id
+                           FROM exchange_orders o
+                           JOIN trade_recommendations r ON r.id = o.recommendation_id
+                           JOIN strategy_configurations c ON c.id = r.strategy_configuration_id
+                           WHERE o.account_id = :account AND o.symbol = :symbol
+                             AND o.kind = 'entry' AND o.response IS NOT NULL
+                             AND o.trade_key IS NOT NULL
+                           ORDER BY o.created_at DESC LIMIT 1"""
+                    ),
+                    {"account": account_id, "symbol": symbol},
+                )
+            ).one_or_none()
+        if row is None:
+            return None
+        return ExchangeTrade(row.trade_key, row.name, row.recommendation_id)
 
     async def day_start(self, account_id: UUID, day: date, equity: Decimal) -> Decimal:
         """The equity first seen on a UTC day. Later calls that day return the same value."""

@@ -36,7 +36,7 @@ from trading_intel.database.repositories.signals import (
 from trading_intel.domain.candles import Timeframe
 from trading_intel.domain.instruments import Instrument, InstrumentRules
 from trading_intel.domain.signals import Action, EntryType, Side
-from trading_intel.execution.orders import TradePlan
+from trading_intel.execution.orders import TradePlan, price_limits
 from trading_intel.execution.trader import Budget, FuturesTrader, Position
 from trading_intel.risk_management.allocation import Claim, split
 from trading_intel.risk_management.calculators.linear import (
@@ -342,6 +342,57 @@ class SignalService:
                 moved += 1
         return moved
 
+    async def trail_exchange_stop(
+        self,
+        provider_id: int,
+        instrument: Instrument,
+        as_of: datetime,
+        account: Account,
+        trader: FuturesTrader,
+        orders: ExchangeRepository,
+    ) -> bool:
+        """The same trail for a daily trend position on Binance demo trading (D039, D048).
+
+        Binance holds the stop, so the move replaces it there, and the stop it then holds is
+        recorded for the minute check. Until 2026-11-11 only paper stops trailed, and a
+        Binance trend trade kept its first stop with no other exit.
+        """
+        symbol = instrument.symbol
+        trade = await orders.latest_trade(account.id, symbol)
+        stop = (await orders.stops(account.id)).get(symbol)
+        if trade is None or trade.strategy != TREND_NAME or stop is None or stop[1] != trade.key:
+            return False
+        position = (await trader.view()).positions.get(symbol)
+        days = await self._candles.for_analysis(
+            provider_id, instrument.id, Timeframe.D1, as_of, TREND_DAYS
+        )
+        rules = await self._rules.as_of(provider_id, instrument.id, as_of)
+        if position is None or not days or rules is None:
+            return False
+        moment = days[-1].close_time
+        level = DailyTrendStrategy(days, rules.tick_size).trailing_stop(
+            moment, position.side, stop[0]
+        )
+        if level is None:
+            return False
+        move = await trader.move_stop(symbol, level, f"{trade.key}:trail:{moment.date()}")
+        for record in move.records:
+            held = move.held is not None and record.client_id == move.held[1]
+            await orders.record(
+                account.id, trade.recommendation_id, record,
+                trade_key=trade.key if held else None,
+                stop_price=move.held[0] if held and move.held else None,
+            )  # fmt: skip
+        log.info(
+            "exchange_stop_trailed",
+            instrument=symbol,
+            moved=move.moved,
+            stop=str(stop[0]),
+            level=str(level),
+            held=None if move.held is None else str(move.held[0]),
+        )
+        return move.moved
+
     async def plan_setups(
         self, provider_id: int, instruments: Sequence[Instrument], close_time: datetime
     ) -> tuple[list[Setup], list[str]]:
@@ -524,6 +575,7 @@ class SignalService:
             if not assessment.approved or sizing is None or outcome.recommendation_id is None:
                 continue
             sent = prepared.request.proposal
+            lowest, highest = price_limits(setup.rules.raw)
             plan = TradePlan(
                 key=prepared.key,
                 symbol=symbol,
@@ -535,6 +587,8 @@ class SignalService:
                 allocation=sizing.allocation,
                 lot_step=setup.rules.lot_step,
                 min_qty=setup.rules.min_qty,
+                min_price=lowest,
+                max_price=highest,
             )
             result = await trader.open_trade(plan)
             for record in result.records:

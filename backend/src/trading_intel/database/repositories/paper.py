@@ -71,6 +71,18 @@ class PaperRepository:
             )
 
     async def active(self, provider_id: int, instrument_id: int) -> list[OpenTrade]:
+        return await self._trades(
+            "p.status IN ('pending_entry', 'open') AND r.provider_id = :provider "
+            "AND r.instrument_id = :instrument",
+            {"provider": provider_id, "instrument": instrument_id},
+        )
+
+    async def trade(self, position_id: UUID) -> OpenTrade | None:
+        """One trade in any status, for replaying it after it has finished."""
+        found = await self._trades("p.id = :position", {"position": position_id})
+        return found[0] if found else None
+
+    async def _trades(self, condition: str, params: dict[str, Any]) -> list[OpenTrade]:
         query = text(
             """SELECT p.id AS position_id, r.id AS recommendation_id, p.account_id, r.provider_id,
                       r.instrument_id, p.side::text AS side, r.entry_type::text AS entry_type,
@@ -89,10 +101,9 @@ class PaperRepository:
                JOIN signal_current_state s ON s.recommendation_id = r.id
                JOIN risk_assessments a ON a.recommendation_id = r.id
                JOIN strategy_configurations c ON c.id = r.strategy_configuration_id
-               WHERE p.status IN ('pending_entry', 'open') AND r.provider_id = :provider
-                 AND r.instrument_id = :instrument"""
+               WHERE """  # noqa: S608 - the conditions are fixed text in this class.
+            + condition
         )
-        params = {"provider": provider_id, "instrument": instrument_id}
         async with self._engine.connect() as connection:
             rows = (await connection.execute(query, params)).mappings().all()
         return [

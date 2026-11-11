@@ -119,6 +119,12 @@ Signals also carry `signal_score`, the conditions of the signal score at the sig
 
 A trade's fills have a `kind` (`entry`, `tp1` to `tp3`, `stop`, `expiry`, `invalidation` or `funding`), a UTC time, a price, quantity, fee, funding and whether the fill was `reconstructed` from repaired candles. Every trade and summary carries `simulated: true`.
 
+`GET /api/v1/ai/exit-reviews` gives Claude's exit advice on open paper trades (D051), newest first, with `limit` 1 to 200. It reads only what the quant worker stored, and never calls Claude, so viewing it costs nothing.
+- It carries `shadow: true`, the `model`, and `asking`: false until an Anthropic key is set.
+- It also gives counts by `status`, the total `cost_usd`, how many answers are `scored`, and `mean_change_r`, the R the advice added on finished trades, over answers that were not "hold".
+- Each review gives its close, coin, strategy, account, the `checks` that fired, its `status` (`advised`, `invalid`, `refused`, `error`, `not_asked` or `skipped_budget`), the `action` (`hold`, `take_profit_now` or `stop_to_breakeven`) and one-sentence `reason`, the trade's R when asked, tokens and cost.
+- Once the trade has finished, a review also gives `own_r` and `advised_r`.
+
 ## Event Envelope
 
 Every event has this structure. JSON Schemas are exported from Pydantic by `domain/events.py`.

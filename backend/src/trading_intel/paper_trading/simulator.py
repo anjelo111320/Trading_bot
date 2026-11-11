@@ -18,7 +18,10 @@ from trading_intel.domain.signals import EntryType, Side
 ZERO: Final = Decimal(0)
 LIQUIDITY_CAP: Final = Decimal("0.05")
 
-FillKind = Literal["entry", "tp1", "tp2", "tp3", "stop", "invalidation", "expiry", "funding"]
+FillKind = Literal[
+    "entry", "tp1", "tp2", "tp3", "stop", "exit", "invalidation", "expiry", "funding"
+]
+EXIT_KINDS: Final = ("tp1", "tp2", "tp3", "stop", "exit")
 
 
 class OrderStatus(StrEnum):
@@ -75,6 +78,7 @@ class TradeSimulator:
     next_target: int = 0
     fills: list[Fill] = field(default_factory=list)
     stop: Decimal = field(init=False)
+    exit_requested: bool = False
 
     def __post_init__(self) -> None:
         self.stop = self.order.stop
@@ -86,6 +90,13 @@ class TradeSimulator:
         self.stop = level
         return True
 
+    def request_exit(self) -> bool:
+        """Close the whole position at the next candle's open, at market (docs/37)."""
+        if self.status is not OrderStatus.OPEN:
+            return False
+        self.exit_requested = True
+        return True
+
     @property
     def is_finished(self) -> bool:
         return self.status in (OrderStatus.CLOSED, OrderStatus.CANCELLED)
@@ -94,6 +105,13 @@ class TradeSimulator:
         if self.is_finished or not self._reaches(candle):
             return []
         start = len(self.fills)
+        if self.exit_requested and self.status is OrderStatus.OPEN:
+            # Gone at the open, so this candle's stop and targets never apply. A market exit
+            # pays the same costs as a stop.
+            order = self.order
+            price = candle.open - order.side.sign * (order.half_spread + order.stop_slippage)
+            self._exit("exit", candle, self.open_quantity, price, order.taker_fee, True)
+            return self.fills[start:]
         pending = self.status is OrderStatus.PENDING
         if pending:
             self._try_entry(candle)
@@ -265,7 +283,7 @@ class TradeResult:
 def summarise(side: Side, fills: Sequence[Fill]) -> TradeResult:
     """Spread and slippage are already inside fill prices, and are shown only for reporting."""
     entry = next((f for f in fills if f.kind == "entry"), None)
-    exits = [f for f in fills if f.kind in ("tp1", "tp2", "tp3", "stop")]
+    exits = [f for f in fills if f.kind in EXIT_KINDS]
     gross = ZERO
     if entry is not None and entry.price is not None:
         for fill in exits:

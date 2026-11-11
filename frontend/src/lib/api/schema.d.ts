@@ -4,6 +4,23 @@
  */
 
 export interface paths {
+    "/api/v1/ai/exit-reviews": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Exit Reviews */
+        get: operations["exit_reviews_api_v1_ai_exit_reviews_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/auth/login": {
         parameters: {
             query?: never;
@@ -640,6 +657,70 @@ export interface components {
              * @constant
              */
             test_funds: true;
+        };
+        /** ExitReviewView */
+        ExitReviewView: {
+            /** Account */
+            account: string;
+            /** Action */
+            action: ("hold" | "take_profit_now" | "stop_to_breakeven") | null;
+            /** Advised R */
+            advised_r: string | null;
+            /** Checks */
+            checks: string[];
+            /**
+             * Close Time
+             * Format: date-time
+             */
+            close_time: string;
+            /** Cost Usd */
+            cost_usd: string;
+            /** Model */
+            model: string | null;
+            /** Own R */
+            own_r: string | null;
+            /** Progress R */
+            progress_r: string;
+            /** Reason */
+            reason: string | null;
+            /**
+             * Status
+             * @enum {string}
+             */
+            status: "advised" | "invalid" | "refused" | "error" | "not_asked" | "skipped_budget";
+            /** Strategy */
+            strategy: string;
+            /** Symbol */
+            symbol: string;
+            /** Tokens */
+            tokens: number;
+        };
+        /** ExitReviewsView */
+        ExitReviewsView: {
+            /** Asking */
+            asking: boolean;
+            /** Cost Usd */
+            cost_usd: string;
+            /** Mean Change R */
+            mean_change_r: string | null;
+            /** Model */
+            model: string;
+            /** Reviews */
+            reviews: components["schemas"]["ExitReviewView"][];
+            /** Scored */
+            scored: number;
+            /** Scored Not Hold */
+            scored_not_hold: number;
+            /**
+             * Shadow
+             * @default true
+             * @constant
+             */
+            shadow: true;
+            /** Statuses */
+            statuses: {
+                [key: string]: number;
+            };
         };
         /** FeedStatusView */
         FeedStatusView: {
@@ -1467,6 +1548,37 @@ export interface components {
 }
 export type $defs = Record<string, never>;
 export interface operations {
+    exit_reviews_api_v1_ai_exit_reviews_get: {
+        parameters: {
+            query?: {
+                limit?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ExitReviewsView"];
+                };
+            };
+            /** @description Default Response */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
     login_api_v1_auth_login_post: {
         parameters: {
             query?: never;

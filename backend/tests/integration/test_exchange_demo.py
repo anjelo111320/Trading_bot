@@ -1,5 +1,6 @@
 """The money plan on Binance demo trading (D048), on real PostgreSQL with a fake exchange."""
 
+from datetime import timedelta
 from decimal import Decimal as D
 from typing import Any
 
@@ -14,6 +15,7 @@ from tests.integration.test_trading_flow import (
     PATTERN,
     TREND,
     World,
+    day,
     plan_setup,
     rows,
 )
@@ -24,6 +26,7 @@ from trading_intel.database.repositories.signals import (
     EXCHANGE_DEMO_MODE,
     Account,
 )
+from trading_intel.domain.candles import Timeframe
 from trading_intel.execution.trader import FuturesTrader
 from trading_intel.trade_signals.portfolio import PLAN_PROFILE
 
@@ -154,6 +157,45 @@ async def test_the_budget_follows_the_bots_profit_and_loss_on_binance(world: Wor
     refused = await assessments()
     assert len(refused) == 3
     assert all("DAILY_LOSS_REACHED" in row["rejection_codes"] for row in refused)
+
+
+async def test_a_daily_trend_position_on_binance_trails_its_stop(world: World) -> None:
+    """Regression: only paper stops trailed, so the SOL trend short on Binance kept its first
+    stop and had no other exit (2026-11-11). Same candles as the paper trailing test."""
+    account, _ = await run(world, FakeGateway(filled=None))
+    symbol = world.instrument.symbol
+    await world.candles.insert(
+        [day(world, n, str(100 + (30 - n)), str(102 + (30 - n))) for n in range(30, 0, -1)]
+    )
+    last_close = Timeframe.D1.close_time(Timeframe.D1.floor(NOW) - timedelta(days=1))
+    held = {"symbol": symbol, "positionAmt": "0.5", "entryPrice": "100", "notional": "50"}
+    stop = {"symbol": symbol, "orderType": "STOP_MARKET", "algoId": 4, "triggerPrice": "98.00"}
+    exchange = FakeGateway(positions=[held], algo=[stop])
+    repository = ExchangeRepository(world.signals._rules._engine)
+
+    async def trail() -> bool:
+        return await world.signals.trail_exchange_stop(
+            world.provider_id, world.instrument, last_close, account,
+            FuturesTrader(exchange), repository,
+        )  # fmt: skip
+
+    assert await trail()
+    # The lowest low of the last 10 days, as on paper: the candle 10 days back opened at 120.
+    assert exchange.calls == [("cancel one", 4), ("STOP_MARKET", symbol, "SELL", D("120.00"), None)]
+    assert (await repository.stops(account.id))[symbol][0] == D("120.00")
+    assert not await trail(), "the stop is already at the 10-day low"
+    stored = await rows("SELECT kind, request->>'cancel' AS cancel FROM exchange_orders")
+    assert sum(1 for r in stored if r["cancel"] == "algoOrder") == 1
+
+
+async def test_only_the_daily_trend_trails_on_binance(world: World) -> None:
+    account = await demo_account(world)
+    repository = ExchangeRepository(world.signals._rules._engine)
+    exchange = FakeGateway(positions=[{"symbol": world.instrument.symbol, "positionAmt": "1"}])
+    assert not await world.signals.trail_exchange_stop(
+        world.provider_id, world.instrument, NOW, account, FuturesTrader(exchange), repository
+    ), "no trade from this bot is open on the coin"
+    assert exchange.calls == []
 
 
 async def test_each_15m_close_asks_both_15m_strategies(world: World) -> None:

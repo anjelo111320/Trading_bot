@@ -112,6 +112,18 @@ def test_orders_show_what_binance_accepted_refused_or_never_answered(api: TestCl
     assert by_kind[("XRPUSDT", "entry")]["outcome"] == "no reply"
 
 
+def test_a_cancel_is_named_as_one(api: TestClient) -> None:
+    api.get(STATUS)
+    account = asyncio.run(account_id())
+    cancel = OrderRecord(
+        "SOLUSDT", "stop", "ati-old-stop", {"cancel": "algoOrder", "algoId": 7},
+        {"algoId": 7, "code": "200", "msg": "success"},
+    )  # fmt: skip
+    asyncio.run(save(account, [cancel]))
+    [row] = api.get("/api/v1/exchange-demo/orders").json()
+    assert row["type"] == "CANCEL" and row["kind"] == "stop" and row["outcome"] == "accepted"
+
+
 def test_signals_can_be_read_for_the_binance_demo_account(api: TestClient) -> None:
     response = api.get("/api/v1/signals?account=binance")
     assert response.status_code == 200 and response.json() == []

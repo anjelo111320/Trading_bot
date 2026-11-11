@@ -318,3 +318,10 @@ class BinanceFuturesGateway:
 
     async def cancel_algo_orders(self, symbol: str) -> None:
         await self._signed("DELETE", "/fapi/v1/algoOpenOrders", {"symbol": symbol})
+
+    async def cancel_algo_order(self, algo_id: int | str) -> dict[str, Any]:
+        """One stop or take-profit, by the ID Binance gave it."""
+        result: dict[str, Any] = await self._signed(
+            "DELETE", "/fapi/v1/algoOrder", {"algoId": algo_id}
+        )
+        return result

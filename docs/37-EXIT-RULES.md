@@ -94,3 +94,23 @@ A CHoCH against the trade, news and economic events are not counted. They need m
 - Barton et al., "What LLM Trading Agents Actually Do in Production", arXiv 2609.05663 (2026), on agents giving back reached profit and fixed brackets doing better. https://arxiv.org/abs/2609.05663
 
 ## Results
+
+Run once on 2026-11-11, from 02:16 to 02:19 UTC, with `uv run python -m trading_intel.entrypoints.exit_rules_backtest` in `backend/`. The rules above were committed first, as `24a2f9f`, and nothing was tuned. Simulated results. A profitable backtest is not proof of future profitability. Full tables: [exit-rules.md](reports/exit-rules.md).
+
+All 2,646 trades replayed with no rule matched the backtest engine exactly, so the comparisons are valid.
+
+| Change in R per trade, six coins, 1× costs | Breakeven | Stall exit | Swing trail |
+|---|---|---|---|
+| `daily_trend`, 344 trades, own exits +0.397R | -0.023 (-0.105 to +0.036) | -0.028 (-0.133 to +0.056) | +0.009 (-0.006 to +0.022) |
+| `pattern_breakout`, 790 trades, +0.077R | -0.005 (-0.075 to +0.065) | -0.042 (-0.129 to +0.047) | -0.001 (-0.078 to +0.074) |
+| `fvg_choch`, 255 trades, +0.020R | -0.073 (-0.197 to +0.041) | -0.034 (-0.148 to +0.083) | -0.068 (-0.176 to +0.033) |
+
+The 95% intervals are in brackets. **No rule passed for any strategy**, so all three keep their own exits. Eight of the nine changes were negative. The one positive, the swing trail on the daily trend, was +0.009R, with a 99.4% interval of -0.013 to +0.026.
+
+What this says:
+
+- **Taking profit early cost about as much as it saved.** The stall exit on the 1H pattern breakout acted on 313 trades. On the 144 that went on to lose, it saved 1.86R each. On the 169 that went on to win, it gave up 1.78R each. The net was -0.042R a trade. The other rules show the same balance. This is the disposition effect, measured on our own strategies.
+- **The strategies' own exits are the bar.** An AI exit manager must beat them in shadow mode, and these fixed rules, which do what it would do, did not.
+- **AI checks are fewer than estimated.** There were about 2 checks per open trade-day, so about 20 a day at 10 open trades, before CHoCH, news and event checks. The volatility check made 85% of them, and the stall check most of the rest. On Haiku 5.5, 20 exit checks a day are about 55,000 tokens, or about $0.30 a month.
+
+Decision: no exit rule is adopted (D050). The code, tests and report stay so the run can be reproduced.

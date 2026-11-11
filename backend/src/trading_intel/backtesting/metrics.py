@@ -87,14 +87,16 @@ def _sortino(returns: Sequence[float]) -> float | None:
     return mean / math.sqrt(downside) * math.sqrt(DAYS_PER_YEAR) if downside > 0 else None
 
 
-def bootstrap_interval(values: Sequence[float]) -> tuple[float, float] | None:
-    """A seeded 95% interval for the mean, so reports are reproducible."""
+def bootstrap_interval(values: Sequence[float], level: float = 0.95) -> tuple[float, float] | None:
+    """A seeded interval for the mean, 95% unless asked, so reports are reproducible."""
     if len(values) < 2:
         return None
     rng = random.Random(BOOTSTRAP_SEED)  # noqa: S311
     count = len(values)
     means = sorted(sum(rng.choices(values, k=count)) / count for _ in range(BOOTSTRAP_RUNS))
-    return means[int(BOOTSTRAP_RUNS * 0.025)], means[int(BOOTSTRAP_RUNS * 0.975) - 1]
+    tail = (1 - level) / 2
+    # Rounded, not truncated: 2000 * 0.975 is 1949.999... in floating point.
+    return means[round(BOOTSTRAP_RUNS * tail)], means[round(BOOTSTRAP_RUNS * (1 - tail)) - 1]
 
 
 def difference_interval(

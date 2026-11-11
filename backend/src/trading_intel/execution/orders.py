@@ -4,9 +4,10 @@ Every price and size comes from the risk engine's approved sizing. Nothing here 
 """
 
 import hashlib
+from collections.abc import Mapping
 from dataclasses import dataclass
 from decimal import ROUND_FLOOR, Decimal
-from typing import Final, Literal
+from typing import Any, Final, Literal
 
 from trading_intel.domain.signals import Side
 
@@ -29,6 +30,18 @@ def opening_side(side: Side) -> Literal["BUY", "SELL"]:
 
 def closing_side(side: Side) -> Literal["BUY", "SELL"]:
     return "SELL" if side is Side.LONG else "BUY"
+
+
+def price_limits(raw: Mapping[str, Any]) -> tuple[Decimal, Decimal | None]:
+    """The lowest and highest price Binance accepts for the coin, from its price filter.
+
+    Rules stored without the filter give no limits, so nothing is left out because of them.
+    """
+    for item in raw.get("filters") or ():
+        if item.get("filterType") == "PRICE_FILTER":
+            highest = Decimal(str(item.get("maxPrice") or 0))
+            return Decimal(str(item.get("minPrice") or 0)), highest if highest > 0 else None
+    return Decimal(0), None
 
 
 def floor_to(value: Decimal, step: Decimal) -> Decimal:
@@ -80,6 +93,8 @@ class TradePlan:
     allocation: tuple[Decimal, ...]
     lot_step: Decimal
     min_qty: Decimal
+    min_price: Decimal = Decimal(0)
+    max_price: Decimal | None = None
 
     @property
     def entry_id(self) -> str:
@@ -90,11 +105,20 @@ class TradePlan:
         return client_id(self.key, "stop")
 
     def target_orders(self, filled: Decimal) -> list[TargetOrder]:
-        """Take-profits for what actually filled. A target with nothing left is not placed."""
+        """Take-profits for what actually filled. A target with nothing left is not placed.
+
+        Nor is a target outside the prices Binance accepts. The daily trend's far cap on a
+        short is floored at one tick when 10R reaches past zero, and Binance refused it
+        (-4013, SOLUSDT, 2026-11-11). Price cannot reach it, and the stop still closes the
+        whole position, so leaving it out changes no exit.
+        """
         sizes = target_sizes(filled, self.allocation, self.lot_step, self.min_qty)
         kinds: tuple[OrderKind, ...] = ("tp1", "tp2", "tp3")
         return [
             TargetOrder(kind, price, size, client_id(self.key, kind))
             for kind, price, size in zip(kinds, self.targets, sizes, strict=False)
-            if size > 0
+            if size > 0 and self._accepted(price)
         ]
+
+    def _accepted(self, price: Decimal) -> bool:
+        return price >= self.min_price and (self.max_price is None or price <= self.max_price)

@@ -109,6 +109,12 @@ const KIND_LABEL: Record<string, string> = {
   close: "Close",
 };
 
+/** A cancel is named for what it removed: a stop being replaced, or orders on a closed coin. */
+function orderLabel(order: ExchangeOrder): string {
+  if (order.type === "CANCEL") return order.kind === "stop" ? "Stop cancelled" : "Orders cancelled";
+  return KIND_LABEL[order.kind] ?? order.kind;
+}
+
 /** Every request the bot sent to Binance demo trading, newest first. */
 export function BinanceOrders({ orders, ticks }: { orders: ExchangeOrder[]; ticks: Map<string, string | null> }) {
   if (orders.length === 0) {
@@ -142,7 +148,7 @@ export function BinanceOrders({ orders, ticks }: { orders: ExchangeOrder[]; tick
               <tr key={`${order.created_at}:${order.symbol}:${order.kind}`} className="border-t border-line">
                 <td className="p-2 whitespace-nowrap">{formatUtc(order.created_at)}</td>
                 <td className="p-2">{order.symbol}</td>
-                <td className="p-2">{KIND_LABEL[order.kind] ?? order.kind}</td>
+                <td className="p-2">{orderLabel(order)}</td>
                 <td className={`p-2 font-semibold ${order.side === "BUY" ? "text-up" : "text-down"}`}>{order.side ?? "–"}</td>
                 <td className="p-2 text-right">{order.executed ?? order.quantity ?? "whole position"}</td>
                 <td className="p-2 text-right">

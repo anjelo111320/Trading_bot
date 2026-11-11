@@ -827,6 +827,203 @@
         "title": "ExchangeStatusView",
         "type": "object"
       },
+      "ExitReviewView": {
+        "properties": {
+          "account": {
+            "title": "Account",
+            "type": "string"
+          },
+          "action": {
+            "anyOf": [
+              {
+                "enum": [
+                  "hold",
+                  "take_profit_now",
+                  "stop_to_breakeven"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Action"
+          },
+          "advised_r": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Advised R"
+          },
+          "checks": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Checks",
+            "type": "array"
+          },
+          "close_time": {
+            "format": "date-time",
+            "title": "Close Time",
+            "type": "string"
+          },
+          "cost_usd": {
+            "title": "Cost Usd",
+            "type": "string"
+          },
+          "model": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Model"
+          },
+          "own_r": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Own R"
+          },
+          "progress_r": {
+            "title": "Progress R",
+            "type": "string"
+          },
+          "reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reason"
+          },
+          "status": {
+            "enum": [
+              "advised",
+              "invalid",
+              "refused",
+              "error",
+              "not_asked",
+              "skipped_budget"
+            ],
+            "title": "Status",
+            "type": "string"
+          },
+          "strategy": {
+            "title": "Strategy",
+            "type": "string"
+          },
+          "symbol": {
+            "title": "Symbol",
+            "type": "string"
+          },
+          "tokens": {
+            "title": "Tokens",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "close_time",
+          "symbol",
+          "strategy",
+          "account",
+          "checks",
+          "status",
+          "action",
+          "reason",
+          "progress_r",
+          "model",
+          "tokens",
+          "cost_usd",
+          "own_r",
+          "advised_r"
+        ],
+        "title": "ExitReviewView",
+        "type": "object"
+      },
+      "ExitReviewsView": {
+        "properties": {
+          "asking": {
+            "title": "Asking",
+            "type": "boolean"
+          },
+          "cost_usd": {
+            "title": "Cost Usd",
+            "type": "string"
+          },
+          "mean_change_r": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Mean Change R"
+          },
+          "model": {
+            "title": "Model",
+            "type": "string"
+          },
+          "reviews": {
+            "items": {
+              "$ref": "#/components/schemas/ExitReviewView"
+            },
+            "title": "Reviews",
+            "type": "array"
+          },
+          "scored": {
+            "title": "Scored",
+            "type": "integer"
+          },
+          "scored_not_hold": {
+            "title": "Scored Not Hold",
+            "type": "integer"
+          },
+          "shadow": {
+            "const": true,
+            "default": true,
+            "title": "Shadow",
+            "type": "boolean"
+          },
+          "statuses": {
+            "additionalProperties": {
+              "type": "integer"
+            },
+            "title": "Statuses",
+            "type": "object"
+          }
+        },
+        "required": [
+          "model",
+          "asking",
+          "statuses",
+          "cost_usd",
+          "scored",
+          "scored_not_hold",
+          "mean_change_r",
+          "reviews"
+        ],
+        "title": "ExitReviewsView",
+        "type": "object"
+      },
       "FeedStatusView": {
         "properties": {
           "clock_skew_ms": {
@@ -3378,6 +3575,51 @@
   },
   "openapi": "3.1.0",
   "paths": {
+    "/api/v1/ai/exit-reviews": {
+      "get": {
+        "operationId": "exit_reviews_api_v1_ai_exit_reviews_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 50,
+              "maximum": 200,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ExitReviewsView"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Default Response"
+          }
+        },
+        "summary": "Exit Reviews",
+        "tags": [
+          "ai"
+        ]
+      }
+    },
     "/api/v1/auth/login": {
       "post": {
         "operationId": "login_api_v1_auth_login_post",

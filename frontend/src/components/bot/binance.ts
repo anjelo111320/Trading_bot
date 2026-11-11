@@ -52,7 +52,7 @@ export function binanceLines(status: ExchangeStatus | undefined, symbol: string)
 export function binanceMarkers(orders: ExchangeOrder[], symbol: string, step: number): SeriesMarker<Time>[] {
   return orders
     .filter((order) => order.symbol === symbol && order.outcome === "accepted")
-    .filter((order) => order.kind === "entry" || order.kind === "close")
+    .filter((order) => (order.kind === "entry" || order.kind === "close") && order.type !== "CANCEL")
     .map((order) => {
       const time = (Math.floor(Date.parse(order.created_at) / 1000 / step) * step) as UTCTimestamp;
       const buy = order.side === "BUY";

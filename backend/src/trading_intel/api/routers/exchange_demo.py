@@ -78,7 +78,8 @@ def _order(row: dict[str, Any]) -> ExchangeOrderView:
         symbol=row["symbol"],
         kind=row["kind"],
         side=request.get("side"),
-        type=request.get("type"),
+        # A cancel sends no order type. It is named, so the page never shows it as a new order.
+        type=request.get("type") or ("CANCEL" if "cancel" in request else None),
         quantity=request.get("quantity"),
         trigger=request.get("triggerPrice"),
         executed=response.get("executedQty"),

@@ -71,6 +71,11 @@ Built as designed above, with these version 1 limits: market entries only, and a
 
 Since 2026-11-10 the bot trades a **100 USDT budget** of the demo account's 5,000 test USDT: 100 USDT plus its own profit and loss, at most 1 USDT of risk per trade (D048). BTC's smallest order, 0.001 BTC or about 74 USDT, is too large for most of its signals at that size.
 
+Two fixes on 2026-11-11, both found on the first daily trend trade, a SOL short:
+
+- **The daily trend's stop trails on Binance too.** Its exit is the 10-day extreme, moved at each daily close (D039), and only paper stops were moved, so the Binance trade kept its first stop. Now, at each daily close, the worker cancels the trade's stop on Binance and places one at the new level straight after, because Binance holds one whole-position stop per side. If the new stop is refused, the old price goes back. Only if no stop is left at all is the position closed. The stop held afterwards is recorded, so the minute check restores that one. The Bot page lists the cancel as "Stop cancelled".
+- **A target outside Binance's price filter is not sent.** On a short, the daily trend's 10R cap can reach past zero, so it is floored at one tick, 0.01 USDT. Binance's lowest SOL price is 0.42, and it refused the order (`-4013`). Price cannot reach such a target, and the stop covers the whole position, so leaving it out changes no exit.
+
 ## Setting It Up
 
 1. Run `cd backend && uv run python -m trading_intel.entrypoints.binance_demo keygen`. It writes an Ed25519 private key to `~/.config/trading-intel/binance-demo-ed25519.pem`, readable only by this user and outside the project, and prints the public key. The private key never leaves this computer. Binance needs only the public key.

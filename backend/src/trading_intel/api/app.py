@@ -14,7 +14,7 @@ from trading_intel.api.auth import LoginLimiter, TicketLedger, TokenSigner, hash
 from trading_intel.api.container import Container
 from trading_intel.api.errors import ErrorResponse, install_error_handlers
 from trading_intel.api.forecast_jobs import AnalysisJobs
-from trading_intel.api.routers import auth, exchange_demo, forecasts, health, market, trading
+from trading_intel.api.routers import ai, auth, exchange_demo, forecasts, health, market, trading
 from trading_intel.api.websocket import gateway
 from trading_intel.backtesting.windows import HOLDOUT_START
 from trading_intel.core.clock import Clock, SystemClock
@@ -23,6 +23,7 @@ from trading_intel.database.engine import create_engine, ping
 from trading_intel.database.repositories.accounts import AuditRepository, UserRepository
 from trading_intel.database.repositories.candles import CandleRepository
 from trading_intel.database.repositories.exchange import ExchangeRepository
+from trading_intel.database.repositories.exit_reviews import ExitReviewRepository
 from trading_intel.database.repositories.forecasts import ForecastRepository
 from trading_intel.database.repositories.news import NewsRepository
 from trading_intel.database.repositories.operations import (
@@ -87,6 +88,7 @@ def build_services(
         news=NewsRepository(engine),
         forecasts=forecasts,
         exchange=ExchangeRepository(engine),
+        ai_reviews=ExitReviewRepository(engine),
         forecaster=ForecastService(
             candles, forecasts, KronosRunner(), clock, holdout_start=HOLDOUT_START
         ),
@@ -162,5 +164,6 @@ def create_app(settings: Settings, container: Container | None = None) -> FastAP
     app.include_router(trading.router)
     app.include_router(forecasts.router)
     app.include_router(exchange_demo.router)
+    app.include_router(ai.router)
     app.include_router(gateway.router)
     return app

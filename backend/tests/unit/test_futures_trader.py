@@ -9,7 +9,7 @@ import httpx
 from tests.exchange_fakes import FakeGateway
 from trading_intel.domain.signals import Side
 from trading_intel.execution.binance_futures import BinanceError
-from trading_intel.execution.orders import TradePlan, client_id, target_sizes
+from trading_intel.execution.orders import TradePlan, client_id, price_limits, target_sizes
 from trading_intel.execution.trader import Budget, ExchangeView, FuturesTrader, Position
 
 D = Decimal
@@ -86,6 +86,33 @@ async def test_a_short_closes_with_buys() -> None:
     assert exchange.calls[4] == ("TAKE_PROFIT_MARKET", "BTCUSDT", "BUY", D("90"), D("0.010"))
 
 
+def test_price_limits_come_from_binances_price_filter() -> None:
+    raw = {"filters": [{"filterType": "PRICE_FILTER", "minPrice": "0.4200", "maxPrice": "6857"}]}
+    assert price_limits(raw) == (D("0.42"), D(6857))
+    assert price_limits({}) == (D(0), None), "rules without the filter limit nothing"
+
+
+async def test_a_target_binance_cannot_hold_is_not_sent() -> None:
+    """Regression: the daily trend's far cap on a SOL short was 0.01, below Binance's lowest
+    price of 0.42, and was refused with -4013 (2026-11-11)."""
+    exchange = FakeGateway()
+    result = await FuturesTrader(exchange).open_trade(
+        plan(
+            side=Side.SHORT,
+            stop=D("92.51"),
+            targets=(D("0.01"),),
+            allocation=(D(1),),
+            min_price=D("0.42"),
+            max_price=D(6857),
+        )
+    )
+    assert result.protected
+    assert [call[0] for call in exchange.calls][-1] == "STOP_MARKET"
+    assert not any(call[0] == "TAKE_PROFIT_MARKET" for call in exchange.calls)
+    capped = plan(targets=(D("110"), D("115"), D(7000)), max_price=D(6857))
+    assert [order.kind for order in capped.target_orders(D("0.010"))] == ["tp1", "tp2"]
+
+
 async def test_targets_follow_what_actually_filled() -> None:
     exchange = FakeGateway(filled="0.004")
     await FuturesTrader(exchange).open_trade(plan())
@@ -132,6 +159,68 @@ async def test_a_position_with_no_known_stop_is_closed() -> None:
     exchange = FakeGateway(positions=[position("DOGEUSDT", "100")])
     await FuturesTrader(exchange).reconcile({})
     assert exchange.calls == [("market", "DOGEUSDT", "SELL", D("100"), True)]
+
+
+def held_stop(trigger: str = "92.51") -> dict[str, Any]:
+    return {
+        "symbol": "SOLUSDT",
+        "orderType": "STOP_MARKET",
+        "algoId": 7,
+        "clientAlgoId": "ati-old-stop",
+        "triggerPrice": trigger,
+    }
+
+
+async def test_a_stop_moves_by_cancelling_the_old_one_then_placing_the_new() -> None:
+    exchange = FakeGateway(positions=[position("SOLUSDT", "-0.1")], algo=[held_stop()])
+    move = await FuturesTrader(exchange).move_stop("SOLUSDT", D("90.10"), "sol-key:trail:1")
+    assert move.moved and move.held == (D("90.10"), client_id("sol-key:trail:1", "stop"))
+    assert exchange.calls == [
+        ("cancel one", 7),
+        ("STOP_MARKET", "SOLUSDT", "BUY", D("90.10"), None),
+    ]
+    assert [(r.kind, r.request.get("cancel")) for r in move.records] == [
+        ("stop", "algoOrder"),
+        ("stop", None),
+    ]
+
+
+async def test_a_refused_new_stop_puts_the_old_one_back() -> None:
+    refused = BinanceError(400, -2021, "Order would immediately trigger.")
+    exchange = FakeGateway(
+        positions=[position("SOLUSDT", "-0.1")],
+        algo=[held_stop()],
+        fails={"STOP_MARKET": [refused, None]},
+    )
+    move = await FuturesTrader(exchange).move_stop("SOLUSDT", D("90.10"), "sol-key:trail:1")
+    assert not move.moved
+    assert move.held == (D("92.51"), client_id("sol-key:trail:1:back", "stop"))
+    assert exchange.calls[-1] == ("STOP_MARKET", "SOLUSDT", "BUY", D("92.51"), None)
+    assert not any(call[0] == "market" for call in exchange.calls)
+
+
+async def test_a_position_left_with_no_stop_at_all_is_closed() -> None:
+    refused = BinanceError(400, -2021, "Order would immediately trigger.")
+    exchange = FakeGateway(
+        positions=[position("SOLUSDT", "-0.1")], algo=[held_stop()], fails={"STOP_MARKET": refused}
+    )
+    move = await FuturesTrader(exchange).move_stop("SOLUSDT", D("90.10"), "sol-key:trail:1")
+    assert move.held is None and not move.moved
+    assert exchange.calls[-1] == ("market", "SOLUSDT", "BUY", D("0.1"), True)
+
+
+async def test_a_stop_whose_cancel_fails_is_left_as_it_is() -> None:
+    exchange = FakeGateway(
+        positions=[position("SOLUSDT", "-0.1")],
+        algo=[held_stop()],
+        fails={"cancel one": BinanceError(400, -2011, "Unknown order sent.")},
+    )
+    move = await FuturesTrader(exchange).move_stop("SOLUSDT", D("90.10"), "sol-key:trail:1")
+    assert not move.moved and exchange.calls == [("cancel one", 7)]
+    assert move.records[0].error is not None
+    flat = FakeGateway(algo=[held_stop()])
+    assert not (await FuturesTrader(flat).move_stop("SOLUSDT", D("90.10"), "k")).records
+    assert flat.calls == [], "a coin with no position has no stop to move"
 
 
 async def test_the_kill_switch_cancels_everything_then_closes_every_position() -> None:

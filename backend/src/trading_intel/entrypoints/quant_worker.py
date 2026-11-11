@@ -13,9 +13,12 @@ from pathlib import Path
 from typing import Final
 
 import structlog
+from anthropic import AsyncAnthropic
 from redis.asyncio import Redis
 from sqlalchemy.ext.asyncio import AsyncEngine
 
+from trading_intel.ai_analyst.exit_review import ClaudeExitReviewer
+from trading_intel.ai_analyst.exit_service import ExitReviewService
 from trading_intel.core.clock import Clock, SystemClock
 from trading_intel.core.errors import ConfigurationError
 from trading_intel.core.logging import configure_logging
@@ -24,6 +27,8 @@ from trading_intel.database.engine import create_engine
 from trading_intel.database.repositories.analysis import AnalysisRepository
 from trading_intel.database.repositories.candles import CandleRepository
 from trading_intel.database.repositories.exchange import ExchangeRepository
+from trading_intel.database.repositories.exit_reviews import ExitReviewRepository
+from trading_intel.database.repositories.news import NewsRepository
 from trading_intel.database.repositories.operations import (
     GapRepository,
     MarketRepository,
@@ -102,8 +107,12 @@ class TradingLoop:
     The money plan runs once per 15M close for every coin together, in its own 1,000 USDT
     account, with each strategy that closes then (D045).
 
-    With Binance demo keys, the same plan also trades Binance demo futures, and once a minute
-    every Binance position is checked for its stop (D048).
+    With Binance demo keys, the same plan also trades Binance demo futures, once a minute
+    every Binance position is checked for its stop, and at each daily close a daily trend
+    position there trails its stop (D048).
+
+    At each 15M close, Claude's exit advice on the coin's open paper trades is recorded, in
+    shadow mode only, and finished trades' advice is scored (D051).
     """
 
     def __init__(
@@ -117,9 +126,12 @@ class TradingLoop:
         clock: Clock,
         sleep: Callable[[float], Awaitable[None]] = asyncio.sleep,
         exchange: ExchangeLink | None = None,
+        exits: ExitReviewService | None = None,
     ) -> None:
         self._clock = clock
         self._exchange = exchange
+        self._exits = exits
+        self._scored: datetime | None = None
         self._checked: datetime | None = None
         self._sleep = sleep
         self._signals = signals
@@ -186,6 +198,7 @@ class TradingLoop:
             strategy = "trend_break_baseline"
         elif timeframe is Timeframe.D1:
             moved = await self._signals.trail_stops(provider_id, instrument, close_time)
+            await self._trail_exchange(provider_id, instrument, close_time)
             outcome = await self._signals.evaluate_trend(
                 provider_id, instrument, close_time, account
             )
@@ -216,6 +229,26 @@ class TradingLoop:
                     error=type(error).__name__,
                     detail=str(error)[:300],
                 )
+            await self._review_exits(provider_id, instrument, close_time)
+
+    async def _review_exits(
+        self, provider_id: int, instrument: Instrument, close_time: datetime
+    ) -> None:
+        """Claude's shadow advice on the coin's open paper trades. It changes no trade."""
+        if self._exits is None:
+            return
+        try:
+            await self._exits.review(provider_id, instrument, close_time)
+            if self._scored != close_time:
+                self._scored = close_time  # Once per close, for every coin's finished trades.
+                await self._exits.score_finished()
+        except Exception as error:
+            log.error(
+                "exit_review_failed",
+                instrument=instrument.symbol,
+                error=type(error).__name__,
+                detail=str(error)[:300],
+            )
 
     async def _check_exchange(self, close_time: datetime) -> None:
         """Once a minute: no Binance position without its stop, and no order without a position.
@@ -235,6 +268,29 @@ class TradingLoop:
             await self._save_exchange_status(account)
         except Exception as error:
             log.error("exchange_check_failed", error=type(error).__name__, detail=str(error)[:300])
+
+    async def _trail_exchange(
+        self, provider_id: int, instrument: Instrument, close_time: datetime
+    ) -> None:
+        """A daily trend position on Binance trails its stop at the daily close, as on paper."""
+        if self._exchange is None:
+            return
+        account = await self._exchange_account()
+        if account is None:
+            return
+        try:
+            await self._signals.trail_exchange_stop(
+                provider_id, instrument, close_time, account,
+                self._exchange.trader, self._exchange.orders,
+            )  # fmt: skip
+        except Exception as error:
+            # Paper trailing and the day's signals go on. The stop Binance holds still stands.
+            log.error(
+                "exchange_trail_failed",
+                instrument=instrument.symbol,
+                error=type(error).__name__,
+                detail=str(error)[:300],
+            )
 
     async def _save_exchange_status(self, account: Account) -> None:
         assert self._exchange is not None
@@ -373,7 +429,10 @@ async def exchange_link(
 
 
 async def build_service(
-    engine: AsyncEngine, owner_email: str, exchange: ExchangeLink | None = None
+    engine: AsyncEngine,
+    owner_email: str,
+    exchange: ExchangeLink | None = None,
+    anthropic_key: str = "",
 ) -> QuantService:
     reference = ReferenceRepository(engine)
     provider_ids = {
@@ -396,6 +455,13 @@ async def build_service(
         clock,
         bitcoin=next((i.instrument for i in listed if i.instrument.symbol == BITCOIN), None),
     )
+    # Without a key, checks are still recorded as not asked, which counts them for free.
+    reviewer = ClaudeExitReviewer(AsyncAnthropic(api_key=anthropic_key)) if anthropic_key else None
+    exits = ExitReviewService(
+        candles, market, paper, ExitReviewRepository(engine), NewsRepository(engine), clock,
+        reviewer,
+    )  # fmt: skip
+    log.info("exit_reviews_enabled", asking=reviewer is not None)
     trading = TradingLoop(
         signals,
         PaperService(candles, market, paper, clock),
@@ -405,6 +471,7 @@ async def build_service(
         {item.instrument.id: item.instrument for item in listed},
         clock,
         exchange=exchange,
+        exits=exits,
     )
     return QuantService(candles, AnalysisRepository(engine), provider_ids, trading)
 
@@ -420,7 +487,9 @@ async def run() -> None:
         settings.binance_demo_api_secret.get_secret_value(),
         settings.binance_demo_private_key_file,
     )
-    service = await build_service(engine, settings.owner_email, link)
+    service = await build_service(
+        engine, settings.owner_email, link, settings.anthropic_api_key.get_secret_value()
+    )
     consumer = ClosedCandleConsumer(redis, GROUP, "worker-1")
     await consumer.ensure_group()
 

@@ -4,6 +4,7 @@ import {
   apiGet,
   type ExchangeOrder,
   type ExchangeStatus,
+  type ExitReviews,
   type NewsItem,
   type PaperSummary,
   type Position,
@@ -75,6 +76,16 @@ export function useExchangeOrders(enabled: boolean) {
   return useQuery({
     queryKey: ["exchange-orders"],
     queryFn: () => apiGet<ExchangeOrder[]>("/api/v1/exchange-demo/orders?limit=100"),
+    refetchInterval: BOT_REFRESH_MS,
+    enabled,
+  });
+}
+
+/** Claude's exit advice, in shadow mode (D051). Reading it never calls Claude. */
+export function useExitReviews(enabled: boolean) {
+  return useQuery({
+    queryKey: ["exit-reviews"],
+    queryFn: () => apiGet<ExitReviews>("/api/v1/ai/exit-reviews?limit=50"),
     refetchInterval: BOT_REFRESH_MS,
     enabled,
   });

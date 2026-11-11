@@ -482,6 +482,33 @@ Consequences:
 - Earlier reports for docs/27 and docs/29 were run without that funding, and are kept as they were, with corrected figures beside them.
 Revisit conditions: none for this version. A changed score is a new trial, tested on forward paper results.
 
+### D051: An AI exit manager on Claude Haiku 5.5, in shadow mode
+Date: 2026-11-11.
+Status: Accepted by the owner ("start"), after D050. They chose the lowest model, Haiku 5.5, to keep tokens low.
+Context: The owner wants an AI that can take the current profit when a trade looks unlikely to reach its target. Fixed rules doing that lost R in backtests (D050), and Claude cannot be backtested honestly, so it is measured forward.
+Decision:
+- At each 15M close, Python checks every open paper trade with the docs/37 checks. When one fires, Haiku 5.5 answers hold, take profit now, or stop to breakeven, with one sentence. The design is in [38-AI-EXIT-MANAGER.md](38-AI-EXIT-MANAGER.md).
+- **Shadow only.** The advice is stored with what Claude was shown, and scored when the trade closes by replaying it with the advice applied. Nothing about the trade changes.
+- Python computes every number, including the breakeven stop. There is no action that adds risk. The shared $3 daily limit is checked before every call.
+- Without an API key, checks are still recorded as "not asked".
+Consequences:
+- Migration 0013 adds `ai_exit_reviews`.
+- Binance demo positions are not reviewed until Binance reports their fills back.
+Revisit conditions: about 50 scored answers that were not "hold". Letting Claude act on any account needs a new decision.
+
+### D050: Exit rules that take profit early, tested and not adopted
+Date: 2026-11-11.
+Status: Studied at the owner's request, as step 1 before an AI exit manager. Not adopted by its own pre-registered rule.
+Context: The owner asked for an AI that can take the current profit when a trade looks unlikely to reach its target. Fixed rules can test that idea on 2020 to 2025, which Claude cannot, because the model may remember what prices did next.
+Decision:
+- The study in [37-EXIT-RULES.md](37-EXIT-RULES.md) added three rules to the daily trend, 1H pattern breakout and 4H gap strategies, on six coins, and compared each with the strategy's own exits on the same entries. The rules were a breakeven stop after +1R, an exit when a trade in profit stalls, and a stop trailing the setup swings. They were committed before any code or run, as `24a2f9f`.
+- No rule passed. Eight of nine changes were negative. The best, the swing trail on the daily trend, was +0.009R a trade, with an interval that included zero. The stall exit saved 1.86R on each trade that would have lost, and gave up 1.78R on each trade that would have won.
+- The strategies keep their own exits in every account.
+Consequences:
+- `backtesting/exits.py`, the study and its tests stay, so the run can be reproduced. The shared simulator gained an exit at the next candle's open (docs/10), which no live trade uses yet.
+- An AI exit manager must beat the strategies' own exits in shadow mode before it acts. Its checks were measured at about 2 per open trade-day.
+Revisit conditions: none for these values. A changed rule is a new trial.
+
 ### D047: The stack starts at login and restarts what stops
 Date: 2026-11-10.
 Status: Accepted by the owner, who wants Python running whenever the computer is on.

@@ -117,6 +117,19 @@ async def test_the_stop_closes_the_whole_position_and_a_target_only_reduces_it()
         assert order["priceProtect"] == "true"
 
 
+async def test_one_stop_is_cancelled_by_its_algo_id() -> None:
+    seen: list[httpx.Request] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        seen.append(request)
+        return httpx.Response(200, json={"algoId": 7, "code": "200", "msg": "success"})
+
+    await gateway(handler).cancel_algo_order(7)
+    [request] = seen
+    assert request.method == "DELETE" and request.url.path == "/fapi/v1/algoOrder"
+    assert params(request)["algoId"] == "7"
+
+
 async def test_a_setting_already_in_place_is_not_an_error() -> None:
     def handler(request: httpx.Request) -> httpx.Response:
         return httpx.Response(400, json={"code": -4046, "msg": "No need to change margin type."})

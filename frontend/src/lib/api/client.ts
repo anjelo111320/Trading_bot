@@ -36,6 +36,8 @@ export type ExchangeStatus = Schemas["ExchangeStatusView"];
 export type ExchangePosition = Schemas["ExchangePositionView"];
 export type ExchangeOpenOrder = Schemas["ExchangeOpenOrderView"];
 export type ExchangeOrder = Schemas["ExchangeOrderView"];
+export type ExitReviews = Schemas["ExitReviewsView"];
+export type ExitReview = Schemas["ExitReviewView"];
 
 export class ApiError extends Error {
   constructor(

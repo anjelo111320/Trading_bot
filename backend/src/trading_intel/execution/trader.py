@@ -56,6 +56,7 @@ class Gateway(Protocol):
     ) -> dict[str, Any]: ...
     async def open_algo_orders(self, symbol: str | None = None) -> list[dict[str, Any]]: ...
     async def cancel_algo_orders(self, symbol: str) -> None: ...
+    async def cancel_algo_order(self, algo_id: int | str) -> dict[str, Any]: ...
 
 
 @dataclass(frozen=True)
@@ -129,8 +130,22 @@ class OpenResult:
     records: list[OrderRecord] = field(default_factory=list)
 
 
+@dataclass
+class StopMove:
+    """What a stop move did. `held` is the stop Binance holds afterwards and its order ID, or
+    None when no stop is left because the position was closed."""
+
+    moved: bool = False
+    held: tuple[Decimal, str] | None = None
+    records: list[OrderRecord] = field(default_factory=list)
+
+
 def _decimal(value: object) -> Decimal:
     return Decimal(str(value)) if value not in (None, "") else ZERO
+
+
+def _is_stop(order: Mapping[str, Any]) -> bool:
+    return str(order.get("orderType", order.get("type"))) in STOP_TYPES
 
 
 class FuturesTrader:
@@ -261,6 +276,46 @@ class FuturesTrader:
         call = self._gateway.market_order(symbol, side, quantity, cid, reduce_only=True)
         await self._record(records, symbol, "close", cid, request, call)
 
+    async def move_stop(self, symbol: str, price: Decimal, key: str) -> StopMove:
+        """Replace the position's stop with one at `price`, such as the daily trend's trail.
+
+        Binance holds one whole-position stop per side, so the old stop is cancelled first
+        and the new one placed straight after. If the new one is refused, the old price goes
+        back. Only if no stop is left at all is the position closed, as at entry. `key` must
+        be new for each move, because Binance refuses a repeated order ID.
+        """
+        result = StopMove()
+        records = result.records
+        position = (await self.view()).positions.get(symbol)
+        if position is None:
+            return result
+        close = closing_side(position.side)
+        old = [order for order in await self._gateway.open_algo_orders(symbol) if _is_stop(order)]
+        for order in old:
+            request = {"cancel": "algoOrder", "algoId": order.get("algoId")}
+            cid = str(order.get("clientAlgoId") or "cancel")
+            call = self._gateway.cancel_algo_order(order.get("algoId", ""))
+            if await self._record(records, symbol, "stop", cid, request, call) is None:
+                return result  # The old stop may still be there; the minute check finds out.
+        new_id = client_id(key, "stop")
+        if await self._stop(records, symbol, close, price, new_id):
+            result.moved, result.held = True, (price, new_id)
+            return result
+        if old:
+            back_id = client_id(f"{key}:back", "stop")
+            previous = _decimal(old[0].get("triggerPrice"))
+            if await self._stop(records, symbol, close, previous, back_id):
+                result.held = (previous, back_id)
+                return result
+        # Both refused. A stop Binance still reports means the cancel did not take effect.
+        remaining = [o for o in await self._gateway.open_algo_orders(symbol) if _is_stop(o)]
+        if remaining:
+            first = remaining[0]
+            result.held = (_decimal(first.get("triggerPrice")), str(first.get("clientAlgoId")))
+            return result
+        await self._flatten(records, symbol, close, abs(position.amount), client_id(key, "close"))
+        return result
+
     async def reconcile(self, stops: Mapping[str, tuple[Decimal, str]]) -> list[OrderRecord]:
         """Run every minute. `stops` holds each symbol's recorded stop price and trade key.
 
@@ -290,9 +345,7 @@ class FuturesTrader:
                     )
                 )
         for symbol, position in sorted(view.positions.items()):
-            if any(
-                str(o.get("orderType", o.get("type"))) in STOP_TYPES for o in orders.get(symbol, [])
-            ):
+            if any(_is_stop(o) for o in orders.get(symbol, [])):
                 continue
             close = closing_side(position.side)
             known = stops.get(symbol)

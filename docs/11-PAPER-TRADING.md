@@ -60,6 +60,12 @@ Since 2026-11-10, at the owner's request, the Bot page also shows the Forecast p
 
 The analysis is information only. It never changes a bot trade, which still comes from the strategies and the risk engine. The Forecast page is unchanged.
 
+Since 2026-11-11 (D051), a third switch, Claude, shows Claude's exit advice on open paper trades in all three paper accounts, labelled shadow mode:
+- The counts: checks recorded, how many asked Claude, the cost so far, how many answers have been scored, and their mean change in R.
+- Each review: the check that fired, the advice and its reason, the trade's R when asked, and once the trade has closed, its score.
+
+Advice on the coin on the chart comes first. The advice never changes a trade (docs/38).
+
 The Bot page also shows the USDT held in trades: each open trade's size at its entry price, and what it loses at the stop; the account's total in open trades and what is left; and an "In trade USDT" column in the history. Paper trades use leverage 1, so that size is also the margin they hold.
 
 The Binance demo account (D048) trades on Binance, not in this simulator. The Bot page's third account, "Binance demo, 100 USDT", shows it from the snapshot the quant worker saves each minute:
@@ -70,7 +76,7 @@ The Binance demo account (D048) trades on Binance, not in this simulator. The Bo
 - Every order sent, with what Binance did with it.
 - Python's decisions for the account.
 
-A position Binance closes at its stop or a target is not reported back yet, so it shows as the position and its lines disappearing.
+A position Binance closes at its stop or a target is not reported back yet, so it shows as the position and its lines disappearing. A daily trend position on Binance trails its stop at each daily close, as on paper (docs/36).
 
 ## Safety
 Paper trading is the default.

@@ -16,6 +16,7 @@ import { useLiveMarket } from "@/features/market/useLiveMarket";
 import {
   useExchangeOrders,
   useExchangeStatus,
+  useExitReviews,
   usePaperSummary,
   useSignals,
   useTrades,
@@ -26,6 +27,7 @@ import { ANALYSIS_SPAN, botMarkers, chartSlots, rightRoom } from "./analysis";
 import { binanceLines, binanceMarkers } from "./binance";
 import { BinanceAccount, BinanceOrders, BinancePosition } from "./BinancePanels";
 import { BotAnalysis } from "./BotAnalysis";
+import { ClaudeAdvice } from "./ClaudeAdvice";
 import { BotAccount, Decisions, OpenTrade, TradeHistory, lookups } from "./BotPanels";
 import { inOpenTrades, isOpen, openLines, tradeMarkers } from "./trades";
 
@@ -33,9 +35,9 @@ const TIMEFRAMES: Timeframe[] = ["1m", "5m", "15m", "1h"];
 const PROVIDER = "binance_usdm";
 
 type BotAccountName = "portfolio" | "demo" | "binance";
-type SideView = "trades" | "analysis";
+type SideView = "trades" | "analysis" | "claude";
 
-const SIDE_VIEWS: Record<SideView, string> = { trades: "Trades", analysis: "Analysis" };
+const SIDE_VIEWS: Record<SideView, string> = { trades: "Trades", analysis: "Analysis", claude: "Claude" };
 
 function Switch<T extends string>({
   label,
@@ -135,6 +137,7 @@ export function BotScreen({ instruments }: { instruments: Instrument[] }) {
   const exchange = useExchangeStatus(onBinance);
   const exchangeOrders = useExchangeOrders(onBinance);
   const signals = useSignals(account, 8);
+  const exitReviews = useExitReviews(side === "claude");
   const forecast = useForecastView(PROVIDER, coin?.id ?? 0);
 
   const candles = useMemo(
@@ -293,7 +296,9 @@ export function BotScreen({ instruments }: { instruments: Instrument[] }) {
 
         <aside className="flex w-full shrink-0 flex-col gap-3 lg:w-80 xl:w-96">
           <Switch label="Side panel" options={SIDE_VIEWS} value={side} onChange={setSide} />
-          {side === "analysis" ? (
+          {side === "claude" ? (
+            <ClaudeAdvice data={exitReviews.data} symbol={coin.symbol} />
+          ) : side === "analysis" ? (
             <BotAnalysis
               view={forecast.data}
               symbol={coin.symbol}

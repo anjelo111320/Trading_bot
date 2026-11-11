@@ -78,6 +78,8 @@ describe("Binance demo on the Bot page", () => {
       order({ kind: "close", side: "BUY", created_at: "2026-11-10T15:31:00Z" }),
       order({ kind: "stop", outcome: "refused", side: "BUY" }),
       order({ symbol: "XRPUSDT" }),
+      // The minute check cancelling orders on a coin Binance closed is not a close by the bot.
+      order({ kind: "close", type: "CANCEL", side: null, created_at: "2026-11-10T16:02:00Z" }),
     ];
     const marks = binanceMarkers(sent, "SOLUSDT", 900);
     expect(marks.map((mark) => [mark.shape, mark.text])).toEqual([
@@ -120,5 +122,15 @@ describe("Binance demo on the Bot page", () => {
     render(<BinanceOrders orders={sent} ticks={new Map([["SOLUSDT", "0.01"]])} />);
     expect(screen.getByText("Accepted")).toBeTruthy();
     expect(screen.getByText(/Refused: Binance 400 -2021/)).toBeTruthy();
+  });
+
+  it("names a cancelled stop, so a trailed stop does not look like a new order", () => {
+    const sent = [
+      order({ kind: "stop", type: "CANCEL", side: null, quantity: null, created_at: "2026-11-12T00:00:12Z" }),
+      order({ kind: "close", type: "CANCEL", side: null, quantity: null }),
+    ];
+    render(<BinanceOrders orders={sent} ticks={new Map()} />);
+    expect(screen.getByText("Stop cancelled")).toBeTruthy();
+    expect(screen.getByText("Orders cancelled")).toBeTruthy();
   });
 });

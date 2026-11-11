@@ -260,6 +260,8 @@ Monthly cost by volume and average cost per call:
 | 20 | $30 | $49 | $73 |
 | 40 | $61 | $97 | $146 |
 
+Measured on 2026-11-11 for the planned exit manager (docs/37). On 2020 to 2025 trades, its price checks fired about 2 times per open trade-day: about 20 a day at 10 open trades, before CHoCH, news and event checks. On Claude Haiku 5.5, the owner's choice for now, an exit check of about 2,300 input and 450 output tokens costs about $0.0005, so 20 a day is about $0.30 a month.
+
 ## 12. Measurement
 
 Spend is judged per completed decision, not per token.
