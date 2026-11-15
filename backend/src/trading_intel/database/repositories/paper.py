@@ -288,7 +288,11 @@ class PaperRepository:
                         WHERE closed_at IS NOT NULL AND closed_at < :day_start), 0) AS before_today,
                       count(*) FILTER (WHERE status IN ('pending_entry', 'open')) AS open_count,
                       COALESCE(sum(open_quantity * average_entry) FILTER (
-                        WHERE status = 'open'), 0) AS exposure
+                        WHERE status = 'open'), 0) AS exposure,
+                      COALESCE(sum(open_quantity * average_entry) FILTER (
+                        WHERE status = 'open' AND side = 'LONG'), 0) AS long_exposure,
+                      COALESCE(sum(open_quantity * average_entry) FILTER (
+                        WHERE status = 'open' AND side = 'SHORT'), 0) AS short_exposure
                FROM paper_positions WHERE account_id = :account"""
         )
         unrealized = text(
@@ -334,6 +338,8 @@ class PaperRepository:
             day_start_equity=starting_balance + row.before_today,
             open_positions=int(row.open_count),
             gross_exposure=row.exposure,
+            long_exposure=row.long_exposure,
+            short_exposure=row.short_exposure,
             open_risk=open_risk,
         )
 
@@ -397,6 +403,23 @@ class PaperRepository:
         params = {"account": account_id, "instrument": instrument_id, "limit": limit}
         async with self._engine.connect() as connection:
             rows = (await connection.execute(query, params)).mappings().all()
+        return [dict(row) for row in rows]
+
+    async def by_signal(self, account_id: UUID) -> list[dict[str, Any]]:
+        """Each position's state, times, prices and result, with the signal that opened it
+        (D065). The exit price is averaged over every priced exit fill."""
+        query = text(
+            """SELECT p.recommendation_id, p.status, p.opened_at, p.closed_at, p.average_entry,
+                      p.realized_pnl,
+                      (SELECT sum(e.fill_price * e.quantity) / NULLIF(sum(e.quantity), 0)
+                       FROM paper_executions e
+                       WHERE e.position_id = p.id AND e.fill_price IS NOT NULL
+                         AND e.kind NOT IN ('entry', 'funding')) AS exit_price
+               FROM paper_positions p
+               WHERE p.account_id = :account"""
+        )
+        async with self._engine.connect() as connection:
+            rows = (await connection.execute(query, {"account": account_id})).mappings().all()
         return [dict(row) for row in rows]
 
     async def performance(self, account_id: UUID) -> dict[str, Any]:

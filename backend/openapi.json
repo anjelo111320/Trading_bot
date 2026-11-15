@@ -1,6 +1,92 @@
 {
   "components": {
     "schemas": {
+      "AiBudgetUpdate": {
+        "additionalProperties": false,
+        "properties": {
+          "daily_limit_usd": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "string"
+              }
+            ],
+            "title": "Daily Limit Usd"
+          }
+        },
+        "required": [
+          "daily_limit_usd"
+        ],
+        "title": "AiBudgetUpdate",
+        "type": "object"
+      },
+      "AiBudgetView": {
+        "description": "Claude's daily cost limit, for every call together, and today's spend against it (D062).\nAt the limit, Claude is not asked again until 00:00 UTC.",
+        "properties": {
+          "by_purpose": {
+            "items": {
+              "$ref": "#/components/schemas/UsageView"
+            },
+            "title": "By Purpose",
+            "type": "array"
+          },
+          "calls_today": {
+            "title": "Calls Today",
+            "type": "integer"
+          },
+          "ceiling_usd": {
+            "title": "Ceiling Usd",
+            "type": "string"
+          },
+          "changed_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Changed At"
+          },
+          "daily_limit_usd": {
+            "title": "Daily Limit Usd",
+            "type": "string"
+          },
+          "input_tokens_today": {
+            "title": "Input Tokens Today",
+            "type": "integer"
+          },
+          "output_tokens_today": {
+            "title": "Output Tokens Today",
+            "type": "integer"
+          },
+          "reached": {
+            "title": "Reached",
+            "type": "boolean"
+          },
+          "spent_today_usd": {
+            "title": "Spent Today Usd",
+            "type": "string"
+          }
+        },
+        "required": [
+          "daily_limit_usd",
+          "ceiling_usd",
+          "changed_at",
+          "spent_today_usd",
+          "calls_today",
+          "input_tokens_today",
+          "output_tokens_today",
+          "reached",
+          "by_purpose"
+        ],
+        "title": "AiBudgetView",
+        "type": "object"
+      },
       "AnalyseRequest": {
         "properties": {
           "instrument_id": {
@@ -109,6 +195,58 @@
           "state"
         ],
         "title": "AnalysisJobView",
+        "type": "object"
+      },
+      "ArmingUpdate": {
+        "additionalProperties": false,
+        "description": "Real trading on or off from the dashboard (D063). Turning it on needs the password.",
+        "properties": {
+          "armed": {
+            "title": "Armed",
+            "type": "boolean"
+          },
+          "password": {
+            "anyOf": [
+              {
+                "maxLength": 256,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Password"
+          }
+        },
+        "required": [
+          "armed"
+        ],
+        "title": "ArmingUpdate",
+        "type": "object"
+      },
+      "ArmingView": {
+        "properties": {
+          "armed": {
+            "title": "Armed",
+            "type": "boolean"
+          },
+          "armed_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Armed At"
+          }
+        },
+        "required": [
+          "armed"
+        ],
+        "title": "ArmingView",
         "type": "object"
       },
       "BandView": {
@@ -338,6 +476,270 @@
         "title": "ChartPatternView",
         "type": "object"
       },
+      "CloseRequestView": {
+        "description": "A close asked from the dashboard, which the quant worker carries out within seconds.",
+        "properties": {
+          "detail": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Detail"
+          },
+          "done_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Done At"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "outcome": {
+            "anyOf": [
+              {
+                "enum": [
+                  "closed",
+                  "nothing_open",
+                  "not_the_bots",
+                  "failed"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Outcome"
+          },
+          "requested_at": {
+            "format": "date-time",
+            "title": "Requested At",
+            "type": "string"
+          },
+          "symbol": {
+            "title": "Symbol",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "symbol",
+          "requested_at"
+        ],
+        "title": "CloseRequestView",
+        "type": "object"
+      },
+      "ClosedTradeView": {
+        "properties": {
+          "closed_at": {
+            "format": "date-time",
+            "title": "Closed At",
+            "type": "string"
+          },
+          "entry_price": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Entry Price"
+          },
+          "exit_price": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Exit Price"
+          },
+          "fees": {
+            "title": "Fees",
+            "type": "string"
+          },
+          "funding": {
+            "title": "Funding",
+            "type": "string"
+          },
+          "net": {
+            "title": "Net",
+            "type": "string"
+          },
+          "opened_at": {
+            "format": "date-time",
+            "title": "Opened At",
+            "type": "string"
+          },
+          "pnl": {
+            "title": "Pnl",
+            "type": "string"
+          },
+          "r": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "R"
+          },
+          "side": {
+            "title": "Side",
+            "type": "string"
+          },
+          "size": {
+            "title": "Size",
+            "type": "string"
+          },
+          "strategy": {
+            "title": "Strategy",
+            "type": "string"
+          },
+          "symbol": {
+            "title": "Symbol",
+            "type": "string"
+          },
+          "won": {
+            "title": "Won",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "symbol",
+          "side",
+          "strategy",
+          "opened_at",
+          "closed_at",
+          "size",
+          "entry_price",
+          "exit_price",
+          "pnl",
+          "fees",
+          "funding",
+          "net",
+          "r",
+          "won"
+        ],
+        "title": "ClosedTradeView",
+        "type": "object"
+      },
+      "CoinCardView": {
+        "properties": {
+          "conditions": {
+            "$ref": "#/components/schemas/CoinConditionsView"
+          },
+          "entries": {
+            "$ref": "#/components/schemas/EntryQualityView"
+          },
+          "instrument_id": {
+            "title": "Instrument Id",
+            "type": "integer"
+          },
+          "live": {
+            "$ref": "#/components/schemas/LiveResultView"
+          },
+          "strategies": {
+            "items": {
+              "$ref": "#/components/schemas/StrategyCellView"
+            },
+            "title": "Strategies",
+            "type": "array"
+          },
+          "symbol": {
+            "title": "Symbol",
+            "type": "string"
+          }
+        },
+        "required": [
+          "symbol",
+          "instrument_id",
+          "live",
+          "entries",
+          "conditions",
+          "strategies"
+        ],
+        "title": "CoinCardView",
+        "type": "object"
+      },
+      "CoinConditionsView": {
+        "description": "The coin now. `atr_percent` is the 1H ATR(14) over the last close; the spread comes\nfrom the latest book within 10 minutes; gaps are missing candles not yet repaired.",
+        "properties": {
+          "approved_today": {
+            "title": "Approved Today",
+            "type": "integer"
+          },
+          "atr_percent": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Atr Percent"
+          },
+          "open_gaps": {
+            "title": "Open Gaps",
+            "type": "integer"
+          },
+          "signals_today": {
+            "title": "Signals Today",
+            "type": "integer"
+          },
+          "spread_bps": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Spread Bps"
+          },
+          "top_refusal": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Top Refusal"
+          }
+        },
+        "required": [
+          "atr_percent",
+          "spread_bps",
+          "open_gaps",
+          "signals_today",
+          "approved_today",
+          "top_refusal"
+        ],
+        "title": "CoinConditionsView",
+        "type": "object"
+      },
       "CoverageView": {
         "properties": {
           "downtime": {
@@ -449,6 +851,68 @@
         "title": "DowntimeView",
         "type": "object"
       },
+      "EntryQualityView": {
+        "description": "Entries with a full first hour of 1-minute candles, in R. `slippage_r` is the median of\nhow much worse than planned the entry filled; `first_hour_r` the median of how far the\nprice then went against it in the hour; `went_against` how many went half the risk.",
+        "properties": {
+          "first_hour_r": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "First Hour R"
+          },
+          "slippage_r": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Slippage R"
+          },
+          "trades": {
+            "title": "Trades",
+            "type": "integer"
+          },
+          "went_against": {
+            "title": "Went Against",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "trades",
+          "slippage_r",
+          "first_hour_r",
+          "went_against"
+        ],
+        "title": "EntryQualityView",
+        "type": "object"
+      },
+      "EquityPointView": {
+        "properties": {
+          "at": {
+            "format": "date-time",
+            "title": "At",
+            "type": "string"
+          },
+          "equity": {
+            "title": "Equity",
+            "type": "string"
+          }
+        },
+        "required": [
+          "at",
+          "equity"
+        ],
+        "title": "EquityPointView",
+        "type": "object"
+      },
       "ErrorBody": {
         "properties": {
           "code": {
@@ -484,9 +948,48 @@
         "title": "ErrorResponse",
         "type": "object"
       },
-      "ExchangeOpenOrderView": {
-        "description": "A stop or take-profit Binance holds. A stop closes the whole position.",
+      "EvidenceView": {
+        "description": "A strategy's backtest on one coin at normal costs, as its study published it (D068).\nExpectancy in R, with the seeded bootstrap 95% interval.",
         "properties": {
+          "high": {
+            "title": "High",
+            "type": "string"
+          },
+          "low": {
+            "title": "Low",
+            "type": "string"
+          },
+          "mean_r": {
+            "title": "Mean R",
+            "type": "string"
+          },
+          "source": {
+            "title": "Source",
+            "type": "string"
+          },
+          "trades": {
+            "title": "Trades",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "trades",
+          "mean_r",
+          "low",
+          "high",
+          "source"
+        ],
+        "title": "EvidenceView",
+        "type": "object"
+      },
+      "ExchangeOpenOrderView": {
+        "description": "A stop or take-profit Binance holds, or a waiting limit entry. A stop closes the whole\nposition.",
+        "properties": {
+          "bot": {
+            "default": true,
+            "title": "Bot",
+            "type": "boolean"
+          },
           "close_position": {
             "title": "Close Position",
             "type": "boolean"
@@ -571,9 +1074,42 @@
             ],
             "title": "Executed"
           },
+          "fill_price": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Fill Price"
+          },
+          "if_hit_usdt": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "If Hit Usdt"
+          },
           "kind": {
             "title": "Kind",
             "type": "string"
+          },
+          "now_usdt": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Now Usdt"
           },
           "outcome": {
             "enum": [
@@ -595,6 +1131,17 @@
             ],
             "title": "Quantity"
           },
+          "risk_usdt": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Risk Usdt"
+          },
           "side": {
             "anyOf": [
               {
@@ -606,9 +1153,38 @@
             ],
             "title": "Side"
           },
+          "strategy": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Strategy"
+          },
           "symbol": {
             "title": "Symbol",
             "type": "string"
+          },
+          "trade_state": {
+            "anyOf": [
+              {
+                "enum": [
+                  "open",
+                  "won",
+                  "lost",
+                  "waiting",
+                  "not filled"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Trade State"
           },
           "trigger": {
             "anyOf": [
@@ -631,6 +1207,17 @@
               }
             ],
             "title": "Type"
+          },
+          "value_usdt": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Value Usdt"
           }
         },
         "required": [
@@ -651,6 +1238,11 @@
       },
       "ExchangePositionView": {
         "properties": {
+          "bot": {
+            "default": true,
+            "title": "Bot",
+            "type": "boolean"
+          },
           "entry_price": {
             "title": "Entry Price",
             "type": "string"
@@ -722,6 +1314,11 @@
             ],
             "title": "Age Seconds"
           },
+          "armed": {
+            "default": false,
+            "title": "Armed",
+            "type": "boolean"
+          },
           "available": {
             "anyOf": [
               {
@@ -759,6 +1356,14 @@
             "title": "Capital",
             "type": "string"
           },
+          "closing": {
+            "default": [],
+            "items": {
+              "type": "string"
+            },
+            "title": "Closing",
+            "type": "array"
+          },
           "connected": {
             "title": "Connected",
             "type": "boolean"
@@ -784,6 +1389,16 @@
               }
             ],
             "title": "Equity"
+          },
+          "live": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/LiveStateView"
+              },
+              {
+                "type": "null"
+              }
+            ]
           },
           "loss_floor": {
             "anyOf": [
@@ -837,7 +1452,6 @@
             "title": "Taken At"
           },
           "test_funds": {
-            "const": true,
             "default": true,
             "title": "Test Funds",
             "type": "boolean"
@@ -1386,6 +2000,45 @@
         "title": "GapView",
         "type": "object"
       },
+      "GridCellView": {
+        "properties": {
+          "stats": {
+            "$ref": "#/components/schemas/StatsView"
+          },
+          "strategy": {
+            "title": "Strategy",
+            "type": "string"
+          },
+          "symbol": {
+            "title": "Symbol",
+            "type": "string"
+          }
+        },
+        "required": [
+          "strategy",
+          "symbol",
+          "stats"
+        ],
+        "title": "GridCellView",
+        "type": "object"
+      },
+      "GroupView": {
+        "properties": {
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "stats": {
+            "$ref": "#/components/schemas/StatsView"
+          }
+        },
+        "required": [
+          "name",
+          "stats"
+        ],
+        "title": "GroupView",
+        "type": "object"
+      },
       "HealthResponse": {
         "properties": {
           "checked_at": {
@@ -1714,6 +2367,373 @@
           "reach"
         ],
         "title": "LevelView",
+        "type": "object"
+      },
+      "LimitCeilingsView": {
+        "description": "The risk engine's hard ceilings, which no setting can pass.",
+        "properties": {
+          "daily_loss": {
+            "title": "Daily Loss",
+            "type": "string"
+          },
+          "exposure": {
+            "title": "Exposure",
+            "type": "string"
+          },
+          "leverage": {
+            "title": "Leverage",
+            "type": "string"
+          },
+          "open_risk": {
+            "title": "Open Risk",
+            "type": "string"
+          },
+          "risk_per_trade": {
+            "title": "Risk Per Trade",
+            "type": "string"
+          }
+        },
+        "required": [
+          "risk_per_trade",
+          "open_risk",
+          "daily_loss",
+          "leverage",
+          "exposure"
+        ],
+        "title": "LimitCeilingsView",
+        "type": "object"
+      },
+      "LimitsUpdate": {
+        "additionalProperties": false,
+        "description": "New limits from the owner. Each becomes a new version; ceilings still apply.",
+        "properties": {
+          "daily_loss": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "string"
+              }
+            ],
+            "title": "Daily Loss"
+          },
+          "daily_profit_stop": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Daily Profit Stop"
+          },
+          "exposure": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "string"
+              }
+            ],
+            "title": "Exposure"
+          },
+          "largest_trade": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Largest Trade"
+          },
+          "loss_stop": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Loss Stop"
+          },
+          "loss_stop_from_high": {
+            "title": "Loss Stop From High",
+            "type": "boolean"
+          },
+          "max_leverage": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "string"
+              }
+            ],
+            "title": "Max Leverage"
+          },
+          "one_direction": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "One Direction"
+          },
+          "open_risk": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "string"
+              }
+            ],
+            "title": "Open Risk"
+          },
+          "risk_per_trade": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "string"
+              }
+            ],
+            "title": "Risk Per Trade"
+          }
+        },
+        "required": [
+          "risk_per_trade",
+          "open_risk",
+          "exposure",
+          "max_leverage",
+          "daily_loss",
+          "daily_profit_stop",
+          "loss_stop",
+          "loss_stop_from_high"
+        ],
+        "title": "LimitsUpdate",
+        "type": "object"
+      },
+      "LimitsView": {
+        "description": "A Binance account's limits as the risk engine uses them (D058). Fractions: 0.1 is 10%.",
+        "properties": {
+          "ceilings": {
+            "$ref": "#/components/schemas/LimitCeilingsView"
+          },
+          "changed_at": {
+            "format": "date-time",
+            "title": "Changed At",
+            "type": "string"
+          },
+          "daily_loss": {
+            "title": "Daily Loss",
+            "type": "string"
+          },
+          "daily_profit_stop": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Daily Profit Stop"
+          },
+          "exposure": {
+            "title": "Exposure",
+            "type": "string"
+          },
+          "largest_trade": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Largest Trade"
+          },
+          "loss_stop": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Loss Stop"
+          },
+          "loss_stop_from_high": {
+            "title": "Loss Stop From High",
+            "type": "boolean"
+          },
+          "max_leverage": {
+            "title": "Max Leverage",
+            "type": "string"
+          },
+          "one_direction": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "One Direction"
+          },
+          "open_risk": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Open Risk"
+          },
+          "risk_per_trade": {
+            "title": "Risk Per Trade",
+            "type": "string"
+          },
+          "version": {
+            "title": "Version",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "version",
+          "changed_at",
+          "risk_per_trade",
+          "open_risk",
+          "exposure",
+          "max_leverage",
+          "daily_loss",
+          "daily_profit_stop",
+          "loss_stop",
+          "loss_stop_from_high",
+          "ceilings"
+        ],
+        "title": "LimitsView",
+        "type": "object"
+      },
+      "LiveResultView": {
+        "description": "Trades signals opened, on every paper account and Binance, each setup counted once.\n`mean_r` is over the closed ones: the net result over the planned risk.",
+        "properties": {
+          "closed": {
+            "title": "Closed",
+            "type": "integer"
+          },
+          "entered": {
+            "title": "Entered",
+            "type": "integer"
+          },
+          "mean_r": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Mean R"
+          },
+          "won": {
+            "title": "Won",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "entered",
+          "closed",
+          "won",
+          "mean_r"
+        ],
+        "title": "LiveResultView",
+        "type": "object"
+      },
+      "LiveStateView": {
+        "description": "The real account's arming and its hourly check with Binance (D060).",
+        "properties": {
+          "armed": {
+            "title": "Armed",
+            "type": "boolean"
+          },
+          "armed_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Armed At"
+          },
+          "checked_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Checked At"
+          },
+          "ip_restricted": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Ip Restricted"
+          },
+          "problems": {
+            "default": [],
+            "items": {
+              "type": "string"
+            },
+            "title": "Problems",
+            "type": "array"
+          }
+        },
+        "required": [
+          "armed"
+        ],
+        "title": "LiveStateView",
         "type": "object"
       },
       "LoginRequest": {
@@ -2922,6 +3942,208 @@
         "title": "ReachView",
         "type": "object"
       },
+      "ResultsView": {
+        "description": "A Binance account's completed trades, rebuilt from Binance's own fills (D057).",
+        "properties": {
+          "by_coin": {
+            "items": {
+              "$ref": "#/components/schemas/GroupView"
+            },
+            "title": "By Coin",
+            "type": "array"
+          },
+          "by_day": {
+            "items": {
+              "$ref": "#/components/schemas/GroupView"
+            },
+            "title": "By Day",
+            "type": "array"
+          },
+          "by_side": {
+            "items": {
+              "$ref": "#/components/schemas/GroupView"
+            },
+            "title": "By Side",
+            "type": "array"
+          },
+          "by_strategy": {
+            "items": {
+              "$ref": "#/components/schemas/GroupView"
+            },
+            "title": "By Strategy",
+            "type": "array"
+          },
+          "current_streak": {
+            "title": "Current Streak",
+            "type": "integer"
+          },
+          "drawdown": {
+            "title": "Drawdown",
+            "type": "string"
+          },
+          "drawdown_fraction": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Drawdown Fraction"
+          },
+          "equity": {
+            "items": {
+              "$ref": "#/components/schemas/EquityPointView"
+            },
+            "title": "Equity",
+            "type": "array"
+          },
+          "grid": {
+            "items": {
+              "$ref": "#/components/schemas/GridCellView"
+            },
+            "title": "Grid",
+            "type": "array"
+          },
+          "last_fill_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Fill At"
+          },
+          "longest_losses": {
+            "title": "Longest Losses",
+            "type": "integer"
+          },
+          "longest_wins": {
+            "title": "Longest Wins",
+            "type": "integer"
+          },
+          "median_hold_hours": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Median Hold Hours"
+          },
+          "not_from_bot": {
+            "title": "Not From Bot",
+            "type": "integer"
+          },
+          "open_trades": {
+            "title": "Open Trades",
+            "type": "integer"
+          },
+          "other_fees": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "title": "Other Fees",
+            "type": "object"
+          },
+          "period": {
+            "enum": [
+              "7d",
+              "30d",
+              "all"
+            ],
+            "title": "Period",
+            "type": "string"
+          },
+          "since": {
+            "format": "date-time",
+            "title": "Since",
+            "type": "string"
+          },
+          "start_equity": {
+            "title": "Start Equity",
+            "type": "string"
+          },
+          "summary": {
+            "$ref": "#/components/schemas/StatsView"
+          },
+          "test_funds": {
+            "default": true,
+            "title": "Test Funds",
+            "type": "boolean"
+          },
+          "trades": {
+            "items": {
+              "$ref": "#/components/schemas/ClosedTradeView"
+            },
+            "title": "Trades",
+            "type": "array"
+          }
+        },
+        "required": [
+          "period",
+          "since",
+          "start_equity",
+          "summary",
+          "by_coin",
+          "by_strategy",
+          "by_side",
+          "by_day",
+          "grid",
+          "equity",
+          "drawdown",
+          "drawdown_fraction",
+          "longest_wins",
+          "longest_losses",
+          "current_streak",
+          "median_hold_hours",
+          "open_trades",
+          "not_from_bot",
+          "other_fees",
+          "last_fill_at",
+          "trades"
+        ],
+        "title": "ResultsView",
+        "type": "object"
+      },
+      "ScorecardView": {
+        "description": "Each coin's scorecard (D068): Python's numbers only, read-only.",
+        "properties": {
+          "account": {
+            "enum": [
+              "binance_live",
+              "binance"
+            ],
+            "title": "Account",
+            "type": "string"
+          },
+          "as_of": {
+            "format": "date-time",
+            "title": "As Of",
+            "type": "string"
+          },
+          "coins": {
+            "items": {
+              "$ref": "#/components/schemas/CoinCardView"
+            },
+            "title": "Coins",
+            "type": "array"
+          }
+        },
+        "required": [
+          "as_of",
+          "account",
+          "coins"
+        ],
+        "title": "ScorecardView",
+        "type": "object"
+      },
       "SignalScoreView": {
         "description": "The signal score's conditions at the signal: True for the trade, False against it,\nNone unknown. The score failed its test (D046), so it is information and sets no size.",
         "properties": {
@@ -3004,6 +4226,91 @@
           "funding"
         ],
         "title": "SignalScoreView",
+        "type": "object"
+      },
+      "SignalTradeView": {
+        "description": "What became of an approved signal's trade (D065), from Binance's own fills on a Binance\naccount, or the simulator's fills on paper. `opened_at` is set once it entered.",
+        "properties": {
+          "closed_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Closed At"
+          },
+          "entry_price": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Entry Price"
+          },
+          "exit_price": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Exit Price"
+          },
+          "net": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Net"
+          },
+          "opened_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Opened At"
+          },
+          "state": {
+            "enum": [
+              "waiting",
+              "open",
+              "won",
+              "lost",
+              "even",
+              "not filled",
+              "refused"
+            ],
+            "title": "State",
+            "type": "string"
+          }
+        },
+        "required": [
+          "state",
+          "opened_at",
+          "closed_at",
+          "entry_price",
+          "exit_price",
+          "net"
+        ],
+        "title": "SignalTradeView",
         "type": "object"
       },
       "SignalView": {
@@ -3237,6 +4544,16 @@
           },
           "timeframe": {
             "$ref": "#/components/schemas/Timeframe"
+          },
+          "trade": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/SignalTradeView"
+              },
+              {
+                "type": "null"
+              }
+            ]
           }
         },
         "required": [
@@ -3300,6 +4617,183 @@
           "close"
         ],
         "title": "SpreadView",
+        "type": "object"
+      },
+      "StatsView": {
+        "description": "Results of a set of completed trades. Money in USDT; rates as fractions (0.5 is 50%).",
+        "properties": {
+          "average_loss": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Average Loss"
+          },
+          "average_r": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Average R"
+          },
+          "average_win": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Average Win"
+          },
+          "best": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Best"
+          },
+          "fees": {
+            "title": "Fees",
+            "type": "string"
+          },
+          "funding": {
+            "title": "Funding",
+            "type": "string"
+          },
+          "losses": {
+            "title": "Losses",
+            "type": "integer"
+          },
+          "net": {
+            "title": "Net",
+            "type": "string"
+          },
+          "pnl": {
+            "title": "Pnl",
+            "type": "string"
+          },
+          "profit_factor": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Profit Factor"
+          },
+          "trades": {
+            "title": "Trades",
+            "type": "integer"
+          },
+          "win_rate": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Win Rate"
+          },
+          "wins": {
+            "title": "Wins",
+            "type": "integer"
+          },
+          "worst": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Worst"
+          }
+        },
+        "required": [
+          "trades",
+          "wins",
+          "losses",
+          "win_rate",
+          "net",
+          "pnl",
+          "fees",
+          "funding",
+          "average_r",
+          "average_win",
+          "average_loss",
+          "profit_factor",
+          "best",
+          "worst"
+        ],
+        "title": "StatsView",
+        "type": "object"
+      },
+      "StrategyCellView": {
+        "properties": {
+          "entries": {
+            "$ref": "#/components/schemas/EntryQualityView"
+          },
+          "evidence": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/EvidenceView"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "left_out": {
+            "title": "Left Out",
+            "type": "boolean"
+          },
+          "live": {
+            "$ref": "#/components/schemas/LiveResultView"
+          },
+          "strategy": {
+            "title": "Strategy",
+            "type": "string"
+          },
+          "untested": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Untested"
+          }
+        },
+        "required": [
+          "strategy",
+          "evidence",
+          "untested",
+          "left_out",
+          "live",
+          "entries"
+        ],
+        "title": "StrategyCellView",
         "type": "object"
       },
       "StrategyView": {
@@ -3692,6 +5186,40 @@
         ],
         "title": "TradingMode",
         "type": "string"
+      },
+      "UsageView": {
+        "description": "What Claude cost today for one purpose, such as news labels or exit advice.",
+        "properties": {
+          "calls": {
+            "title": "Calls",
+            "type": "integer"
+          },
+          "cost_usd": {
+            "title": "Cost Usd",
+            "type": "string"
+          },
+          "input_tokens": {
+            "title": "Input Tokens",
+            "type": "integer"
+          },
+          "output_tokens": {
+            "title": "Output Tokens",
+            "type": "integer"
+          },
+          "purpose": {
+            "title": "Purpose",
+            "type": "string"
+          }
+        },
+        "required": [
+          "purpose",
+          "calls",
+          "input_tokens",
+          "output_tokens",
+          "cost_usd"
+        ],
+        "title": "UsageView",
+        "type": "object"
       }
     }
   },
@@ -3701,6 +5229,78 @@
   },
   "openapi": "3.1.0",
   "paths": {
+    "/api/v1/ai/budget": {
+      "get": {
+        "description": "Claude's daily cost limit, for every call together, and today's spend against it.",
+        "operationId": "budget_api_v1_ai_budget_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AiBudgetView"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Default Response"
+          }
+        },
+        "summary": "Budget",
+        "tags": [
+          "ai"
+        ]
+      },
+      "put": {
+        "description": "A new daily limit, used from Claude's next call. Only the dashboard's own origin may set\nit, never above the ceiling; zero stops every call.",
+        "operationId": "change_budget_api_v1_ai_budget_put",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AiBudgetUpdate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AiBudgetView"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Default Response"
+          }
+        },
+        "summary": "Change Budget",
+        "tags": [
+          "ai"
+        ]
+      }
+    },
     "/api/v1/ai/exit-reviews": {
       "get": {
         "operationId": "exit_reviews_api_v1_ai_exit_reviews_get",
@@ -3873,6 +5473,202 @@
         ]
       }
     },
+    "/api/v1/coins/scorecard": {
+      "get": {
+        "description": "Each coin's scorecard (D068): what the studies found for each strategy, what every\naccount's trades did, how good their entries were, and the coin today. Python's numbers\nonly; nothing here changes a trade.",
+        "operationId": "scorecard_api_v1_coins_scorecard_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ScorecardView"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Default Response"
+          }
+        },
+        "summary": "Scorecard",
+        "tags": [
+          "trading"
+        ]
+      }
+    },
+    "/api/v1/exchange-demo/arming": {
+      "put": {
+        "description": "The account's trading on or off (D063, D064). Off stops new trades at once; open\ntrades keep their stops and targets on Binance. On the real account, on needs the\nowner's password, a running bot and a clean check of the key and the account; demo\ntrading's test funds need neither. From the dashboard only, logged.",
+        "operationId": "arming_api_v1_exchange_demo_arming_put",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ArmingUpdate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ArmingView"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Default Response"
+          }
+        },
+        "summary": "Arming",
+        "tags": [
+          "exchange-demo"
+        ]
+      }
+    },
+    "/api/v1/exchange-demo/closes": {
+      "get": {
+        "description": "The latest closes asked from the dashboard, and what each did.",
+        "operationId": "closes_api_v1_exchange_demo_closes_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 10,
+              "maximum": 50,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/CloseRequestView"
+                  },
+                  "title": "Response Closes Api V1 Exchange Demo Closes Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Default Response"
+          }
+        },
+        "summary": "Closes",
+        "tags": [
+          "exchange-demo"
+        ]
+      }
+    },
+    "/api/v1/exchange-demo/limits": {
+      "get": {
+        "description": "The account's limits now, with the ceilings no setting can pass (D058).",
+        "operationId": "limits_api_v1_exchange_demo_limits_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LimitsView"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Default Response"
+          }
+        },
+        "summary": "Limits",
+        "tags": [
+          "exchange-demo"
+        ]
+      },
+      "put": {
+        "description": "Save new limits as a new version, used from the next close. Saving also resumes\ntrading after a loss stop, because the stop holds only for the version it was reached\nunder (D053). Only the dashboard's own origin may change them.",
+        "operationId": "change_limits_api_v1_exchange_demo_limits_put",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/LimitsUpdate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LimitsView"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Default Response"
+          }
+        },
+        "summary": "Change Limits",
+        "tags": [
+          "exchange-demo"
+        ]
+      }
+    },
     "/api/v1/exchange-demo/orders": {
       "get": {
         "operationId": "orders_api_v1_exchange_demo_orders_get",
@@ -3922,6 +5718,99 @@
         ]
       }
     },
+    "/api/v1/exchange-demo/positions/{symbol}/close": {
+      "post": {
+        "description": "Close the bot's trade on a coin now (D060): its waiting entry is cancelled, its\nposition closed at market, then its stop and targets cancelled. The quant worker does it\nwithin seconds. Only a trade of the bot's can be closed here, and only from the\ndashboard's own origin; the owner's own positions are closed in the Binance app.",
+        "operationId": "close_api_v1_exchange_demo_positions__symbol__close_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "symbol",
+            "required": true,
+            "schema": {
+              "pattern": "^[A-Z0-9]{2,30}$",
+              "title": "Symbol",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "202": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CloseRequestView"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Default Response"
+          }
+        },
+        "summary": "Close",
+        "tags": [
+          "exchange-demo"
+        ]
+      }
+    },
+    "/api/v1/exchange-demo/results": {
+      "get": {
+        "description": "Completed trades and their results, rebuilt from Binance's own fills (D057).",
+        "operationId": "results_api_v1_exchange_demo_results_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "period",
+            "required": false,
+            "schema": {
+              "default": "all",
+              "enum": [
+                "7d",
+                "30d",
+                "all"
+              ],
+              "title": "Period",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResultsView"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Default Response"
+          }
+        },
+        "summary": "Results",
+        "tags": [
+          "exchange-demo"
+        ]
+      }
+    },
     "/api/v1/exchange-demo/status": {
       "get": {
         "operationId": "status_api_v1_exchange_demo_status_get",
@@ -3950,6 +5839,343 @@
         "summary": "Status",
         "tags": [
           "exchange-demo"
+        ]
+      }
+    },
+    "/api/v1/exchange-live/arming": {
+      "put": {
+        "description": "The account's trading on or off (D063, D064). Off stops new trades at once; open\ntrades keep their stops and targets on Binance. On the real account, on needs the\nowner's password, a running bot and a clean check of the key and the account; demo\ntrading's test funds need neither. From the dashboard only, logged.",
+        "operationId": "arming_api_v1_exchange_live_arming_put",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ArmingUpdate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ArmingView"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Default Response"
+          }
+        },
+        "summary": "Arming",
+        "tags": [
+          "exchange-live"
+        ]
+      }
+    },
+    "/api/v1/exchange-live/closes": {
+      "get": {
+        "description": "The latest closes asked from the dashboard, and what each did.",
+        "operationId": "closes_api_v1_exchange_live_closes_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 10,
+              "maximum": 50,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/CloseRequestView"
+                  },
+                  "title": "Response Closes Api V1 Exchange Live Closes Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Default Response"
+          }
+        },
+        "summary": "Closes",
+        "tags": [
+          "exchange-live"
+        ]
+      }
+    },
+    "/api/v1/exchange-live/limits": {
+      "get": {
+        "description": "The account's limits now, with the ceilings no setting can pass (D058).",
+        "operationId": "limits_api_v1_exchange_live_limits_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LimitsView"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Default Response"
+          }
+        },
+        "summary": "Limits",
+        "tags": [
+          "exchange-live"
+        ]
+      },
+      "put": {
+        "description": "Save new limits as a new version, used from the next close. Saving also resumes\ntrading after a loss stop, because the stop holds only for the version it was reached\nunder (D053). Only the dashboard's own origin may change them.",
+        "operationId": "change_limits_api_v1_exchange_live_limits_put",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/LimitsUpdate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LimitsView"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Default Response"
+          }
+        },
+        "summary": "Change Limits",
+        "tags": [
+          "exchange-live"
+        ]
+      }
+    },
+    "/api/v1/exchange-live/orders": {
+      "get": {
+        "operationId": "orders_api_v1_exchange_live_orders_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 50,
+              "maximum": 200,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/ExchangeOrderView"
+                  },
+                  "title": "Response Orders Api V1 Exchange Live Orders Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Default Response"
+          }
+        },
+        "summary": "Orders",
+        "tags": [
+          "exchange-live"
+        ]
+      }
+    },
+    "/api/v1/exchange-live/positions/{symbol}/close": {
+      "post": {
+        "description": "Close the bot's trade on a coin now (D060): its waiting entry is cancelled, its\nposition closed at market, then its stop and targets cancelled. The quant worker does it\nwithin seconds. Only a trade of the bot's can be closed here, and only from the\ndashboard's own origin; the owner's own positions are closed in the Binance app.",
+        "operationId": "close_api_v1_exchange_live_positions__symbol__close_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "symbol",
+            "required": true,
+            "schema": {
+              "pattern": "^[A-Z0-9]{2,30}$",
+              "title": "Symbol",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "202": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CloseRequestView"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Default Response"
+          }
+        },
+        "summary": "Close",
+        "tags": [
+          "exchange-live"
+        ]
+      }
+    },
+    "/api/v1/exchange-live/results": {
+      "get": {
+        "description": "Completed trades and their results, rebuilt from Binance's own fills (D057).",
+        "operationId": "results_api_v1_exchange_live_results_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "period",
+            "required": false,
+            "schema": {
+              "default": "all",
+              "enum": [
+                "7d",
+                "30d",
+                "all"
+              ],
+              "title": "Period",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResultsView"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Default Response"
+          }
+        },
+        "summary": "Results",
+        "tags": [
+          "exchange-live"
+        ]
+      }
+    },
+    "/api/v1/exchange-live/status": {
+      "get": {
+        "operationId": "status_api_v1_exchange_live_status_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ExchangeStatusView"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Default Response"
+          }
+        },
+        "summary": "Status",
+        "tags": [
+          "exchange-live"
         ]
       }
     },
@@ -4732,6 +6958,7 @@
     },
     "/api/v1/signals": {
       "get": {
+        "description": "The account's signals, newest first, each with what became of its trade (D065).\nEvery filter is optional; `result` filters by the trade's state.",
         "operationId": "signals_api_v1_signals_get",
         "parameters": [
           {
@@ -4740,7 +6967,7 @@
             "required": false,
             "schema": {
               "default": 50,
-              "maximum": 200,
+              "maximum": 500,
               "minimum": 1,
               "title": "Limit",
               "type": "integer"
@@ -4756,9 +6983,124 @@
                 "paper",
                 "demo",
                 "portfolio",
-                "binance"
+                "binance",
+                "binance_live"
               ],
               "title": "Account",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "instrument_id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "minimum": 1,
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Instrument Id"
+            }
+          },
+          {
+            "in": "query",
+            "name": "strategy",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "pattern": "^[a-z0-9_]{1,64}$",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Strategy"
+            }
+          },
+          {
+            "in": "query",
+            "name": "action",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "enum": [
+                    "BUY",
+                    "SELL"
+                  ],
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Action"
+            }
+          },
+          {
+            "in": "query",
+            "name": "decision",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "enum": [
+                    "APPROVED",
+                    "REJECTED"
+                  ],
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Decision"
+            }
+          },
+          {
+            "in": "query",
+            "name": "result",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "enum": [
+                    "entered",
+                    "open",
+                    "won",
+                    "lost",
+                    "waiting",
+                    "not_entered"
+                  ],
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Result"
+            }
+          },
+          {
+            "in": "query",
+            "name": "period",
+            "required": false,
+            "schema": {
+              "default": "all",
+              "enum": [
+                "today",
+                "7d",
+                "30d",
+                "all"
+              ],
+              "title": "Period",
               "type": "string"
             }
           }
@@ -4790,6 +7132,67 @@
           }
         },
         "summary": "Signals",
+        "tags": [
+          "trading"
+        ]
+      }
+    },
+    "/api/v1/signals/{signal_id}": {
+      "get": {
+        "description": "One of the account's signals with its trade, for the Bot page's chart link (D065).",
+        "operationId": "signal_api_v1_signals__signal_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "signal_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Signal Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "account",
+            "required": false,
+            "schema": {
+              "default": "paper",
+              "enum": [
+                "paper",
+                "demo",
+                "portfolio",
+                "binance",
+                "binance_live"
+              ],
+              "title": "Account",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SignalView"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Default Response"
+          }
+        },
+        "summary": "Signal",
         "tags": [
           "trading"
         ]

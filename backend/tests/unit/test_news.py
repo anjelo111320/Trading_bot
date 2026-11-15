@@ -98,11 +98,23 @@ def test_irrelevant_news_never_reaches_a_paid_call() -> None:
         ("Zcash shielded supply hits a record", "ZEC"),
         # Binance's own base asset, so the pipeline finds the 1000PEPEUSDT perpetual.
         ("PEPE whales accumulate", "1000PEPE"),
+        ("Hyperliquid volume hits a record", "HYPE"),
+        ("NEAR Protocol ships sharding upgrade", "NEAR"),
     ],
 )
 def test_every_traded_coin_is_found_by_name(headline: str, asset: str) -> None:
     """Regression: until 2026-11-11 only BTC and ETH were ever linked."""
     assert assess_relevance(headline, None).assets == {asset: 0.9}
+
+
+@pytest.mark.parametrize(
+    "headline",
+    ["AI hype lifts chip stocks", "Gold trades near a record as the dollar slips"],
+)
+def test_everyday_words_hype_and_near_are_not_the_coins(headline: str) -> None:
+    """D059: only "Hyperliquid", "NEAR Protocol" or the contract names link these coins."""
+    assets = assess_relevance(headline, None).assets
+    assert "HYPE" not in assets and "NEAR" not in assets
 
 
 def test_exchange_notices_are_found_by_contract_symbol() -> None:

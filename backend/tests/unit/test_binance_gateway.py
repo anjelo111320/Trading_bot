@@ -12,14 +12,18 @@ import pytest
 from cryptography.hazmat.primitives import serialization
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey, Ed25519PublicKey
 
+import trading_intel
 from trading_intel.core.errors import ConfigurationError
 from trading_intel.execution.binance_futures import (
     DEMO_REST_URL,
+    FUTURES_PATHS,
+    LIVE_REST_URL,
     BinanceError,
     BinanceFuturesGateway,
     BinanceHaltError,
     Ed25519Signer,
     HmacSigner,
+    PathRefusedError,
     Signer,
     generate_key_file,
     sign,
@@ -242,6 +246,133 @@ def test_keygen_writes_a_private_key_only_this_user_can_read(tmp_path: Path) -> 
     loaded.verify(signature, b"a=1&timestamp=2")
     with pytest.raises(ConfigurationError, match="already exists"):
         generate_key_file(path)
+
+
+def live_gateway(handler: Handler) -> BinanceFuturesGateway:
+    def routed(request: httpx.Request) -> httpx.Response:
+        if request.url.path == "/fapi/v1/time":
+            return httpx.Response(200, json={"serverTime": SERVER_MS})
+        return handler(request)
+
+    client = httpx.AsyncClient(base_url=LIVE_REST_URL, transport=httpx.MockTransport(routed))
+    return BinanceFuturesGateway(
+        "live-key", HmacSigner("live-secret"), client, now_ms=lambda: LOCAL_MS, venue="live"
+    )
+
+
+@pytest.mark.parametrize("host", [DEMO_REST_URL, "https://api.binance.com"])
+def test_the_real_account_reaches_binance_futures_only(host: str) -> None:
+    with pytest.raises(ConfigurationError, match=r"https://fapi\.binance\.com is allowed"):
+        BinanceFuturesGateway(
+            "key", HmacSigner("secret"), httpx.AsyncClient(base_url=host), venue="live"
+        )
+
+
+LISTS = {
+    "/fapi/v3/positionRisk",
+    "/fapi/v1/openOrders",
+    "/fapi/v1/openAlgoOrders",
+    "/fapi/v1/userTrades",
+    "/fapi/v1/income",
+}
+
+
+async def test_every_request_the_real_account_sends_is_a_futures_endpoint() -> None:
+    """D060: the bot reads the futures wallet only. Every gateway call is made once, and each
+    request it sends must be on the futures list."""
+    seen: list[tuple[str, str]] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        seen.append((request.method, request.url.path))
+        if request.url.path in LISTS:
+            return httpx.Response(200, json=[])
+        return httpx.Response(
+            200,
+            json={"dualSidePosition": False, "multiAssetsMargin": False, "orderId": 1, "algoId": 1},
+        )
+
+    exchange = live_gateway(handler)
+    one = Decimal(1)
+    await exchange.account()
+    await exchange.positions()
+    await exchange.one_way_mode()
+    await exchange.multi_assets_mode()
+    await exchange.use_isolated("SOLUSDT")
+    await exchange.set_leverage("SOLUSDT", 2)
+    await exchange.market_order("SOLUSDT", "BUY", one, "ati-a-entry")
+    await exchange.limit_order("SOLUSDT", "BUY", one, Decimal(80), "ati-b-entry", SERVER_MS + 1)
+    await exchange.open_entry_orders()
+    await exchange.cancel_order("SOLUSDT", "ati-b-entry")
+    await exchange.order("SOLUSDT", "ati-a-entry")
+    await exchange.algo_order("SOLUSDT", "SELL", "STOP_MARKET", Decimal(70), "ati-a-stop")
+    await exchange.open_algo_orders()
+    await exchange.cancel_algo_order(1)
+    await exchange.user_trades("SOLUSDT", from_id=1)
+    await exchange.funding_income(0, 1)
+    await exchange.transfer_income(0, 1)
+    assert len(seen) == 17
+    assert all(call in FUTURES_PATHS for call in seen)
+    assert all(path.startswith("/fapi/") for _, path in seen)
+
+
+@pytest.mark.parametrize(
+    "path",
+    [
+        "/api/v3/account",  # Spot balances.
+        "/sapi/v1/asset/get-funding-asset",  # The Funding wallet.
+        "/sapi/v1/asset/wallet/balance",  # The Overview of every wallet.
+        "/sapi/v1/asset/transfer",  # Moving money between wallets.
+        "/fapi/v2/balance",  # A futures read the bot has no use for.
+    ],
+)
+async def test_a_request_off_the_list_is_refused_before_it_is_sent(path: str) -> None:
+    seen: list[httpx.Request] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        seen.append(request)
+        return httpx.Response(200, json={})
+
+    with pytest.raises(PathRefusedError):
+        await live_gateway(handler)._signed("GET", path)
+    assert seen == [], "nothing left this computer"
+
+
+async def test_the_real_account_never_changes_position_mode_or_cancels_a_coins_every_order() -> (
+    None
+):
+    """The owner's own orders can sit on the account, so only demo trading may do these."""
+    seen: list[httpx.Request] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        seen.append(request)
+        return httpx.Response(200, json={})
+
+    exchange = live_gateway(handler)
+    with pytest.raises(PathRefusedError):
+        await exchange.use_one_way_mode()
+    with pytest.raises(PathRefusedError):
+        await exchange.cancel_algo_orders("SOLUSDT")
+    assert seen == []
+    await gateway(handler).cancel_algo_orders("SOLUSDT")
+    assert len(seen) == 1, "demo trading still may"
+
+
+def test_only_the_key_check_and_announcements_reach_binances_wallet_api() -> None:
+    """D060: no trading code calls a Spot, Funding or wallet endpoint, or its host."""
+    root = Path(trading_intel.__file__).parent
+    wallet_api = {
+        path.relative_to(root) for path in root.rglob("*.py") if "/sapi/" in path.read_text()
+    }
+    assert wallet_api == {
+        Path("execution/key_check.py"),
+        Path("news_intelligence/binance_announcements.py"),
+    }
+    in_execution = {
+        path.name
+        for path in (root / "execution").rglob("*.py")
+        if "https://api.binance.com" in path.read_text()
+    }
+    assert in_execution == {"key_check.py"}
 
 
 def test_the_key_file_is_preferred_and_the_secret_is_the_fallback(tmp_path: Path) -> None:

@@ -189,8 +189,15 @@ def _sizing_checks(request: RiskRequest, rules: InstrumentRules, sizing: Sizing)
     if sizing.notional < rules.min_notional:
         codes.append(Code.NOTIONAL_BELOW_MIN)
     limit = account.equity * profile.max_total_exposure_fraction
-    if account.gross_exposure + sizing.notional > limit:
+    largest = profile.max_position_fraction
+    if account.gross_exposure + sizing.notional > limit or (
+        largest is not None and sizing.notional > account.equity * largest
+    ):
         codes.append(Code.EXPOSURE_EXCEEDED)
+    side_cap = profile.max_side_exposure_fraction
+    same_side = account.long_exposure if proposal.side.sign > 0 else account.short_exposure
+    if side_cap is not None and same_side + sizing.notional > account.equity * side_cap:
+        codes.append(Code.DIRECTION_EXPOSURE_EXCEEDED)
     if account.available_margin is not None and sizing.margin > account.available_margin:
         codes.append(Code.MARGIN_INSUFFICIENT)
     codes += _liquidation_checks(request, sizing)

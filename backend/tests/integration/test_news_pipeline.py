@@ -227,3 +227,18 @@ async def test_the_api_role_cannot_rewrite_published_time(
     with pytest.raises(DBAPIError, match="permission denied"):
         async with engine.begin() as connection:
             await connection.execute(text("UPDATE news_articles SET published_at = now()"))
+
+
+async def test_the_owners_limit_from_the_dashboard_stops_calls(
+    seeded: tuple[AsyncEngine, list[Instrument]],
+) -> None:
+    """D062: with no fixed limit, the pipeline reads the owner's limit before each call, so a
+    limit of zero set on the dashboard stops Claude at once."""
+    engine, instruments = seeded
+    news = NewsRepository(engine)
+    assert (await news.daily_limit())[0] == Decimal("0.50"), "the default, $0.50 a day"
+    await news.set_daily_limit(Decimal(0), "owner@example.test")
+    classifier = FakeClassifier()
+    live = NewsPipeline(news, instruments, FixedClock(NOW + timedelta(hours=3)), classifier)
+    result = await live.run_once()
+    assert classifier.calls == 0 and result.skipped_budget == 1

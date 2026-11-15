@@ -30,6 +30,7 @@ CLEANED = (
     "dataset_versions",
     "model_forecasts",
     "news_readings",
+    "ai_budgets",
 )
 
 

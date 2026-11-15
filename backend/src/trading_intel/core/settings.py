@@ -61,6 +61,14 @@ class Settings(BaseSettings):
     binance_demo_private_key_file: Path = (
         Path.home() / ".config" / "trading-intel" / "binance-demo-ed25519.pem"
     )
+    # The owner's real Binance account, for its USDⓈ-M futures wallet only (D060). Empty keeps
+    # real money off. The bot refuses a key that can withdraw, transfer, or trade anything but
+    # futures, and trades only once `binance_live arm` has been run. The key file is preferred.
+    binance_live_api_key: SecretStr = SecretStr("")
+    binance_live_api_secret: SecretStr = SecretStr("")  # A system-generated (HMAC) key only.
+    binance_live_private_key_file: Path = (
+        Path.home() / ".config" / "trading-intel" / "binance-live-ed25519.pem"
+    )
 
     owner_email: str = ""
     owner_password: SecretStr = SecretStr("")
@@ -98,6 +106,8 @@ class Settings(BaseSettings):
             self.binance_read_api_secret,
             self.binance_demo_api_key,
             self.binance_demo_api_secret,
+            self.binance_live_api_key,
+            self.binance_live_api_secret,
         )
         return tuple(value for s in secrets if (value := s.get_secret_value()))
 

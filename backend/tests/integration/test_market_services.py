@@ -236,6 +236,67 @@ async def test_ten_minute_outage_is_repaired_with_no_manual_action(
     assert gap.resolved_at is not None
 
 
+async def left_repairing(
+    engine: AsyncEngine, provider: FakeProvider | None = None, stored: range = range(20)
+) -> tuple[GapRepairService, GapRepository, CandleRepository, int, Instrument]:
+    """A repair cut off after "repairing": the gap is open over minutes 5 to 15, and only the
+    minutes in `stored` are in the database."""
+    provider_id, instrument = await setup(engine)
+    candles = CandleRepository(engine)
+    await candles.insert(
+        [
+            make_candle(provider_id, instrument.id, Timeframe.M1, START + timedelta(minutes=m))
+            for m in stored
+        ]
+    )
+    gaps = GapRepository(engine)
+    start, end = START + timedelta(minutes=5), START + timedelta(minutes=15)
+    await gaps.record(provider_id, instrument.id, Timeframe.M1, start, end, "ingest_failure")
+    await gaps.set_state(provider_id, instrument.id, Timeframe.M1, start, "repairing")
+    repair = GapRepairService(
+        provider or FakeProvider(provider_id), provider_id, candles, gaps, FixedClock(START)
+    )
+    return repair, gaps, candles, provider_id, instrument
+
+
+async def test_a_gap_left_repairing_is_closed_once_its_candles_are_stored(
+    ingest_engine: AsyncEngine,
+) -> None:
+    """Regression, 2026-11-13: an ingestor restart 8 seconds into a repair left BNB's minutes
+    "repairing" with every candle stored, and BNB was refused as DATA_INCOMPLETE for a day."""
+    repair, gaps, _, provider_id, instrument = await left_repairing(ingest_engine)
+    assert await repair.recheck_open({instrument.id: instrument}) == 1
+    [gap] = await gaps.list(provider_id=provider_id)
+    assert gap.state == "repaired" and gap.resolved_at is not None
+    assert await gaps.list(provider_id=provider_id, states=("detected", "repairing")) == []
+    assert await repair.recheck_open({instrument.id: instrument}) == 0, "nothing left open"
+
+
+async def test_a_gap_left_open_with_candles_still_missing_is_repaired_again(
+    ingest_engine: AsyncEngine,
+) -> None:
+    repair, gaps, candles, provider_id, instrument = await left_repairing(
+        ingest_engine, stored=range(5)
+    )
+    assert await repair.recheck_open({instrument.id: instrument}) == 1
+    assert await candles.count(provider_id, instrument.id, Timeframe.M1) == 15
+    [gap] = await gaps.list(provider_id=provider_id)
+    assert gap.state == "repaired"
+
+
+async def test_a_gap_binance_cannot_fill_is_no_longer_counted_open(
+    ingest_engine: AsyncEngine,
+) -> None:
+    provider_id, _ = await setup(ingest_engine)
+    hole = FakeProvider(provider_id, holes={START + timedelta(minutes=7)})
+    repair, gaps, _, provider_id, instrument = await left_repairing(
+        ingest_engine, provider=hole, stored=range(5)
+    )
+    assert await repair.recheck_open({instrument.id: instrument}) == 0
+    [gap] = await gaps.list(provider_id=provider_id)
+    assert gap.state == "provider_missing", "the risk engine counts only detected or repairing"
+
+
 async def test_range_the_provider_cannot_supply_is_marked_as_missing(
     ingest_engine: AsyncEngine,
 ) -> None:

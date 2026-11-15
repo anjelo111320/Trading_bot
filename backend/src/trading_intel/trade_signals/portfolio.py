@@ -11,6 +11,7 @@ from typing import Final
 from trading_intel.domain.candles import Timeframe
 from trading_intel.risk_management.allocation import FULL_SHARE, HALF_SHARE, QUARTER_SHARE
 from trading_intel.risk_management.models import RiskProfile
+from trading_intel.trade_signals.baseline import LOOSE_NAME
 from trading_intel.trade_signals.baseline import STRATEGY_NAME as BASELINE_NAME
 from trading_intel.trade_signals.fvg_choch_strategy import STRATEGY_NAME as FVG_NAME
 from trading_intel.trade_signals.pattern_strategy import STRATEGY_NAME as PATTERN_NAME
@@ -24,16 +25,27 @@ PLAN_PROFILE: Final = RiskProfile(
     daily_profit_stop_fraction=Decimal("0.03"),
 )
 
-# The owner's choice for Binance demo trading on 2026-11-11 (D053): 2% risk per trade, open
-# risk still at most 3%, positions up to 3 times the budget at the leverage that fits, and no
-# new trades for good once 20% of the starting budget is lost.
+# The owner's choice for Binance demo trading on 2026-11-12 (D058), replacing D053's 2%: 10%
+# risk per trade, at most 10% across open trades and 10% lost in a day, all positions together
+# within 80% of equity at the leverage that fits, and no new trades for good once 20% of the
+# starting budget is lost. Every limit can be changed on the Bot page's settings (D058).
 EXCHANGE_DEMO_PROFILE: Final = RiskProfile.model_validate(
     {
         **PLAN_PROFILE.model_dump(),
-        "max_risk_fraction": Decimal("0.02"),
-        "max_total_exposure_fraction": Decimal(3),
+        "max_risk_fraction": Decimal("0.10"),
+        "max_open_risk_fraction": Decimal("0.10"),
+        "max_daily_loss_fraction": Decimal("0.10"),
+        "max_total_exposure_fraction": Decimal("0.8"),
         "max_total_loss_fraction": Decimal("0.2"),
     }
+)
+
+# The owner's choice for the real account on 2026-11-13 (D060): the project's defaults, as the
+# paper money plan uses them, with a 20% loss stop. That is 1% a trade, 3% across open trades
+# and 3% lost in a day, positions within 100% of equity at up to x3, the +3% daily stop, and no
+# new trades once 20% of what the owner put in is lost. The Settings tab changes them.
+EXCHANGE_LIVE_PROFILE: Final = RiskProfile.model_validate(
+    {**PLAN_PROFILE.model_dump(), "max_total_loss_fraction": Decimal("0.2")}
 )
 
 # Set once by the study's pre-registered rule, run on 2026-11-09 (docs/33). The 4H gap and 15M
@@ -44,8 +56,19 @@ EVIDENCE_SHARES: Final[dict[str, Decimal]] = {
     BASELINE_NAME: QUARTER_SHARE,
     FVG_NAME: HALF_SHARE,
 }
-# Strategy and coin pairs that lost with 95% confidence in the study. None did.
-LEFT_OUT: Final[frozenset[tuple[str, str]]] = frozenset()
+# Strategies the owner switched off on every coin: the 15M rule's loose copy, which lost on ten
+# coins pooled in docs/42 (D070). The money plan no longer asks it.
+SWITCHED_OFF: Final[frozenset[str]] = frozenset({LOOSE_NAME})
+# Strategy and coin pairs that lost with 95% confidence in a coin study, so they do not trade
+# that coin: none in docs/33; four in docs/42, run on 2026-11-14 by its pre-registered rule.
+LEFT_OUT: Final[frozenset[tuple[str, str]]] = frozenset(
+    {
+        (TREND_NAME, "HYPEUSDT"),
+        (PATTERN_NAME, "HYPEUSDT"),
+        (LOOSE_NAME, "DOGEUSDT"),
+        (LOOSE_NAME, "HYPEUSDT"),
+    }
+)
 
 # The plan decides at each 15M close, and adds the slower strategies at their own closes.
 PLAN_TIMEFRAMES: Final = (Timeframe.M15, Timeframe.H1, Timeframe.D1)

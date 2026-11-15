@@ -9,7 +9,7 @@ the same close share its room by tested evidence (D045).
 Each strategy holds at most one position per coin and account, as in its backtest.
 """
 
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, replace
 from datetime import datetime, timedelta
 from decimal import ROUND_CEILING, ROUND_FLOOR, Decimal
@@ -37,7 +37,15 @@ from trading_intel.domain.candles import Timeframe
 from trading_intel.domain.instruments import Instrument, InstrumentRules
 from trading_intel.domain.signals import Action, EntryType, Side
 from trading_intel.execution.orders import TradePlan, price_limits
-from trading_intel.execution.trader import Budget, FuturesTrader, PendingEntry, Position
+from trading_intel.execution.trader import (
+    Budget,
+    ExchangeView,
+    FuturesTrader,
+    PendingEntry,
+    Position,
+    held_stops,
+)
+from trading_intel.performance.results import highest_equity, rebuild
 from trading_intel.risk_management.allocation import Claim, split
 from trading_intel.risk_management.calculators.linear import (
     loss_floor,
@@ -54,10 +62,14 @@ from trading_intel.risk_management.models import (
     Sizing,
     TradeProposal,
 )
+from trading_intel.risk_management.profit_lock import profit_lock
 from trading_intel.risk_management.rejections import RejectionCode
 from trading_intel.technical_analysis.series import CandleSeries
 from trading_intel.technical_analysis.volatility import atr
 from trading_intel.trade_signals.baseline import (
+    LOOSE_NAME,
+    LOOSE_VERSION,
+    LOOSE_WINDOW,
     STRATEGY_NAME,
     STRATEGY_VERSION,
     BaselineDecision,
@@ -116,6 +128,8 @@ ZERO: Final = Decimal(0)
 # Share of Binance's available balance the risk engine may use as margin (D048). The rest
 # covers fees and price moves before the entry fills.
 MARGIN_USE: Final = Decimal("0.95")
+# A trade shrunk to fit the position cap keeps a little room, as its fill price can differ.
+FIT_MARGIN: Final = Decimal("0.99")
 
 
 @dataclass(frozen=True)
@@ -210,6 +224,16 @@ class NewsEvidence(Protocol):
     ) -> tuple[str, dict[str, Any]]: ...
 
 
+class LiveQuotes(Protocol):
+    """The newest bid and ask the ingestor saw on a perpetual, and when it saw them (D071).
+
+    Provided by the entrypoints from what the ingestor publishes. The risk engine's data-age
+    limit is unchanged: this only gives it the freshest quote there is.
+    """
+
+    async def quote(self, instrument_id: int) -> tuple[datetime, Decimal, Decimal] | None: ...
+
+
 class SignalService:
     def __init__(
         self,
@@ -224,13 +248,18 @@ class SignalService:
         parameters: BaselineParameters | None = None,
         bitcoin: Instrument | None = None,
         news: NewsEvidence | None = None,
+        quotes: LiveQuotes | None = None,
     ) -> None:
         """`bitcoin` is the perpetual whose trend the signal score reads for other coins.
 
         `news` gives what the news said about a coin, stored beside each signal (D055). Only
         the news move strategy acts on it, to confirm a move (D056). Without it, signals record
         news as unavailable and that strategy never trades.
+
+        `quotes` gives the ingestor's live quotes, used when fresher than the saved minute rows
+        (D071). Without it, the saved rows decide alone.
         """
+        self._quotes = quotes
         self._candles = candles
         self._snapshots = snapshots
         self._market = market
@@ -262,6 +291,24 @@ class SignalService:
         decision = evaluate(setup, middle, higher, rules.tick_size, self._parameters)
         identity = StrategyIdentity(STRATEGY_NAME, STRATEGY_VERSION, self._parameters.as_dict())
         return Setup(instrument, rules, decision, identity, Timeframe.M15, instant)
+
+    async def loose_setup(
+        self, provider_id: int, instrument: Instrument, as_of: datetime
+    ) -> Setup | None:
+        """The 15M rule's loose copy at a 15M close (D059): a break in the last 3 candles.
+        The rule itself is unchanged; this copy trades at the smallest share, untested."""
+        setup = await self._closed(provider_id, instrument, Timeframe.M15, as_of, SETUP_LOOKBACK)
+        middle = await self._closed(provider_id, instrument, Timeframe.H1, as_of, MIDDLE_LOOKBACK)
+        higher = await self._closed(provider_id, instrument, Timeframe.H4, as_of, HIGHER_LOOKBACK)
+        rules = await self._rules.as_of(provider_id, instrument.id, as_of)
+        if setup is None or middle is None or higher is None or rules is None:
+            return None
+        decision = evaluate(
+            setup, middle, higher, rules.tick_size, self._parameters, break_window=LOOSE_WINDOW
+        )
+        parameters = {**self._parameters.as_dict(), "break_window": LOOSE_WINDOW}
+        identity = StrategyIdentity(LOOSE_NAME, LOOSE_VERSION, parameters)
+        return Setup(instrument, rules, decision, identity, Timeframe.M15, True)
 
     async def pattern_setup(
         self, provider_id: int, instrument: Instrument, as_of: datetime
@@ -431,16 +478,20 @@ class SignalService:
         account: Account,
         trader: FuturesTrader,
         orders: ExchangeRepository,
+        *,
+        live: bool = False,
     ) -> bool:
-        """The same trail for a daily trend position on Binance demo trading (D039, D048).
+        """The same trail for a daily trend position on Binance (D039, D048).
 
         Binance holds the stop, so the move replaces it there, and the stop it then holds is
         recorded for the minute check. Until 2026-11-11 only paper stops trailed, and a
-        Binance trend trade kept its first stop with no other exit.
+        Binance trend trade kept its first stop with no other exit. On the real account only an
+        open trade of the bot's trails, never a position of the owner's own (D060).
         """
         symbol = instrument.symbol
         trade = await orders.latest_trade(account.id, symbol)
-        stop = (await orders.stops(account.id)).get(symbol)
+        stops = await (orders.open_trades(account.id) if live else orders.stops(account.id))
+        stop = stops.get(symbol)
         if trade is None or trade.strategy != TREND_NAME or stop is None or stop[1] != trade.key:
             return False
         position = (await trader.view()).positions.get(symbol)
@@ -474,6 +525,73 @@ class SignalService:
         )
         return move.moved
 
+    async def lock_exchange_profits(
+        self,
+        provider_id: int,
+        account: Account,
+        trader: FuturesTrader,
+        orders: ExchangeRepository,
+        instruments: Mapping[str, Instrument],
+        *,
+        live: bool = False,
+    ) -> int:
+        """The profit lock on the bot's Binance trades, at each minute check (D066).
+
+        Once the mark price is 1.5R beyond a trade's entry, its stop moves to 1R beyond it, so
+        the trade can no longer end in a loss at its stop. The move replaces the bot's own stop
+        on Binance and is recorded, so the minute check and the risk count read the new stop.
+        A trade the owner protects with a stop of their own keeps it, untouched. The mark price
+        is read once a minute, so a spike past +1.5R that turns back within the minute is
+        missed. Returns how many stops moved.
+        """
+        stops = await (orders.open_trades(account.id) if live else orders.stops(account.id))
+        if not stops:
+            return 0
+        view = await trader.view()
+        now = self._clock.now()
+        moved = 0
+        for symbol, (stop, key) in sorted(stops.items()):
+            position = view.positions.get(symbol)
+            instrument = instruments.get(symbol)
+            if position is None or instrument is None:
+                continue
+            trade = await orders.latest_trade(account.id, symbol)
+            rules = await self._rules.as_of(provider_id, instrument.id, now)
+            if (
+                trade is None
+                or trade.key != key
+                or trade.planned_entry is None
+                or trade.planned_stop is None
+                or rules is None
+            ):
+                continue
+            risk = abs(trade.planned_entry - trade.planned_stop)
+            entry, mark = position.entry_price, position.mark_price
+            level = profit_lock(position.side, entry, risk, mark, stop, rules.tick_size)
+            if level is None:
+                continue
+            move = await trader.move_stop(symbol, level, f"{key}:lock:{now:%Y%m%d%H%M}")
+            for record in move.records:
+                held = move.held is not None and record.client_id == move.held[1]
+                await orders.record(
+                    account.id, trade.recommendation_id, record,
+                    trade_key=trade.key if held else None,
+                    stop_price=move.held[0] if held and move.held else None,
+                )  # fmt: skip
+            if move.records:
+                log.info(
+                    "exchange_profit_locked" if move.moved else "exchange_profit_lock_refused",
+                    real=live,
+                    instrument=symbol,
+                    entry=str(position.entry_price),
+                    mark=str(position.mark_price),
+                    stop=str(stop),
+                    level=str(level),
+                    held=None if move.held is None else str(move.held[0]),
+                )
+            moved += move.moved
+        return moved
+
     async def plan_setups(
         self, provider_id: int, instruments: Sequence[Instrument], close_time: datetime
     ) -> tuple[list[Setup], list[str]]:
@@ -498,6 +616,8 @@ class SignalService:
     ) -> list[Setup | None]:
         match timeframe:
             case Timeframe.M15:
+                # The 15M rule's loose copy is switched off on every coin (D070): it lost on
+                # ten coins pooled in docs/42. Its code stays, so the owner can bring it back.
                 return [
                     await self.baseline_setup(provider_id, instrument, close_time, instant=True),
                     await self.fvg_setup(provider_id, instrument, close_time),
@@ -530,7 +650,7 @@ class SignalService:
                 outcomes.append(SignalOutcome(decision.action, None, False, decision.reasons))
                 continue
             if (name, setup.instrument.symbol) in LEFT_OUT:
-                reason = "this strategy lost on this coin in the study (docs/33)"
+                reason = "this strategy lost on this coin in a coin study (docs/33, docs/42)"
                 outcomes.append(SignalOutcome(Action.NO_TRADE, None, False, (reason,)))
                 continue
             holding = await self._paper.active(provider_id, setup.instrument.id)
@@ -582,8 +702,10 @@ class SignalService:
         setups: Sequence[Setup],
         trader: FuturesTrader,
         orders: ExchangeRepository,
+        *,
+        live: bool = False,
     ) -> list[SignalOutcome]:
-        """The money plan on Binance demo trading (D048), with Binance's account as the truth.
+        """The money plan on Binance (D048), with Binance's account as the truth.
 
         Each signal asks for its strategy's evidence share of the profile's risk per trade,
         strongest first, as in the paper plan. Binance holds one position per coin in one-way
@@ -592,20 +714,32 @@ class SignalService:
         maximum, and only an approved trade is sent: a market or limit entry, a stop for the
         whole position, and a take-profit per target (D054). Once the account's loss stop is
         reached, nothing trades until the owner sets a new profile version (D053).
+
+        On the real account (`live`, D060) the whole futures wallet is the capital, and money
+        the owner moves in or out is never a profit or a loss. A position or an order of the
+        owner's own still takes its coin, and counts at its whole value as open risk, since
+        the bot knows no stop for it.
         """
         view = await trader.view()
         if view.equity <= 0:
-            return [SignalOutcome(Action.NO_TRADE, None, False, ("no equity on Binance demo",))]
+            return [SignalOutcome(Action.NO_TRADE, None, False, ("no equity on Binance",))]
         today = Timeframe.D1.floor(self._clock.now()).date()
         day_start = await orders.day_start(account.id, today, view.equity)
-        baseline = await orders.baseline(account.id) or day_start
-        # The account's starting balance is its budget: Binance's test funds are not all used.
-        budget = Budget.of(view, account.starting_balance, baseline, day_start)
+        if live:
+            budget = Budget.wallet(view, day_start, await orders.moved_today(account.id, today))
+            start = await orders.funded(account.id) or account.starting_balance
+        else:
+            baseline = await orders.baseline(account.id) or day_start
+            # The account's starting balance is its budget: Binance's test funds are not all used.
+            budget = Budget.of(view, account.starting_balance, baseline, day_start)
+            start = account.starting_balance
         if budget.equity <= 0 or budget.day_start_equity <= 0:
             return [SignalOutcome(Action.NO_TRADE, None, False, ("the budget is used up",))]
-        # The loss stop holds until the owner decides again, as a new profile version (D053).
+        # The loss stop holds until the owner decides again, as a new profile version (D053). It
+        # is measured from the start, or from the highest equity reached (D058).
+        stop_base = await self._loss_stop_base(account, orders, start)
         reached = await orders.loss_stop(account.id, account.risk_profile_id)
-        floor = loss_floor(account.starting_balance, account.profile)
+        floor = loss_floor(stop_base, account.profile)
         if reached is None and floor is not None and budget.equity <= floor:
             reached = self._clock.now()
             await orders.record_loss_stop(
@@ -617,18 +751,32 @@ class SignalService:
                 f"stopped by its loss stop at {reached:%Y-%m-%d %H:%M} UTC, until the owner decides"
             )
             return [SignalOutcome(Action.NO_TRADE, None, False, (stopped,))]
-        stops = await orders.stops(account.id)
+        stops = await (orders.open_trades(account.id) if live else orders.stops(account.id))
+        recorded = {symbol: price for symbol, (price, _) in stops.items()}
+        # A bot trade's risk is at the stop Binance holds, which may be one the owner set in the
+        # app (D066), else at the stop recorded. The owner's own positions count in full.
+        held = held_stops(view.positions, await trader.open_orders())
+        at_stop = {s: held.get(s, price) for s, price in recorded.items()}
+        # Never below what the trade risked at its first stop, however far that stop moved (D067).
+        first = await orders.first_stops(account.id)
+        planned = {s: first[key] for s, (_, key) in stops.items() if key in first}
+        open_risk = sum(
+            (_risk_at_stop(p, at_stop.get(s), planned.get(s)) for s, p in view.positions.items()),
+            ZERO,
+        )
         # A limit entry waiting on Binance counts as a trade: its coin, size and risk (D054).
+        open_risk += sum((_entry_risk(e, recorded.get(s)) for s, e in view.pending.items()), ZERO)
         state = AccountState(
             equity=budget.equity,
             day_start_equity=budget.day_start_equity,
             open_positions=len(set(view.positions) | set(view.pending)),
             gross_exposure=sum((p.notional for p in view.positions.values()), ZERO)
             + sum((e.notional for e in view.pending.values()), ZERO),
-            open_risk=sum((_risk_at_stop(p, stops.get(s)) for s, p in view.positions.items()), ZERO)
-            + sum((_entry_risk(e, stops.get(s)) for s, e in view.pending.items()), ZERO),
+            open_risk=open_risk,
+            long_exposure=_side_exposure(view, Side.LONG),
+            short_exposure=_side_exposure(view, Side.SHORT),
             available_margin=budget.available * MARGIN_USE,
-            start_equity=account.starting_balance,
+            start_equity=stop_base,
         )
         taken = set(view.positions)
         waiting = set(view.pending) - taken
@@ -642,7 +790,7 @@ class SignalService:
             proposal = setup.decision.proposal
             assert proposal is not None
             refused = (
-                "this strategy lost on this coin in the study (docs/33)"
+                "this strategy lost on this coin in a coin study (docs/33, docs/42)"
                 if (name, symbol) in LEFT_OUT
                 else "a position on this coin is open on Binance"
                 if symbol in taken
@@ -668,11 +816,25 @@ class SignalService:
                 outcomes.append(SignalOutcome(Action.NO_TRADE, None, False, ("no recent book",)))
                 continue
             prepared, assessment = chosen
+            # Too big for the position cap: shrink the risk to what fits, as the paper plan
+            # does, rather than refuse it (D058). Only ever smaller, never larger.
+            fitted = _exposure_fit(assessment, state, account.profile, proposal.side)
+            if fitted is not None and share * fitted > 0:
+                refit = await self._at_lowest_leverage(
+                    provider_id, setup, as_of, account,
+                    proposal.model_copy(update={"risk_share": share * fitted}), state,
+                )  # fmt: skip
+                if refit is not None:
+                    prepared, assessment = refit
+            risk_share = prepared.request.proposal.risk_share
             leverage = int(prepared.request.proposal.leverage)
             outcome = await self._record(
                 provider_id, setup.instrument, as_of, account, setup.rules, prepared, assessment,
                 setup.decision.reasons, setup.identity, setup.timeframe,
-                plan={"evidence_share": share, "risk_share": share, "leverage": Decimal(leverage)},
+                plan={
+                    "evidence_share": share, "risk_share": risk_share,
+                    "leverage": Decimal(leverage),
+                },
                 open_paper=False,
             )  # fmt: skip
             outcomes.append(outcome)
@@ -731,6 +893,17 @@ class SignalService:
                 )
         return outcomes
 
+    async def _loss_stop_base(
+        self, account: Account, orders: ExchangeRepository, start: Decimal
+    ) -> Decimal:
+        """The equity the loss stop is measured from: the start, the budget or what the owner
+        put in, or, when the owner chose so, the highest equity the bot's closed trades on
+        Binance reached from there (D058)."""
+        if not account.profile.loss_stop_from_high:
+            return start
+        closed, _ = rebuild(*await orders.history(account.id))
+        return highest_equity(closed, start)
+
     async def _at_lowest_leverage(
         self,
         provider_id: int,
@@ -740,21 +913,28 @@ class SignalService:
         proposal: TradeProposal,
         state: AccountState,
     ) -> tuple[Prepared, RiskAssessment] | None:
-        """Leverage 1, then 2, up to the profile's maximum, until the margin fits.
+        """The room's leverage first, then up to the profile's maximum, until the margin fits.
+
+        With room for positions beyond equity (D061), a trade starts at the position cap rounded
+        down: x3 with room for 300%. Then a full room of positions fits the margin, and the
+        first trade never holds all of it, leaving none for the next. Within equity that is x1,
+        the lowest that fits (D048).
 
         Leverage never changes what the stop loses, only the margin held and how near
         liquidation sits, which the risk engine checks at every step.
         """
         assert setup.decision.setup_atr is not None
+        profile = account.profile
+        start = max(1, min(int(profile.max_total_exposure_fraction), int(profile.max_leverage)))
         prepared = await self._prepare(
             provider_id, setup.instrument, as_of, account, setup.rules,
-            proposal.model_copy(update={"leverage": Decimal(1)}), setup.decision.setup_atr,
+            proposal.model_copy(update={"leverage": Decimal(start)}), setup.decision.setup_atr,
             timeframe=setup.timeframe, instant=True, state=state,
         )  # fmt: skip
         if prepared is None:
             return None
         assessment = assess(prepared.request)
-        leverage = 1
+        leverage = start
         while (
             RejectionCode.MARGIN_INSUFFICIENT in assessment.codes
             and leverage < account.profile.max_leverage
@@ -833,6 +1013,17 @@ class SignalService:
             reasons, identity, timeframe,
         )  # fmt: skip
 
+    async def _live_quote(self, instrument_id: int) -> tuple[datetime, Decimal, Decimal] | None:
+        """The ingestor's newest quote, or None when none is set or it cannot be read: the
+        saved minute rows then decide alone, as before."""
+        if self._quotes is None:
+            return None
+        try:
+            return await self._quotes.quote(instrument_id)
+        except Exception as error:
+            log.warning("live_quote_failed", error=type(error).__name__)
+            return None
+
     async def _prepare(
         self,
         provider_id: int,
@@ -858,6 +1049,11 @@ class SignalService:
         # minute's end. Its start is always over a minute old, which once made every live
         # signal stale (2026-11-07).
         book_seen = min(now, Timeframe.M1.close_time(book_minute))
+        # A row is saved only once its minute has ended, and up to 26 seconds late at busy
+        # closes, so the ingestor's live quote counts when it is fresher (D071).
+        live = await self._live_quote(instrument.id)
+        if live is not None and live[0] > book_seen:
+            book_seen, bid, ask = min(now, live[0]), live[1], live[2]
         minute_atr = Decimal(str(float(atr(minutes)[-1])))
         if minute_atr.is_nan():
             minute_atr = Decimal(0)
@@ -1089,18 +1285,63 @@ class SignalService:
         ).score
 
 
-def _risk_at_stop(position: Position, stop: tuple[Decimal, str] | None) -> Decimal:
-    """What a Binance position loses at its recorded stop, or its whole value if none is known."""
+def _exposure_fit(
+    assessment: RiskAssessment, state: AccountState, profile: RiskProfile, side: Side
+) -> Decimal | None:
+    """The share of the trade that fits under the position caps, when only a cap refused it.
+
+    The risk engine refuses a trade that would take all positions past their cap, that is
+    larger alone than the largest single position (D061), or that would take one direction past
+    its cap (D072). The plan shrinks it to the room left instead (D058), so a tight stop trades
+    smaller rather than not at all. None when no cap is the reason, or no room is left.
+    """
+    sizing = assessment.sizing
+    caps = {RejectionCode.EXPOSURE_EXCEEDED, RejectionCode.DIRECTION_EXPOSURE_EXCEEDED}
+    if not caps & set(assessment.codes) or sizing is None:
+        return None
+    room = state.equity * profile.max_total_exposure_fraction - state.gross_exposure
+    if profile.max_position_fraction is not None:
+        room = min(room, state.equity * profile.max_position_fraction)
+    if profile.max_side_exposure_fraction is not None:
+        same_side = state.long_exposure if side.sign > 0 else state.short_exposure
+        room = min(room, state.equity * profile.max_side_exposure_fraction - same_side)
+    if room <= 0 or sizing.notional <= 0:
+        return None
+    return min(room / sizing.notional * FIT_MARGIN, Decimal(1))
+
+
+def _side_exposure(view: ExchangeView, side: Side) -> Decimal:
+    """What the positions and waiting entries on one side are worth (D072)."""
+    held = sum((p.notional for p in view.positions.values() if p.side is side), ZERO)
+    return held + sum((e.notional for e in view.pending.values() if e.side is side), ZERO)
+
+
+def _risk_at_stop(
+    position: Position, stop: Decimal | None, first_stop: Decimal | None = None
+) -> Decimal:
+    """What a Binance position could lose: at its stop, and never less than at its first stop.
+    Its whole value counts if no stop is known.
+
+    A stop moved toward or past the entry, by the profit lock or the daily trend's trail,
+    protects the trade but frees no room for more. Stops fill at market, and a gap can pass
+    them: on 2025-10-10 Binance's one-minute drops reached 5.3% on ETH and 34.1% on 1000PEPE.
+    From D066 until D067, both on 2026-11-14, a stop past the entry counted as no risk, which
+    let a lock open room for more trades in the same direction.
+    """
     if stop is None:
         return position.notional
-    return abs(position.entry_price - stop[0]) * abs(position.amount)
+    sign, size = position.side.sign, abs(position.amount)
+    at_stop = max(sign * (position.entry_price - stop), ZERO) * size
+    if first_stop is None:
+        return at_stop
+    return max(at_stop, max(sign * (position.entry_price - first_stop), ZERO) * size)
 
 
-def _entry_risk(entry: PendingEntry, stop: tuple[Decimal, str] | None) -> Decimal:
+def _entry_risk(entry: PendingEntry, stop: Decimal | None) -> Decimal:
     """What a waiting limit entry would lose at its stop once filled, or its whole value."""
     if stop is None:
         return entry.notional
-    return abs(entry.price - stop[0]) * entry.quantity
+    return max(entry.side.sign * (entry.price - stop), ZERO) * entry.quantity
 
 
 def _against(side: Side, price: Decimal, tick: Decimal) -> Decimal:

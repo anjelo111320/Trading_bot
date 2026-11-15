@@ -127,7 +127,8 @@ class Strategy(Protocol):
 
 
 class WindowedBaseline:
-    """The rule baseline, fed windows of candles that had closed by each decision."""
+    """The rule baseline, fed windows of candles that had closed by each decision. With a
+    `break_window` of 3 it is the loose copy (D059)."""
 
     timeframe: Final = Timeframe.M15
 
@@ -138,12 +139,15 @@ class WindowedBaseline:
         higher: Sequence[ClosedCandle],
         tick: Decimal,
         parameters: BaselineParameters,
+        *,
+        break_window: int = 1,
     ) -> None:
         self._setup = AsOfCandles(setup)
         self._middle = AsOfCandles(middle)
         self._higher = AsOfCandles(higher)
         self._tick = tick
         self._parameters = parameters
+        self._break_window = break_window
 
     def decide(self, moment: datetime) -> BaselineDecision | None:
         setup = self._setup.closed_by(moment, SETUP_LOOKBACK)
@@ -161,6 +165,7 @@ class WindowedBaseline:
             CandleSeries.of(higher),
             self._tick,
             self._parameters,
+            self._break_window,
         )
 
 

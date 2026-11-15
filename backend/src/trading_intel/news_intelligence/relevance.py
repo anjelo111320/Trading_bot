@@ -30,7 +30,12 @@ COIN_NAMES: Final[dict[str, frozenset[str]]] = {
     "DOGE": frozenset({"dogecoin", "doge", "dogeusdt"}),
     "ZEC": frozenset({"zcash", "zec", "zecusdt"}),
     "1000PEPE": frozenset({"pepe", "1000pepe", "1000pepeusdt", "pepeusdt"}),
+    # "hype" and "near" are everyday words, so only the project names count (D059).
+    "HYPE": frozenset({"hyperliquid", "hypeusdt"}),
+    "NEAR": frozenset({"nearusdt"}),
 }
+# Names of two words, found in the lowercased text.
+COIN_PHRASES: Final[dict[str, tuple[str, ...]]] = {"NEAR": ("near protocol",)}
 CRYPTO: Final = frozenset({"crypto", "cryptocurrency", "stablecoin", "stablecoins"})
 MACRO_EVENTS: Final = frozenset({"monetary_policy", "inflation", "employment", "geopolitical"})
 
@@ -53,6 +58,10 @@ def assess_relevance(headline: str, snippet: str | None) -> Relevance:
     hint = best if hits[best] else None
 
     assets = {asset: 0.9 for asset, names in COIN_NAMES.items() if words & names}
+    text = f"{headline} {snippet or ''}".lower()
+    assets |= {
+        asset: 0.9 for asset, phrases in COIN_PHRASES.items() if any(p in text for p in phrases)
+    }
     if not assets and words & CRYPTO:
         assets = {"BTC": 0.6, "ETH": 0.6}
     if not assets and hint in MACRO_EVENTS:

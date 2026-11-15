@@ -242,6 +242,11 @@ Wake recovery runs in this order:
 
 Live forward results will contain these gaps, and reports must show coverage. Moving to an always-on server later needs a region Binance permits. No code should depend on running locally.
 
+**Gaps left open.** A gap still "detected" or "repairing" makes the risk engine refuse every signal on that coin as `DATA_INCOMPLETE`. So the ingestor looks at every open gap again at startup, after its repair, and then hourly. A gap whose candles are now all stored is closed, and one still missing candles is repaired again. A repair cut off mid-way used to leave its gap open forever.
+- On 2026-11-13 the ingestor restarted 8 seconds into repairing BNB's minutes after the disk filled.
+- The candles were stored, but the gap stayed "repairing", and every BNB signal was refused for over a day.
+- The check closed it at 15:14 UTC on 2026-11-14 (`gap_closed_on_recheck`).
+
 Backups, restore tests and retention are defined in [12-DATABASE-DESIGN.md](12-DATABASE-DESIGN.md) and [14-SECURITY.md](14-SECURITY.md).
 
 ### Future Execution Isolation

@@ -14,7 +14,7 @@ from trading_intel.api.auth import LoginLimiter, TicketLedger, TokenSigner, hash
 from trading_intel.api.container import Container
 from trading_intel.api.errors import ErrorResponse, install_error_handlers
 from trading_intel.api.forecast_jobs import AnalysisJobs
-from trading_intel.api.routers import ai, auth, exchange_demo, forecasts, health, market, trading
+from trading_intel.api.routers import ai, auth, exchange, forecasts, health, market, trading
 from trading_intel.api.websocket import gateway
 from trading_intel.backtesting.windows import HOLDOUT_START
 from trading_intel.core.clock import Clock, SystemClock
@@ -163,7 +163,8 @@ def create_app(settings: Settings, container: Container | None = None) -> FastAP
     app.include_router(market.router)
     app.include_router(trading.router)
     app.include_router(forecasts.router)
-    app.include_router(exchange_demo.router)
+    app.include_router(exchange.router)
+    app.include_router(exchange.live_router)
     app.include_router(ai.router)
     app.include_router(gateway.router)
     return app

@@ -10,7 +10,9 @@ import {
   binanceMarkers,
   budgetProfit,
   heldOnBinance,
+  nowText,
   protection,
+  usdtOrDash,
   waitingEntry,
 } from "./binance";
 import { BinanceAccount, BinanceOrders, BinancePosition } from "./BinancePanels";
@@ -29,6 +31,8 @@ const STATUS: ExchangeStatus = {
   available: "59.30",
   loss_floor: "80",
   loss_stopped_at: null,
+  closing: [],
+  armed: true,
   positions: [
     {
       symbol: "SOLUSDT",
@@ -40,12 +44,13 @@ const STATUS: ExchangeStatus = {
       margin: "41.90",
       unrealized: "0.15",
       liquidation: "160.2",
+      bot: true,
     },
   ],
   orders: [
-    { symbol: "SOLUSDT", type: "STOP_MARKET", side: "BUY", trigger: "86.10", quantity: null, close_position: true },
-    { symbol: "SOLUSDT", type: "TAKE_PROFIT_MARKET", side: "BUY", trigger: "78.10", quantity: "0.10", close_position: false },
-    { symbol: "SOLUSDT", type: "TAKE_PROFIT_MARKET", side: "BUY", trigger: "80.10", quantity: "0.25", close_position: false },
+    { symbol: "SOLUSDT", type: "STOP_MARKET", side: "BUY", trigger: "86.10", quantity: null, close_position: true, bot: true },
+    { symbol: "SOLUSDT", type: "TAKE_PROFIT_MARKET", side: "BUY", trigger: "78.10", quantity: "0.10", close_position: false, bot: true },
+    { symbol: "SOLUSDT", type: "TAKE_PROFIT_MARKET", side: "BUY", trigger: "80.10", quantity: "0.25", close_position: false, bot: true },
   ],
 };
 
@@ -135,9 +140,9 @@ describe("Binance demo on the Bot page", () => {
       ...STATUS,
       positions: [],
       orders: [
-        { symbol: "ETHUSDT", type: "STOP_MARKET", side: "SELL", trigger: "2040", quantity: "0.02", close_position: false },
-        { symbol: "ETHUSDT", type: "TAKE_PROFIT_MARKET", side: "SELL", trigger: "2120", quantity: "0.01", close_position: false },
-        { symbol: "ETHUSDT", type: "LIMIT", side: "BUY", trigger: "2058.4", quantity: "0.02", close_position: false },
+        { symbol: "ETHUSDT", type: "STOP_MARKET", side: "SELL", trigger: "2040", quantity: "0.02", close_position: false, bot: true },
+        { symbol: "ETHUSDT", type: "TAKE_PROFIT_MARKET", side: "SELL", trigger: "2120", quantity: "0.01", close_position: false, bot: true },
+        { symbol: "ETHUSDT", type: "LIMIT", side: "BUY", trigger: "2058.4", quantity: "0.02", close_position: false, bot: true },
       ],
     };
     expect(waitingEntry(waiting, "ETHUSDT")?.trigger).toBe("2058.4");
@@ -185,6 +190,26 @@ describe("Binance demo on the Bot page", () => {
     render(<BinanceOrders orders={sent} ticks={new Map([["SOLUSDT", "0.01"]])} />);
     expect(screen.getByText("Accepted")).toBeTruthy();
     expect(screen.getByText(/Refused: Binance 400 -2021/)).toBeTruthy();
+  });
+
+  it("shows what each order means in USDT: if hit, now, and the risk (D057)", () => {
+    expect(nowText(order({ now_usdt: "1.1130", trade_state: "won" }))).toBe("+1.11 won");
+    expect(nowText(order({ now_usdt: "-0.0022", trade_state: "open" }))).toBe("-0.0022 open");
+    expect(nowText(order({ trade_state: "waiting" }))).toBe("waiting to fill");
+    expect(nowText(order({}))).toBe("–");
+    expect(usdtOrDash("0.5", true)).toBe("+0.50");
+    expect(usdtOrDash(null)).toBe("–");
+    const sent = [
+      order({ kind: "tp1", strategy: "trend_break_baseline", value_usdt: "11.75", if_hit_usdt: "0.5" }),
+      order({ kind: "stop", strategy: "trend_break_baseline", value_usdt: "20.4", if_hit_usdt: "-0.8" }),
+      order({ strategy: "trend_break_baseline", value_usdt: "19.6", now_usdt: "0.4", trade_state: "open", risk_usdt: "1" }),
+    ];
+    render(<BinanceOrders orders={sent} ticks={new Map()} />);
+    expect(screen.getByText("+0.50")).toBeTruthy();
+    expect(screen.getByText("-0.80")).toBeTruthy();
+    expect(screen.getByText("+0.40 open")).toBeTruthy();
+    expect(screen.getByText("1.00")).toBeTruthy();
+    expect(screen.getAllByText("15M rule")).toHaveLength(3);
   });
 
   it("names a cancelled stop, so a trailed stop does not look like a new order", () => {

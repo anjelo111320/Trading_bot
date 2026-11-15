@@ -4,6 +4,31 @@
  */
 
 export interface paths {
+    "/api/v1/ai/budget": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Budget
+         * @description Claude's daily cost limit, for every call together, and today's spend against it.
+         */
+        get: operations["budget_api_v1_ai_budget_get"];
+        /**
+         * Change Budget
+         * @description A new daily limit, used from Claude's next call. Only the dashboard's own origin may set
+         *     it, never above the ceiling; zero stops every call.
+         */
+        put: operations["change_budget_api_v1_ai_budget_put"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/ai/exit-reviews": {
         parameters: {
             query?: never;
@@ -89,6 +114,97 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/coins/scorecard": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Scorecard
+         * @description Each coin's scorecard (D068): what the studies found for each strategy, what every
+         *     account's trades did, how good their entries were, and the coin today. Python's numbers
+         *     only; nothing here changes a trade.
+         */
+        get: operations["scorecard_api_v1_coins_scorecard_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/exchange-demo/arming": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /**
+         * Arming
+         * @description The account's trading on or off (D063, D064). Off stops new trades at once; open
+         *     trades keep their stops and targets on Binance. On the real account, on needs the
+         *     owner's password, a running bot and a clean check of the key and the account; demo
+         *     trading's test funds need neither. From the dashboard only, logged.
+         */
+        put: operations["arming_api_v1_exchange_demo_arming_put"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/exchange-demo/closes": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Closes
+         * @description The latest closes asked from the dashboard, and what each did.
+         */
+        get: operations["closes_api_v1_exchange_demo_closes_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/exchange-demo/limits": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Limits
+         * @description The account's limits now, with the ceilings no setting can pass (D058).
+         */
+        get: operations["limits_api_v1_exchange_demo_limits_get"];
+        /**
+         * Change Limits
+         * @description Save new limits as a new version, used from the next close. Saving also resumes
+         *     trading after a loss stop, because the stop holds only for the version it was reached
+         *     under (D053). Only the dashboard's own origin may change them.
+         */
+        put: operations["change_limits_api_v1_exchange_demo_limits_put"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/exchange-demo/orders": {
         parameters: {
             query?: never;
@@ -106,6 +222,49 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/exchange-demo/positions/{symbol}/close": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Close
+         * @description Close the bot's trade on a coin now (D060): its waiting entry is cancelled, its
+         *     position closed at market, then its stop and targets cancelled. The quant worker does it
+         *     within seconds. Only a trade of the bot's can be closed here, and only from the
+         *     dashboard's own origin; the owner's own positions are closed in the Binance app.
+         */
+        post: operations["close_api_v1_exchange_demo_positions__symbol__close_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/exchange-demo/results": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Results
+         * @description Completed trades and their results, rebuilt from Binance's own fills (D057).
+         */
+        get: operations["results_api_v1_exchange_demo_results_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/exchange-demo/status": {
         parameters: {
             query?: never;
@@ -115,6 +274,152 @@ export interface paths {
         };
         /** Status */
         get: operations["status_api_v1_exchange_demo_status_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/exchange-live/arming": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /**
+         * Arming
+         * @description The account's trading on or off (D063, D064). Off stops new trades at once; open
+         *     trades keep their stops and targets on Binance. On the real account, on needs the
+         *     owner's password, a running bot and a clean check of the key and the account; demo
+         *     trading's test funds need neither. From the dashboard only, logged.
+         */
+        put: operations["arming_api_v1_exchange_live_arming_put"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/exchange-live/closes": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Closes
+         * @description The latest closes asked from the dashboard, and what each did.
+         */
+        get: operations["closes_api_v1_exchange_live_closes_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/exchange-live/limits": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Limits
+         * @description The account's limits now, with the ceilings no setting can pass (D058).
+         */
+        get: operations["limits_api_v1_exchange_live_limits_get"];
+        /**
+         * Change Limits
+         * @description Save new limits as a new version, used from the next close. Saving also resumes
+         *     trading after a loss stop, because the stop holds only for the version it was reached
+         *     under (D053). Only the dashboard's own origin may change them.
+         */
+        put: operations["change_limits_api_v1_exchange_live_limits_put"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/exchange-live/orders": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Orders */
+        get: operations["orders_api_v1_exchange_live_orders_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/exchange-live/positions/{symbol}/close": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Close
+         * @description Close the bot's trade on a coin now (D060): its waiting entry is cancelled, its
+         *     position closed at market, then its stop and targets cancelled. The quant worker does it
+         *     within seconds. Only a trade of the bot's can be closed here, and only from the
+         *     dashboard's own origin; the owner's own positions are closed in the Binance app.
+         */
+        post: operations["close_api_v1_exchange_live_positions__symbol__close_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/exchange-live/results": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Results
+         * @description Completed trades and their results, rebuilt from Binance's own fills (D057).
+         */
+        get: operations["results_api_v1_exchange_live_results_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/exchange-live/status": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Status */
+        get: operations["status_api_v1_exchange_live_status_get"];
         put?: never;
         post?: never;
         delete?: never;
@@ -378,8 +683,32 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** Signals */
+        /**
+         * Signals
+         * @description The account's signals, newest first, each with what became of its trade (D065).
+         *     Every filter is optional; `result` filters by the trade's state.
+         */
         get: operations["signals_api_v1_signals_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/signals/{signal_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Signal
+         * @description One of the account's signals with its trade, for the Bot page's chart link (D065).
+         */
+        get: operations["signal_api_v1_signals__signal_id__get"];
         put?: never;
         post?: never;
         delete?: never;
@@ -392,6 +721,36 @@ export interface paths {
 export type webhooks = Record<string, never>;
 export interface components {
     schemas: {
+        /** AiBudgetUpdate */
+        AiBudgetUpdate: {
+            /** Daily Limit Usd */
+            daily_limit_usd: number | string;
+        };
+        /**
+         * AiBudgetView
+         * @description Claude's daily cost limit, for every call together, and today's spend against it (D062).
+         *     At the limit, Claude is not asked again until 00:00 UTC.
+         */
+        AiBudgetView: {
+            /** By Purpose */
+            by_purpose: components["schemas"]["UsageView"][];
+            /** Calls Today */
+            calls_today: number;
+            /** Ceiling Usd */
+            ceiling_usd: string;
+            /** Changed At */
+            changed_at: string | null;
+            /** Daily Limit Usd */
+            daily_limit_usd: string;
+            /** Input Tokens Today */
+            input_tokens_today: number;
+            /** Output Tokens Today */
+            output_tokens_today: number;
+            /** Reached */
+            reached: boolean;
+            /** Spent Today Usd */
+            spent_today_usd: string;
+        };
         /** AnalyseRequest */
         AnalyseRequest: {
             /** Instrument Id */
@@ -421,6 +780,23 @@ export interface components {
             state: "idle" | "running" | "succeeded" | "failed";
             /** Symbol */
             symbol?: string | null;
+        };
+        /**
+         * ArmingUpdate
+         * @description Real trading on or off from the dashboard (D063). Turning it on needs the password.
+         */
+        ArmingUpdate: {
+            /** Armed */
+            armed: boolean;
+            /** Password */
+            password?: string | null;
+        };
+        /** ArmingView */
+        ArmingView: {
+            /** Armed */
+            armed: boolean;
+            /** Armed At */
+            armed_at?: string | null;
         };
         /** BandView */
         BandView: {
@@ -507,6 +883,95 @@ export interface components {
             /** Type */
             type: string;
         };
+        /**
+         * CloseRequestView
+         * @description A close asked from the dashboard, which the quant worker carries out within seconds.
+         */
+        CloseRequestView: {
+            /** Detail */
+            detail?: string | null;
+            /** Done At */
+            done_at?: string | null;
+            /** Id */
+            id: string;
+            /** Outcome */
+            outcome?: ("closed" | "nothing_open" | "not_the_bots" | "failed") | null;
+            /**
+             * Requested At
+             * Format: date-time
+             */
+            requested_at: string;
+            /** Symbol */
+            symbol: string;
+        };
+        /** ClosedTradeView */
+        ClosedTradeView: {
+            /**
+             * Closed At
+             * Format: date-time
+             */
+            closed_at: string;
+            /** Entry Price */
+            entry_price: string | null;
+            /** Exit Price */
+            exit_price: string | null;
+            /** Fees */
+            fees: string;
+            /** Funding */
+            funding: string;
+            /** Net */
+            net: string;
+            /**
+             * Opened At
+             * Format: date-time
+             */
+            opened_at: string;
+            /** Pnl */
+            pnl: string;
+            /** R */
+            r: string | null;
+            /** Side */
+            side: string;
+            /** Size */
+            size: string;
+            /** Strategy */
+            strategy: string;
+            /** Symbol */
+            symbol: string;
+            /** Won */
+            won: boolean;
+        };
+        /** CoinCardView */
+        CoinCardView: {
+            conditions: components["schemas"]["CoinConditionsView"];
+            entries: components["schemas"]["EntryQualityView"];
+            /** Instrument Id */
+            instrument_id: number;
+            live: components["schemas"]["LiveResultView"];
+            /** Strategies */
+            strategies: components["schemas"]["StrategyCellView"][];
+            /** Symbol */
+            symbol: string;
+        };
+        /**
+         * CoinConditionsView
+         * @description The coin now. `atr_percent` is the 1H ATR(14) over the last close; the spread comes
+         *     from the latest book within 10 minutes; gaps are missing candles not yet repaired.
+         */
+        CoinConditionsView: {
+            /** Approved Today */
+            approved_today: number;
+            /** Atr Percent */
+            atr_percent: string | null;
+            /** Open Gaps */
+            open_gaps: number;
+            /** Signals Today */
+            signals_today: number;
+            /** Spread Bps */
+            spread_bps: string | null;
+            /** Top Refusal */
+            top_refusal: string | null;
+        };
         /** CoverageView */
         CoverageView: {
             /** Downtime */
@@ -555,6 +1020,32 @@ export interface components {
              */
             start: string;
         };
+        /**
+         * EntryQualityView
+         * @description Entries with a full first hour of 1-minute candles, in R. `slippage_r` is the median of
+         *     how much worse than planned the entry filled; `first_hour_r` the median of how far the
+         *     price then went against it in the hour; `went_against` how many went half the risk.
+         */
+        EntryQualityView: {
+            /** First Hour R */
+            first_hour_r: string | null;
+            /** Slippage R */
+            slippage_r: string | null;
+            /** Trades */
+            trades: number;
+            /** Went Against */
+            went_against: number;
+        };
+        /** EquityPointView */
+        EquityPointView: {
+            /**
+             * At
+             * Format: date-time
+             */
+            at: string;
+            /** Equity */
+            equity: string;
+        };
         /** ErrorBody */
         ErrorBody: {
             /** Code */
@@ -569,10 +1060,33 @@ export interface components {
             error: components["schemas"]["ErrorBody"];
         };
         /**
+         * EvidenceView
+         * @description A strategy's backtest on one coin at normal costs, as its study published it (D068).
+         *     Expectancy in R, with the seeded bootstrap 95% interval.
+         */
+        EvidenceView: {
+            /** High */
+            high: string;
+            /** Low */
+            low: string;
+            /** Mean R */
+            mean_r: string;
+            /** Source */
+            source: string;
+            /** Trades */
+            trades: number;
+        };
+        /**
          * ExchangeOpenOrderView
-         * @description A stop or take-profit Binance holds. A stop closes the whole position.
+         * @description A stop or take-profit Binance holds, or a waiting limit entry. A stop closes the whole
+         *     position.
          */
         ExchangeOpenOrderView: {
+            /**
+             * Bot
+             * @default true
+             */
+            bot: boolean;
             /** Close Position */
             close_position: boolean;
             /** Quantity */
@@ -602,8 +1116,14 @@ export interface components {
             error: string | null;
             /** Executed */
             executed: string | null;
+            /** Fill Price */
+            fill_price?: string | null;
+            /** If Hit Usdt */
+            if_hit_usdt?: string | null;
             /** Kind */
             kind: string;
+            /** Now Usdt */
+            now_usdt?: string | null;
             /**
              * Outcome
              * @enum {string}
@@ -611,17 +1131,30 @@ export interface components {
             outcome: "accepted" | "refused" | "no reply";
             /** Quantity */
             quantity: string | null;
+            /** Risk Usdt */
+            risk_usdt?: string | null;
             /** Side */
             side: string | null;
+            /** Strategy */
+            strategy?: string | null;
             /** Symbol */
             symbol: string;
+            /** Trade State */
+            trade_state?: ("open" | "won" | "lost" | "waiting" | "not filled") | null;
             /** Trigger */
             trigger: string | null;
             /** Type */
             type: string | null;
+            /** Value Usdt */
+            value_usdt?: string | null;
         };
         /** ExchangePositionView */
         ExchangePositionView: {
+            /**
+             * Bot
+             * @default true
+             */
+            bot: boolean;
             /** Entry Price */
             entry_price: string;
             /** Liquidation */
@@ -645,6 +1178,11 @@ export interface components {
         ExchangeStatusView: {
             /** Age Seconds */
             age_seconds?: number | null;
+            /**
+             * Armed
+             * @default false
+             */
+            armed: boolean;
             /** Available */
             available?: string | null;
             /** Binance Available */
@@ -653,12 +1191,18 @@ export interface components {
             binance_equity?: string | null;
             /** Capital */
             capital: string;
+            /**
+             * Closing
+             * @default []
+             */
+            closing: string[];
             /** Connected */
             connected: boolean;
             /** Day Start Equity */
             day_start_equity?: string | null;
             /** Equity */
             equity?: string | null;
+            live?: components["schemas"]["LiveStateView"] | null;
             /** Loss Floor */
             loss_floor?: string | null;
             /** Loss Stopped At */
@@ -678,9 +1222,8 @@ export interface components {
             /**
              * Test Funds
              * @default true
-             * @constant
              */
-            test_funds: true;
+            test_funds: boolean;
         };
         /** ExitReviewView */
         ExitReviewView: {
@@ -862,6 +1405,20 @@ export interface components {
             state: string;
             timeframe: components["schemas"]["Timeframe"];
         };
+        /** GridCellView */
+        GridCellView: {
+            stats: components["schemas"]["StatsView"];
+            /** Strategy */
+            strategy: string;
+            /** Symbol */
+            symbol: string;
+        };
+        /** GroupView */
+        GroupView: {
+            /** Name */
+            name: string;
+            stats: components["schemas"]["StatsView"];
+        };
         /** HealthResponse */
         HealthResponse: {
             /**
@@ -996,6 +1553,116 @@ export interface components {
             price: string;
             /** Reach */
             reach: components["schemas"]["ReachView"][];
+        };
+        /**
+         * LimitCeilingsView
+         * @description The risk engine's hard ceilings, which no setting can pass.
+         */
+        LimitCeilingsView: {
+            /** Daily Loss */
+            daily_loss: string;
+            /** Exposure */
+            exposure: string;
+            /** Leverage */
+            leverage: string;
+            /** Open Risk */
+            open_risk: string;
+            /** Risk Per Trade */
+            risk_per_trade: string;
+        };
+        /**
+         * LimitsUpdate
+         * @description New limits from the owner. Each becomes a new version; ceilings still apply.
+         */
+        LimitsUpdate: {
+            /** Daily Loss */
+            daily_loss: number | string;
+            /** Daily Profit Stop */
+            daily_profit_stop: number | string | null;
+            /** Exposure */
+            exposure: number | string;
+            /** Largest Trade */
+            largest_trade?: number | string | null;
+            /** Loss Stop */
+            loss_stop: number | string | null;
+            /** Loss Stop From High */
+            loss_stop_from_high: boolean;
+            /** Max Leverage */
+            max_leverage: number | string;
+            /** One Direction */
+            one_direction?: number | string | null;
+            /** Open Risk */
+            open_risk: number | string;
+            /** Risk Per Trade */
+            risk_per_trade: number | string;
+        };
+        /**
+         * LimitsView
+         * @description A Binance account's limits as the risk engine uses them (D058). Fractions: 0.1 is 10%.
+         */
+        LimitsView: {
+            ceilings: components["schemas"]["LimitCeilingsView"];
+            /**
+             * Changed At
+             * Format: date-time
+             */
+            changed_at: string;
+            /** Daily Loss */
+            daily_loss: string;
+            /** Daily Profit Stop */
+            daily_profit_stop: string | null;
+            /** Exposure */
+            exposure: string;
+            /** Largest Trade */
+            largest_trade?: string | null;
+            /** Loss Stop */
+            loss_stop: string | null;
+            /** Loss Stop From High */
+            loss_stop_from_high: boolean;
+            /** Max Leverage */
+            max_leverage: string;
+            /** One Direction */
+            one_direction?: string | null;
+            /** Open Risk */
+            open_risk: string | null;
+            /** Risk Per Trade */
+            risk_per_trade: string;
+            /** Version */
+            version: number;
+        };
+        /**
+         * LiveResultView
+         * @description Trades signals opened, on every paper account and Binance, each setup counted once.
+         *     `mean_r` is over the closed ones: the net result over the planned risk.
+         */
+        LiveResultView: {
+            /** Closed */
+            closed: number;
+            /** Entered */
+            entered: number;
+            /** Mean R */
+            mean_r: string | null;
+            /** Won */
+            won: number;
+        };
+        /**
+         * LiveStateView
+         * @description The real account's arming and its hourly check with Binance (D060).
+         */
+        LiveStateView: {
+            /** Armed */
+            armed: boolean;
+            /** Armed At */
+            armed_at?: string | null;
+            /** Checked At */
+            checked_at?: string | null;
+            /** Ip Restricted */
+            ip_restricted?: boolean | null;
+            /**
+             * Problems
+             * @default []
+             */
+            problems: string[];
         };
         /** LoginRequest */
         LoginRequest: {
@@ -1384,6 +2051,84 @@ export interface components {
             model: number | null;
         };
         /**
+         * ResultsView
+         * @description A Binance account's completed trades, rebuilt from Binance's own fills (D057).
+         */
+        ResultsView: {
+            /** By Coin */
+            by_coin: components["schemas"]["GroupView"][];
+            /** By Day */
+            by_day: components["schemas"]["GroupView"][];
+            /** By Side */
+            by_side: components["schemas"]["GroupView"][];
+            /** By Strategy */
+            by_strategy: components["schemas"]["GroupView"][];
+            /** Current Streak */
+            current_streak: number;
+            /** Drawdown */
+            drawdown: string;
+            /** Drawdown Fraction */
+            drawdown_fraction: string | null;
+            /** Equity */
+            equity: components["schemas"]["EquityPointView"][];
+            /** Grid */
+            grid: components["schemas"]["GridCellView"][];
+            /** Last Fill At */
+            last_fill_at: string | null;
+            /** Longest Losses */
+            longest_losses: number;
+            /** Longest Wins */
+            longest_wins: number;
+            /** Median Hold Hours */
+            median_hold_hours: string | null;
+            /** Not From Bot */
+            not_from_bot: number;
+            /** Open Trades */
+            open_trades: number;
+            /** Other Fees */
+            other_fees: {
+                [key: string]: string;
+            };
+            /**
+             * Period
+             * @enum {string}
+             */
+            period: "7d" | "30d" | "all";
+            /**
+             * Since
+             * Format: date-time
+             */
+            since: string;
+            /** Start Equity */
+            start_equity: string;
+            summary: components["schemas"]["StatsView"];
+            /**
+             * Test Funds
+             * @default true
+             */
+            test_funds: boolean;
+            /** Trades */
+            trades: components["schemas"]["ClosedTradeView"][];
+        };
+        /**
+         * ScorecardView
+         * @description Each coin's scorecard (D068): Python's numbers only, read-only.
+         */
+        ScorecardView: {
+            /**
+             * Account
+             * @enum {string}
+             */
+            account: "binance_live" | "binance";
+            /**
+             * As Of
+             * Format: date-time
+             */
+            as_of: string;
+            /** Coins */
+            coins: components["schemas"]["CoinCardView"][];
+        };
+        /**
          * SignalScoreView
          * @description The signal score's conditions at the signal: True for the trade, False against it,
          *     None unknown. The score failed its test (D046), so it is information and sets no size.
@@ -1405,6 +2150,28 @@ export interface components {
             volume: boolean | null;
             /** Weak */
             weak: boolean | null;
+        };
+        /**
+         * SignalTradeView
+         * @description What became of an approved signal's trade (D065), from Binance's own fills on a Binance
+         *     account, or the simulator's fills on paper. `opened_at` is set once it entered.
+         */
+        SignalTradeView: {
+            /** Closed At */
+            closed_at: string | null;
+            /** Entry Price */
+            entry_price: string | null;
+            /** Exit Price */
+            exit_price: string | null;
+            /** Net */
+            net: string | null;
+            /** Opened At */
+            opened_at: string | null;
+            /**
+             * State
+             * @enum {string}
+             */
+            state: "waiting" | "open" | "won" | "lost" | "even" | "not filled" | "refused";
         };
         /** SignalView */
         SignalView: {
@@ -1483,6 +2250,7 @@ export interface components {
             /** Technical Explanation */
             technical_explanation: string;
             timeframe: components["schemas"]["Timeframe"];
+            trade?: components["schemas"]["SignalTradeView"] | null;
         };
         /** SpreadView */
         SpreadView: {
@@ -1491,6 +2259,52 @@ export interface components {
             lowest: components["schemas"]["BandView"];
             /** Share Ending Higher */
             share_ending_higher: number;
+        };
+        /**
+         * StatsView
+         * @description Results of a set of completed trades. Money in USDT; rates as fractions (0.5 is 50%).
+         */
+        StatsView: {
+            /** Average Loss */
+            average_loss: string | null;
+            /** Average R */
+            average_r: string | null;
+            /** Average Win */
+            average_win: string | null;
+            /** Best */
+            best: string | null;
+            /** Fees */
+            fees: string;
+            /** Funding */
+            funding: string;
+            /** Losses */
+            losses: number;
+            /** Net */
+            net: string;
+            /** Pnl */
+            pnl: string;
+            /** Profit Factor */
+            profit_factor: string | null;
+            /** Trades */
+            trades: number;
+            /** Win Rate */
+            win_rate: string | null;
+            /** Wins */
+            wins: number;
+            /** Worst */
+            worst: string | null;
+        };
+        /** StrategyCellView */
+        StrategyCellView: {
+            entries: components["schemas"]["EntryQualityView"];
+            evidence: components["schemas"]["EvidenceView"] | null;
+            /** Left Out */
+            left_out: boolean;
+            live: components["schemas"]["LiveResultView"];
+            /** Strategy */
+            strategy: string;
+            /** Untested */
+            untested: string | null;
         };
         /** StrategyView */
         StrategyView: {
@@ -1617,6 +2431,22 @@ export interface components {
          * @enum {string}
          */
         TradingMode: "paper";
+        /**
+         * UsageView
+         * @description What Claude cost today for one purpose, such as news labels or exit advice.
+         */
+        UsageView: {
+            /** Calls */
+            calls: number;
+            /** Cost Usd */
+            cost_usd: string;
+            /** Input Tokens */
+            input_tokens: number;
+            /** Output Tokens */
+            output_tokens: number;
+            /** Purpose */
+            purpose: string;
+        };
     };
     responses: never;
     parameters: never;
@@ -1626,6 +2456,68 @@ export interface components {
 }
 export type $defs = Record<string, never>;
 export interface operations {
+    budget_api_v1_ai_budget_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AiBudgetView"];
+                };
+            };
+            /** @description Default Response */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    change_budget_api_v1_ai_budget_put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AiBudgetUpdate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AiBudgetView"];
+                };
+            };
+            /** @description Default Response */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
     exit_reviews_api_v1_ai_exit_reviews_get: {
         parameters: {
             query?: {
@@ -1775,6 +2667,161 @@ export interface operations {
             };
         };
     };
+    scorecard_api_v1_coins_scorecard_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ScorecardView"];
+                };
+            };
+            /** @description Default Response */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    arming_api_v1_exchange_demo_arming_put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ArmingUpdate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ArmingView"];
+                };
+            };
+            /** @description Default Response */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    closes_api_v1_exchange_demo_closes_get: {
+        parameters: {
+            query?: {
+                limit?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CloseRequestView"][];
+                };
+            };
+            /** @description Default Response */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    limits_api_v1_exchange_demo_limits_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["LimitsView"];
+                };
+            };
+            /** @description Default Response */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    change_limits_api_v1_exchange_demo_limits_put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["LimitsUpdate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["LimitsView"];
+                };
+            };
+            /** @description Default Response */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
     orders_api_v1_exchange_demo_orders_get: {
         parameters: {
             query?: {
@@ -1806,7 +2853,317 @@ export interface operations {
             };
         };
     };
+    close_api_v1_exchange_demo_positions__symbol__close_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                symbol: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CloseRequestView"];
+                };
+            };
+            /** @description Default Response */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    results_api_v1_exchange_demo_results_get: {
+        parameters: {
+            query?: {
+                period?: "7d" | "30d" | "all";
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ResultsView"];
+                };
+            };
+            /** @description Default Response */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
     status_api_v1_exchange_demo_status_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ExchangeStatusView"];
+                };
+            };
+            /** @description Default Response */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    arming_api_v1_exchange_live_arming_put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ArmingUpdate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ArmingView"];
+                };
+            };
+            /** @description Default Response */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    closes_api_v1_exchange_live_closes_get: {
+        parameters: {
+            query?: {
+                limit?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CloseRequestView"][];
+                };
+            };
+            /** @description Default Response */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    limits_api_v1_exchange_live_limits_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["LimitsView"];
+                };
+            };
+            /** @description Default Response */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    change_limits_api_v1_exchange_live_limits_put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["LimitsUpdate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["LimitsView"];
+                };
+            };
+            /** @description Default Response */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    orders_api_v1_exchange_live_orders_get: {
+        parameters: {
+            query?: {
+                limit?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ExchangeOrderView"][];
+                };
+            };
+            /** @description Default Response */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    close_api_v1_exchange_live_positions__symbol__close_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                symbol: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CloseRequestView"];
+                };
+            };
+            /** @description Default Response */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    results_api_v1_exchange_live_results_get: {
+        parameters: {
+            query?: {
+                period?: "7d" | "30d" | "all";
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ResultsView"];
+                };
+            };
+            /** @description Default Response */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    status_api_v1_exchange_live_status_get: {
         parameters: {
             query?: never;
             header?: never;
@@ -2309,7 +3666,13 @@ export interface operations {
         parameters: {
             query?: {
                 limit?: number;
-                account?: "paper" | "demo" | "portfolio" | "binance";
+                account?: "paper" | "demo" | "portfolio" | "binance" | "binance_live";
+                instrument_id?: number | null;
+                strategy?: string | null;
+                action?: ("BUY" | "SELL") | null;
+                decision?: ("APPROVED" | "REJECTED") | null;
+                result?: ("entered" | "open" | "won" | "lost" | "waiting" | "not_entered") | null;
+                period?: "today" | "7d" | "30d" | "all";
             };
             header?: never;
             path?: never;
@@ -2324,6 +3687,39 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["SignalView"][];
+                };
+            };
+            /** @description Default Response */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    signal_api_v1_signals__signal_id__get: {
+        parameters: {
+            query?: {
+                account?: "paper" | "demo" | "portfolio" | "binance" | "binance_live";
+            };
+            header?: never;
+            path: {
+                signal_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SignalView"];
                 };
             };
             /** @description Default Response */

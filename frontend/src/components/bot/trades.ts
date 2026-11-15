@@ -21,7 +21,10 @@ const STRATEGY_LABEL: Record<string, string> = {
   trend_break_baseline: "15M rule",
   fvg_choch: "4H gap + 15M CHoCH",
   news_move: "News move",
+  trend_break_loose: "15M rule, loose",
 };
+/** Every strategy that trades, for the Signals page's filter (D065). */
+export const STRATEGY_NAMES = Object.keys(STRATEGY_LABEL);
 // Every bot account risks at most 1% of equity per trade, before the money plan's share.
 const RISK_PER_TRADE = 1;
 

@@ -20,6 +20,7 @@ from tests.integration.test_trading_flow import (
     proposal,
     rows,
 )
+from trading_intel.core.clock import FixedClock
 from trading_intel.database.repositories.exchange import ExchangeRepository
 from trading_intel.database.repositories.signals import (
     EXCHANGE_DEMO_ACCOUNT,
@@ -29,15 +30,29 @@ from trading_intel.database.repositories.signals import (
 )
 from trading_intel.domain.candles import Timeframe
 from trading_intel.domain.signals import Action, EntryType
+from trading_intel.entrypoints.quant_worker import ExchangeLink, TradingLoop
 from trading_intel.execution.trader import FuturesTrader
+from trading_intel.performance.report import build
 from trading_intel.risk_management.models import RiskProfile
 from trading_intel.trade_signals.baseline import BaselineDecision
+from trading_intel.trade_signals.exchange_accounts import DEMO
 from trading_intel.trade_signals.portfolio import EXCHANGE_DEMO_PROFILE, PLAN_PROFILE
 from trading_intel.trade_signals.service import Setup, StrategyIdentity
 
 pytestmark = pytest.mark.integration
 
 world = flow.world  # The trading flow's fixture: one coin, a live book and an owner.
+
+# D053's limits: 2% a trade, positions up to 3x, a 20% loss stop. The tests written for them
+# check mechanisms that do not depend on the size; D058's own limits have tests further down.
+TWO_PERCENT = RiskProfile.model_validate(
+    {
+        **PLAN_PROFILE.model_dump(),
+        "max_risk_fraction": D("0.02"),
+        "max_total_exposure_fraction": D(3),
+        "max_total_loss_fraction": D("0.2"),
+    }
+)
 
 
 async def demo_account(world: World, limits: RiskProfile = PLAN_PROFILE) -> Account:
@@ -199,6 +214,38 @@ async def test_a_daily_trend_position_on_binance_trails_its_stop(world: World) -
     assert sum(1 for r in stored if r["cancel"] == "algoOrder") == 1
 
 
+async def test_a_binance_trade_one_and_a_half_r_up_locks_one_r_beyond_its_fill(
+    world: World,
+) -> None:
+    """D066. Planned at 100 with its stop at 98, so 1R is 2; Binance filled it at 100.10. The
+    lock waits for a mark of 103.10, moves the stop to 102.10 once, and then holds."""
+    account, _ = await run(world, FakeGateway(filled=None))
+    symbol = world.instrument.symbol
+    stop = {"symbol": symbol, "orderType": "STOP_MARKET", "algoId": 4, "triggerPrice": "98.00"}
+    repository = ExchangeRepository(world.signals._rules._engine)
+
+    async def lock(mark: str) -> tuple[int, FakeGateway]:
+        held = {
+            "symbol": symbol, "positionAmt": "0.5", "entryPrice": "100.10", "notional": "50",
+            "markPrice": mark,
+        }  # fmt: skip
+        exchange = FakeGateway(positions=[held], algo=[stop])
+        moved = await world.signals.lock_exchange_profits(
+            world.provider_id, account, FuturesTrader(exchange), repository,
+            {symbol: world.instrument},
+        )  # fmt: skip
+        return moved, exchange
+
+    moved, exchange = await lock("103.09")
+    assert moved == 0 and exchange.calls == [], "not yet 1.5R beyond the fill"
+    moved, exchange = await lock("103.10")
+    assert moved == 1
+    assert exchange.calls == [("cancel one", 4), ("STOP_MARKET", symbol, "SELL", D("102.10"), None)]
+    assert (await repository.stops(account.id))[symbol][0] == D("102.10")
+    moved, exchange = await lock("105")
+    assert moved == 0 and exchange.calls == [], "the stop already locks 1R"
+
+
 async def test_only_the_daily_trend_trails_on_binance(world: World) -> None:
     account = await demo_account(world)
     repository = ExchangeRepository(world.signals._rules._engine)
@@ -209,18 +256,20 @@ async def test_only_the_daily_trend_trails_on_binance(world: World) -> None:
     assert exchange.calls == []
 
 
-async def test_each_15m_close_asks_both_15m_strategies(world: World) -> None:
-    """docs/35: the 4H gap and 15M CHoCH strategy joined the money plan beside the 15M rule."""
+async def test_each_15m_close_asks_every_15m_strategy(world: World) -> None:
+    """docs/35: the 4H gap and 15M CHoCH strategy joined the money plan beside the 15M rule.
+    The 15M rule's loose copy joined in D059, and the owner switched it off in D070 after it
+    lost in docs/42, so it is no longer asked."""
     close = NOW.replace(minute=44, second=59, microsecond=999000)  # A 15M close only.
     setups, missing = await world.signals.plan_setups(world.provider_id, [world.instrument], close)
-    # The test world stores no 15M or 4H candles, so both strategies report the coin missing.
+    # The test world stores no 15M or 4H candles, so both report the coin missing.
     assert setups == []
     assert missing == [f"{world.instrument.symbol} 15m"] * 2
 
 
 async def test_the_owners_binance_limits_risk_two_percent_of_the_budget(world: World) -> None:
     """D053: the daily trend's full share is 2% of the 100 USDT budget."""
-    _, outcomes = await run(world, FakeGateway(filled=None), limits=EXCHANGE_DEMO_PROFILE)
+    _, outcomes = await run(world, FakeGateway(filled=None), limits=TWO_PERCENT)
     assert outcomes[0].approved
     [row] = await assessments()
     assert row["name"] == "daily_trend"
@@ -230,7 +279,7 @@ async def test_the_owners_binance_limits_risk_two_percent_of_the_budget(world: W
 async def test_the_loss_stop_holds_until_the_owner_sets_new_limits(world: World) -> None:
     """D053: 20 USDT lost from the 100 USDT budget stops the bot, and a recovery does not
     restart it. Only a new profile version, the owner's next decision, does."""
-    owner = EXCHANGE_DEMO_PROFILE
+    owner = TWO_PERCENT
     await run(world, FakeGateway(equity="5000"), signals=False, limits=owner)
     account, outcomes = await run(world, FakeGateway(equity="4980"), limits=owner)
     [stopped] = outcomes
@@ -262,15 +311,13 @@ async def test_the_loss_stop_holds_until_the_owner_sets_new_limits(world: World)
 async def test_a_trade_is_shrunk_so_its_stop_cannot_pass_the_loss_stop(world: World) -> None:
     """The budget began at 5,000 on Binance yesterday and starts today 19 USDT down, at 81. Only
     1 USDT is left above the 80 USDT stop, so the trend risks at most 1, not 2% (1.62)."""
-    account = await demo_account(world, EXCHANGE_DEMO_PROFILE)
+    account = await demo_account(world, TWO_PERCENT)
     await rows(
         f"""INSERT INTO exchange_equity_days (account_id, day, equity) VALUES
             ('{account.id}', '{NOW.date() - timedelta(days=1)}', 5000),
             ('{account.id}', '{NOW.date()}', 4981)"""
     )
-    _, outcomes = await run(
-        world, FakeGateway(equity="4981", filled=None), limits=EXCHANGE_DEMO_PROFILE
-    )
+    _, outcomes = await run(world, FakeGateway(equity="4981", filled=None), limits=TWO_PERCENT)
     assert outcomes[0].approved
     [row] = await assessments()
     assert row["name"] == "daily_trend"
@@ -293,7 +340,7 @@ async def test_a_limit_signal_waits_on_binance_with_its_stop_until_it_expires(
 ) -> None:
     """D054: the gap strategy's limit entry is sent as GTD to its signal's expiry, with a
     reduce-only stop for the full size and its targets, all before it fills."""
-    account = await demo_account(world, EXCHANGE_DEMO_PROFILE)
+    account = await demo_account(world, TWO_PERCENT)
     exchange = FakeGateway()
     repository = ExchangeRepository(world.signals._rules._engine)
     [outcome] = await world.signals.run_exchange_plan(
@@ -319,7 +366,7 @@ async def test_a_waiting_entry_takes_its_coin_and_counts_its_risk(world: World) 
         "origQty": "1", "executedQty": "0", "reduceOnly": False, "clientOrderId": "ati-w-entry",
     }  # fmt: skip
     exchange = FakeGateway(entries=[waiting])
-    _, outcomes = await run(world, exchange, limits=EXCHANGE_DEMO_PROFILE)
+    _, outcomes = await run(world, exchange, limits=TWO_PERCENT)
     reasons = {o.reasons for o in outcomes}
     assert reasons == {("a limit entry on this coin is waiting on Binance",)}
     assert await assessments() == [] and exchange.calls == []
@@ -340,7 +387,7 @@ async def test_every_strategy_trades_on_binance_at_its_share_of_two_percent(
 ) -> None:
     """The owner's request on 2026-11-11: every strategy trades on Binance demo, each at its
     evidence share of the 2% (D053, D054). The untested news move gets the smallest (D056)."""
-    account = await demo_account(world, EXCHANGE_DEMO_PROFILE)
+    account = await demo_account(world, TWO_PERCENT)
     identity = {
         "daily_trend": TREND,
         "pattern_breakout": PATTERN,
@@ -383,10 +430,160 @@ async def test_the_news_is_stored_beside_a_signal_and_never_changes_the_trade(
 ) -> None:
     """D055: a long with bearish news still trades at its full share; only the record differs."""
     world.signals._news = news
-    _, outcomes = await run(world, FakeGateway(filled=None), limits=EXCHANGE_DEMO_PROFILE)
+    _, outcomes = await run(world, FakeGateway(filled=None), limits=TWO_PERCENT)
     assert outcomes[0].approved
     [row] = await assessments()
     assert D("1.96") < row["max_account_risk"] <= D(2), "the same 2% as without news"
     [recorded] = await rows("SELECT news_alignment, news_context FROM trade_recommendations")
     assert recorded["news_alignment"] == stored
     assert (recorded["news_context"] is None) == (stored == "unavailable")
+
+
+async def test_binance_fills_become_completed_trades_with_strategy_r_fees_and_funding(
+    world: World,
+) -> None:
+    """D057: the worker copies Binance's own fills and funding; the report rebuilds the trade,
+    traced to the bot's entry by Binance's order ID. A second copy adds nothing."""
+    exchange = FakeGateway(filled=None)
+    account, outcomes = await run(world, exchange, limits=TWO_PERCENT)
+    assert outcomes[0].approved
+    symbol = world.instrument.symbol
+    [entry] = await rows(
+        "SELECT response->>'orderId' AS id, created_at FROM exchange_orders WHERE kind = 'entry'"
+    )
+    sent = entry["created_at"]  # Stored at the database's own time, not the test's clock.
+    at = int(sent.timestamp() * 1000)
+    hour = 3_600_000
+    exchange.fills = [
+        {"symbol": symbol, "id": 1, "orderId": int(entry["id"]), "side": "BUY", "price": "100",
+         "qty": "1", "realizedPnl": "0", "commission": "0.05", "commissionAsset": "USDT",
+         "maker": False, "time": at + 1000},
+        {"symbol": symbol, "id": 2, "orderId": 99, "side": "SELL", "price": "104", "qty": "1",
+         "realizedPnl": "4", "commission": "0.05", "commissionAsset": "USDT", "maker": False,
+         "time": at + 2 * hour},
+    ]  # fmt: skip
+    exchange.funding = [
+        {"symbol": symbol, "income": "-0.01", "asset": "USDT", "time": at + hour, "tranId": 5}
+    ]
+    repository = ExchangeRepository(world.signals._rules._engine)
+    loop = TradingLoop(
+        world.signals, None, world.records, EMAIL, world.provider_id,  # type: ignore[arg-type]
+        {world.instrument.id: world.instrument}, FixedClock(sent + timedelta(hours=3)),
+        exchanges=[ExchangeLink(DEMO, FuturesTrader(exchange), repository)],
+    )  # fmt: skip
+    await loop._check_exchange(loop._exchanges[0], sent + timedelta(hours=3))
+    fills, funding, entries = await repository.history(account.id)
+    assert len(fills) == 2 and len(funding) == 1
+    report = build(fills, funding, entries, D(100), sent + timedelta(hours=3), "all")
+    [trade] = report.trades
+    assert trade.strategy == "daily_trend" and trade.side == "LONG"
+    assert trade.net == D("3.89"), "4 profit, 0.10 fees, 0.01 funding"
+    assert trade.r is not None and D("1.9") < trade.r < D("2.0"), "about 2% of 100 at risk"
+    assert report.summary.win_rate == 1 and report.not_from_bot == 0
+    assert report.curve.points[-1][1] == D("103.89")
+    again = await repository.store_fills(account.id, exchange.fills)
+    assert again == 0, "Binance's IDs keep each fill once"
+
+
+async def wide_trend_setup(world: World) -> Setup:
+    """A daily trend long with its stop 15% away and targets at 2R to 4R."""
+    setup = await plan_setup(world, TREND, "85.00")
+    wide = proposal(stop=D("85.00"), targets=(D("130.00"), D("145.00"), D("160.00")))
+    decision = BaselineDecision(Action.BUY, NOW, ("test trend",), proposal=wide, setup_atr=D(1))
+    return Setup(world.instrument, setup.rules, decision, TREND, Timeframe.D1)
+
+
+async def plan_once(
+    world: World,
+    exchange: FakeGateway,
+    setups: list[Setup],
+    limits: RiskProfile = EXCHANGE_DEMO_PROFILE,
+) -> Any:
+    account = await demo_account(world, limits)
+    repository = ExchangeRepository(world.signals._rules._engine)
+    return await world.signals.run_exchange_plan(
+        world.provider_id, NOW, account, setups, FuturesTrader(exchange), repository
+    )
+
+
+async def test_ten_percent_trades_in_full_when_its_stop_fits_the_position_cap(
+    world: World,
+) -> None:
+    """D058: 10% of 100 USDT at a 15% stop is a position of about 66 USDT, within 80%."""
+    [outcome] = await plan_once(world, FakeGateway(filled=None), [await wide_trend_setup(world)])
+    assert outcome.approved, outcome.reasons
+    [row] = await assessments()
+    assert D("9.6") < row["max_account_risk"] <= D(10) and D(row["share"]) == D(1)
+
+
+async def test_a_tight_stop_is_shrunk_to_fit_80_percent_rather_than_refused(world: World) -> None:
+    """D058: 10% at a 2% stop would be a 465 USDT position. The plan shrinks it to fit."""
+    setup = await plan_setup(world, TREND, "98.00")
+    [outcome] = await plan_once(world, FakeGateway(filled=None), [setup])
+    assert outcome.approved, outcome.reasons
+    [row] = await rows(
+        "SELECT a.notional, a.max_account_risk, a.inputs->>'risk_share' AS share, "
+        "a.inputs->>'evidence_share' AS evidence FROM risk_assessments a"
+    )
+    assert row["notional"] <= D(80) and row["notional"] > D(75), "the room under the cap"
+    assert D(1) < row["max_account_risk"] < D(2), "about 80 x 2%, not 10"
+    assert D(row["share"]) < D("0.2") and D(row["evidence"]) == D(1)
+
+
+async def test_the_loss_stop_can_follow_the_highest_equity(world: World) -> None:
+    """D058: after a closed win takes equity to 120, the stop sits at 96, not at 80."""
+    following = EXCHANGE_DEMO_PROFILE.model_copy(update={"loss_stop_from_high": True})
+    exchange = FakeGateway(filled=None)
+    account, _ = await run(world, exchange, limits=following)
+    [entry] = await rows(
+        "SELECT response->>'orderId' AS id, created_at FROM exchange_orders WHERE kind = 'entry'"
+    )
+    at = int(entry["created_at"].timestamp() * 1000)
+    repository = ExchangeRepository(world.signals._rules._engine)
+    await repository.store_fills(
+        account.id,
+        [
+            {"symbol": world.instrument.symbol, "id": 1, "orderId": int(entry["id"]),
+             "side": "BUY", "price": "100", "qty": "1", "realizedPnl": "0", "commission": "0",
+             "commissionAsset": "USDT", "maker": False, "time": at + 1000},
+            {"symbol": world.instrument.symbol, "id": 2, "orderId": 99, "side": "SELL",
+             "price": "120", "qty": "1", "realizedPnl": "20", "commission": "0",
+             "commissionAsset": "USDT", "maker": False, "time": at + 2000},
+        ],
+    )  # fmt: skip
+    _, outcomes = await run(world, FakeGateway(equity="4995"), limits=following)
+    assert outcomes[0].reasons[0].startswith("stopped by its loss stop at")
+    [kept] = await rows("SELECT equity, floor FROM exchange_loss_stops")
+    assert kept["floor"] == D(96) and kept["equity"] == D(95)
+
+
+# D061: room for 300% of equity, no single position above 100%, as on Binance demo from
+# profile version 9, with D059's 5% a trade.
+ROOM_FOR_THREE = RiskProfile.model_validate(
+    {
+        **EXCHANGE_DEMO_PROFILE.model_dump(),
+        "max_risk_fraction": D("0.05"),
+        "max_total_exposure_fraction": D(3),
+        "max_position_fraction": D(1),
+        "max_leverage": D(5),
+    }
+)
+
+
+async def test_one_trade_is_held_to_the_largest_position_and_opens_at_the_rooms_leverage(
+    world: World,
+) -> None:
+    """D061: 5% of 100 USDT at a 2% stop would be a 250 USDT position. It is shrunk to 100%
+    of equity, and opens at x3, so two more like it would still fit the margin."""
+    setup = await plan_setup(world, TREND, "98.00")
+    exchange = FakeGateway(filled=None)
+    [outcome] = await plan_once(world, exchange, [setup], ROOM_FOR_THREE)
+    assert outcome.approved, outcome.reasons
+    [row] = await rows(
+        "SELECT a.notional, a.max_account_risk, a.inputs->>'leverage' AS leverage, "
+        "a.inputs->>'risk_share' AS share FROM risk_assessments a"
+    )
+    assert D(95) < row["notional"] <= D(100), "100% of equity at most"
+    assert row["leverage"] == "3" and ("leverage", world.instrument.symbol, 3) in exchange.calls
+    assert D("1.5") < row["max_account_risk"] < D("2.5"), "about 100 x 2%, not the full 5"
+    assert D(row["share"]) < D("0.45")

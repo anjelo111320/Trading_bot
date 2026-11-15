@@ -1,8 +1,10 @@
-"""Signed access to Binance USDⓈ-M Futures **demo trading**, the only exchange this code reaches.
+"""Signed access to Binance USDⓈ-M Futures: demo trading (D048), or the owner's real account (D060).
 
-The host is fixed. A client pointed anywhere else is refused, so real money cannot be reached
-without changing this file (D048). Orders are never retried here: a retry could double a
-position, so a failure goes back to the caller, which reconciles with Binance first.
+Each venue's host is fixed, and a client pointed anywhere else is refused. Every request is
+checked against a fixed list of USDⓈ-M futures endpoints before it is sent, so this code can
+never read or move Spot, Funding or any other wallet, whatever a key would allow. Orders are
+never retried here: a retry could double a position, so a failure goes back to the caller,
+which reconciles with Binance first.
 """
 
 import base64
@@ -23,6 +25,7 @@ from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
 from trading_intel.core.errors import AppError, ConfigurationError
 
 DEMO_REST_URL: Final = "https://demo-fapi.binance.com"
+LIVE_REST_URL: Final = "https://fapi.binance.com"
 RECV_WINDOW_MS: Final = 5000
 TIMEOUT_SECONDS: Final = 10.0
 # Codes that mean the setting was already as asked. They are not failures.
@@ -32,6 +35,42 @@ CLOCK_AHEAD: Final = -1021
 Method = Literal["GET", "POST", "DELETE"]
 OrderSide = Literal["BUY", "SELL"]
 AlgoType = Literal["STOP_MARKET", "TAKE_PROFIT_MARKET"]
+Venue = Literal["demo", "live"]
+
+HOSTS: Final[dict[Venue, str]] = {"demo": DEMO_REST_URL, "live": LIVE_REST_URL}
+# Every request the gateway may send, by method and path: the futures account, its positions
+# and its orders, and nothing else (D060). A request for any other path is refused before it
+# leaves this computer.
+FUTURES_PATHS: Final[frozenset[tuple[Method, str]]] = frozenset(
+    {
+        ("GET", "/fapi/v1/time"),
+        ("GET", "/fapi/v3/account"),
+        ("GET", "/fapi/v3/positionRisk"),
+        ("GET", "/fapi/v1/positionSide/dual"),
+        ("GET", "/fapi/v1/multiAssetsMargin"),
+        ("POST", "/fapi/v1/marginType"),
+        ("POST", "/fapi/v1/leverage"),
+        ("POST", "/fapi/v1/order"),
+        ("GET", "/fapi/v1/order"),
+        ("DELETE", "/fapi/v1/order"),
+        ("GET", "/fapi/v1/openOrders"),
+        ("POST", "/fapi/v1/algoOrder"),
+        ("DELETE", "/fapi/v1/algoOrder"),
+        ("GET", "/fapi/v1/openAlgoOrders"),
+        ("GET", "/fapi/v1/userTrades"),
+        ("GET", "/fapi/v1/income"),
+    }
+)
+# Demo trading may also switch the position mode, and cancel every stop and target on a coin
+# at once. On the real account the owner's own orders can sit on a coin, so the bot cancels
+# only its own, one at a time, and never changes how the account holds positions.
+DEMO_ONLY_PATHS: Final[frozenset[tuple[Method, str]]] = frozenset(
+    {("POST", "/fapi/v1/positionSide/dual"), ("DELETE", "/fapi/v1/algoOpenOrders")}
+)
+ALLOWED_PATHS: Final[dict[Venue, frozenset[tuple[Method, str]]]] = {
+    "demo": FUTURES_PATHS | DEMO_ONLY_PATHS,
+    "live": FUTURES_PATHS,
+}
 
 
 class BinanceError(AppError):
@@ -50,6 +89,13 @@ class BinanceHaltError(BinanceError):
     """Rate limit, IP ban, location block or WAF. Nothing more may be sent for a while."""
 
     code = "binance_halt"
+
+
+class PathRefusedError(AppError):
+    """A request outside the futures endpoints the gateway may use. It was never sent."""
+
+    code = "exchange_path_refused"
+    status_code = 500
 
 
 def _text(value: object) -> str:
@@ -74,7 +120,7 @@ class HmacSigner:
 
     def __init__(self, secret: str) -> None:
         if not secret:
-            raise ConfigurationError("the Binance demo secret is not set")
+            raise ConfigurationError("the Binance secret is not set")
         self._secret = secret
 
     def __call__(self, query: str) -> str:
@@ -93,7 +139,7 @@ class Ed25519Signer:
     @classmethod
     def from_file(cls, path: Path) -> Ed25519Signer:
         if not path.is_file():
-            raise ConfigurationError(f"no private key at {path}; run binance_demo keygen")
+            raise ConfigurationError(f"no private key at {path}; run the keygen command")
         loaded = serialization.load_pem_private_key(path.read_bytes(), password=None)
         if not isinstance(loaded, Ed25519PrivateKey):
             raise ConfigurationError(f"{path} is not an Ed25519 private key")
@@ -132,7 +178,7 @@ def signer_for(secret: str, key_file: Path) -> Signer:
         return Ed25519Signer.from_file(key_file)
     if secret:
         return HmacSigner(secret)
-    raise ConfigurationError("no Binance demo private key file or secret is set")
+    raise ConfigurationError(f"no Binance private key at {key_file} and no secret is set")
 
 
 class BinanceFuturesGateway:
@@ -142,14 +188,16 @@ class BinanceFuturesGateway:
         signer: Signer,
         client: httpx.AsyncClient | None = None,
         now_ms: Callable[[], int] = lambda: int(time.time() * 1000),
+        venue: Venue = "demo",
     ) -> None:
         if not api_key:
-            raise ConfigurationError("the Binance demo API key is not set")
-        self._client = client or httpx.AsyncClient(base_url=DEMO_REST_URL, timeout=TIMEOUT_SECONDS)
-        if str(self._client.base_url).rstrip("/") != DEMO_REST_URL:
-            raise ConfigurationError(
-                f"only Binance demo trading at {DEMO_REST_URL} is allowed (D048)"
-            )
+            raise ConfigurationError(f"the Binance {venue} API key is not set")
+        host = HOSTS[venue]
+        self._client = client or httpx.AsyncClient(base_url=host, timeout=TIMEOUT_SECONDS)
+        if str(self._client.base_url).rstrip("/") != host:
+            raise ConfigurationError(f"only {host} is allowed for Binance {venue} (D048, D060)")
+        self.venue = venue
+        self._allowed = ALLOWED_PATHS[venue]
         self._key = api_key
         self._signer = signer
         self._now_ms = now_ms
@@ -158,7 +206,13 @@ class BinanceFuturesGateway:
     async def aclose(self) -> None:
         await self._client.aclose()
 
+    def server_ms(self) -> int:
+        """Binance's clock, as far as the last sync knows it."""
+        return self._now_ms() + (self._offset_ms or 0)
+
     async def _send(self, method: Method, path: str, query: str, headers: Mapping[str, str]) -> Any:
+        if (method, path) not in self._allowed:
+            raise PathRefusedError(f"{method} {path} is not a futures endpoint the bot may use")
         response = await self._client.request(
             method, f"{path}?{query}" if query else path, headers=headers
         )
@@ -234,6 +288,11 @@ class BinanceFuturesGateway:
         body = await self._signed("GET", "/fapi/v1/positionSide/dual")
         return not body["dualSidePosition"]
 
+    async def multi_assets_mode(self) -> bool:
+        """True when other assets count as margin, so the account's totals are not USDT alone."""
+        body = await self._signed("GET", "/fapi/v1/multiAssetsMargin")
+        return bool(body["multiAssetsMargin"])
+
     async def use_one_way_mode(self) -> None:
         """One position per coin, as the risk engine and the paper accounts assume."""
         await self._setting("/fapi/v1/positionSide/dual", {"dualSidePosition": False})
@@ -307,6 +366,53 @@ class BinanceFuturesGateway:
     async def cancel_order(self, symbol: str, client_id: str) -> dict[str, Any]:
         result: dict[str, Any] = await self._signed(
             "DELETE", "/fapi/v1/order", {"symbol": symbol, "origClientOrderId": client_id}
+        )
+        return result
+
+    async def user_trades(
+        self,
+        symbol: str,
+        *,
+        from_id: int | None = None,
+        start_ms: int | None = None,
+        end_ms: int | None = None,
+    ) -> list[dict[str, Any]]:
+        """The account's fills on one coin, oldest first, at most 1,000 a call.
+
+        Binance takes either `from_id` or a window of at most 7 days, and keeps 3 months.
+        """
+        result: list[dict[str, Any]] = await self._signed(
+            "GET",
+            "/fapi/v1/userTrades",
+            {
+                "symbol": symbol,
+                "fromId": from_id,
+                "startTime": None if from_id is not None else start_ms,
+                "endTime": None if from_id is not None else end_ms,
+                "limit": 1000,
+            },
+        )
+        return result
+
+    async def funding_income(self, start_ms: int, end_ms: int) -> list[dict[str, Any]]:
+        """Funding paid or received on every coin in the window, at most 1,000 a call."""
+        result: list[dict[str, Any]] = await self._signed(
+            "GET",
+            "/fapi/v1/income",
+            {"incomeType": "FUNDING_FEE", "startTime": start_ms, "endTime": end_ms, "limit": 1000},
+        )
+        return result
+
+    async def transfer_income(self, start_ms: int, end_ms: int) -> list[dict[str, Any]]:
+        """Money moved into the futures wallet (positive) or out of it, at most 1,000 a call.
+
+        Binance reports these as the futures wallet's own income rows, so reading them needs
+        no access to any other wallet.
+        """
+        result: list[dict[str, Any]] = await self._signed(
+            "GET",
+            "/fapi/v1/income",
+            {"incomeType": "TRANSFER", "startTime": start_ms, "endTime": end_ms, "limit": 1000},
         )
         return result
 

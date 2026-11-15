@@ -149,7 +149,7 @@ Consequences: Indicator outputs are converted deliberately at the boundary and n
 Revisit conditions: none expected.
 
 ### D016: Hard-coded paper mode and no exchange keys
-Date: 2026-11-02. Status: Adopted. Amended on 2026-11-10 by D048: Binance demo trading keys and orders exist, with test funds only. Real money is still unrepresentable. Amended on 2026-11-11 by D052: one read-only key from the owner's main Binance account, used only for Binance's announcement stream, and refused if it can trade, withdraw or transfer.
+Date: 2026-11-02. Status: Adopted. Amended on 2026-11-10 by D048: Binance demo trading keys and orders exist, with test funds only. Real money is still unrepresentable. Amended on 2026-11-11 by D052: one read-only key from the owner's main Binance account, used only for Binance's announcement stream, and refused if it can trade, withdraw or transfer. **Replaced for the owner's futures wallet on 2026-11-13 by D060**: one real key, for USDⓈ-M futures only, refused if it can withdraw or transfer, and trading only once the owner arms it. `TradingMode` still has one member: it describes the paper accounts.
 Context: A setting that can say "live" can be changed by mistake or by an attacker.
 Options considered: a `TRADING_MODE` setting; a mode with only one possible value.
 Decision: `TradingMode` has one member, `PAPER`. No exchange credentials exist anywhere, and no order path is written.
@@ -481,6 +481,398 @@ Consequences:
 - Python's setup score in `trade_signals/quality.py` is still a checklist of mostly fixed numbers, and it sets no size.
 - Earlier reports for docs/27 and docs/29 were run without that funding, and are kept as they were, with corrected figures beside them.
 Revisit conditions: none for this version. A changed score is a new trial, tested on forward paper results.
+
+### D073: The profit lock tested on history; it stays, and switching it off is recommended
+Date: 2026-11-15.
+Status: Run at the owner's request ("do step 3, 4, 5") by the rules pre-registered in [43-PROFIT-LOCK-STUDY.md](43-PROFIT-LOCK-STUDY.md) at 03:27 UTC, and applied by them. The owner was away and had given permission to make the decisions.
+Decision:
+- **The decision rule changes nothing.** The lock (D066) stays on every strategy, because no strategy's own 95% interval is entirely below zero.
+- **The results, as change in R per trade from the lock:**
+  - the daily trend -0.117 (-0.25 to 0.00);
+  - the 1H pattern -0.045;
+  - the 4H gap -0.015;
+  - the 15M rule -0.042 (-0.09 to +0.01);
+  - **all four pooled -0.050, with an interval of -0.086 to -0.015, entirely below zero.**
+Consequences:
+- **The pooled result is reported to the owner with a recommendation to switch the lock off.** That is their call, because the pre-registered rule decides by strategy.
+- **All 6,093 replays with no rule matched the engine.** On the 39% of trades where the lock acted, it kept 724.7R and gave up 894.1R.
+Revisit conditions: the owner switches the lock off or changes its values, which is a new trial.
+
+### D072: A cap on each direction, set at 60% on the real account; exit advice stays shadow; demo stays off
+Date: 2026-11-15.
+Status: Done at the owner's request ("do step 3"), while they were away. They said "pls do not ask any permissions just ask classification questions and do… I give you all the permissions to edit the code now". Each choice is the safe one and can be reversed. The owner had earlier given standing permission to choose the safer design when money is at risk (D067).
+Decision:
+- **A limit on one direction (`max_side_exposure_fraction`).**
+  - All longs together, or all shorts together, waiting entries included, at most this share of equity.
+  - A trade past it is refused as `DIRECTION_EXPOSURE_EXCEEDED`, and the Binance plan shrinks it to the room left on its side.
+  - It is set on the Settings tab ("One direction"), saved as a profile version like every limit, and blank means none.
+- **Set at 60% on the real account,** as profile version 8 through the dashboard's own limits route as the owner, audit-logged. Every other limit is as the owner left it in version 7:
+  - 1% a trade and 5% open risk;
+  - positions within 100%, with the largest trade at 40%, at up to x5;
+  - a 3% daily loss limit and a 10% loss stop from the highest equity.
+  - Demo and the paper accounts have no direction cap.
+- **Claude's exit advice stays in shadow mode** (D051). Of 50 scored trades, only 4 got advice other than "hold", and those 4 lost a mean of 0.161R against the trades' own exits.
+- **Binance demo stays switched off.** The owner switched it off themselves (D064), and nothing here needed it on.
+Consequences:
+- **Before this, the real account held four shorts worth 93% of equity** (2026-11-14). At 60%, a second big trade on the same side would have been shrunk.
+- **A jump through every stop now costs at most 60% times the jump, instead of 100%.**
+Revisit conditions: the owner changes the cap on the Settings tab, or wants advice acted on.
+
+### D071: The risk engine reads the freshest quote
+Date: 2026-11-15.
+Status: Fixed at the owner's request ("do step 5"). A bug fix inside D044's freshness rule. The 30-second data-age limit is unchanged.
+Context:
+- **The ingestor saves a minute's top of book only once the minute has ended,** at its next 5-second tick. At busy closes the save ran up to 26 seconds late.
+- **So signals decided late in a minute were refused as `DATA_STALE`** while live data was at hand:
+  - at the daily close, the ten coins are decided one by one, and the later ones came 32 to 38 seconds into the minute;
+  - at busy hourly closes, signals were refused 12 to 18 seconds into the minute.
+- **On the real account, 6 of its first 86 signals were refused this way,** one of them for no other reason.
+Decision:
+- **The signal service also reads the ingestor's live quote,** which is published to Redis a few times a second and kept for a minute. When it is fresher than the saved row, its time, bid and ask are used.
+- **If Redis cannot be read, the saved rows decide alone,** as before.
+Consequences: stale refusals now mean the data really is stale.
+
+### D070: The 15M rule's loose copy switched off; the 15M rule kept
+Date: 2026-11-15.
+Status: The owner's choices on the results of docs/42 (D069), each the recommended option. **Amends D059**, which added the loose copy.
+Decision:
+- **The loose copy (`trend_break_loose`) is switched off on every coin,** in the money plan and on both Binance accounts. It lost -0.109R a trade on ten coins pooled, with a 95% interval of -0.18R to -0.04R.
+  - The money plan no longer asks it at a 15M close, so it records no signals.
+  - Its code stays, named in `SWITCHED_OFF`, so it can be brought back.
+- **The 15M rule (`trend_break_baseline`) keeps trading** at its untested quarter share, as the pre-registered rule says. It came to -0.046R a trade, with an interval of -0.13R to +0.04R, on 15-minute fills.
+- **The Coins page (D068) shows the loose copy as switched off on every coin.**
+Consequences: the bot makes fewer 15M signals.
+Revisit conditions: forward paper results or a test on 1-minute history show either rule differently.
+
+### D069: The new coins and the 15M rule tested; four pairs left out
+Date: 2026-11-14.
+Status: Run at the owner's request ("do it now") by the rules pre-registered in [42-NEW-COIN-STUDY.md](42-NEW-COIN-STUDY.md) at 14:07 UTC, and applied by them. The loose copy's switch-off waits for the owner, as that rule says.
+Decision:
+- **Left out (`LEFT_OUT`)** in the money plan and on both Binance accounts, each having lost with 95% confidence:
+  - the daily trend and the 1H pattern on HYPE (on 6 and 13 trades);
+  - the loose copy of the 15M rule on DOGE and HYPE.
+- **The Coins page (D068) shows every new result.** Its backtest table now holds all 50 published rows, checked against the reports by a test.
+- **Shares of risk are unchanged.**
+Consequences:
+- **The loose copy:** -0.109R a trade on ten coins, with a 95% interval of -0.18R to -0.04R. It is recommended to the owner to switch it off on every coin.
+- **The 15M rule itself:** -0.046R, with an interval of -0.13R to +0.04R. It keeps trading at its untested quarter share. Both were tested on 15-minute fills, which can only lower their results, and over two years.
+- **1000PEPE's live losses:** its 0 of 5 fits bad luck. On two years of history the 15M rule made +0.09R a trade on PEPE.
+Revisit conditions: the owner decides on the loose copy; or 1-minute history before the holdout is loaded for more coins.
+
+### D068: A coin scorecard on the dashboard
+Date: 2026-11-14.
+Status: Built at the owner's request ("start step 2"). They had asked for a score for each coin, because "some coins entries are kinda wrong", with Claude Sonnet adjusting parameters daily. Step 1 is the coin study (docs/42). This is step 2, built by Python alone. Step 3, Claude reviewing the scorecard in shadow mode, is not built.
+Decision:
+- **A Coins page (`/coins`) and `GET /api/v1/coins/scorecard`,** read-only. It has one row per coin the bot trades, and each row opens to every strategy on that coin.
+- **Backtest evidence:** each strategy's published result on the coin (docs/33, docs/35).
+  - The numbers are copied into `performance/scorecard.py`, and a test checks them row for row against the reports.
+  - A pair no study ran says why it is untested.
+- **Live trades:** the trades signals opened on every paper account and both Binance accounts.
+  - A setup traded on several accounts counts once.
+  - Each shows its wins, and the mean of the net result over the planned risk (R).
+- **Entry quality,** for each entry that has a full hour of 1-minute candles after its fill:
+  - how much worse than planned it filled;
+  - how far the price went against it in that hour, in R;
+  - how many went 0.5R or more against.
+  - The fill's own minute is left out, as in docs/37.
+- **The coin now:**
+  - the 1H ATR(14) over the price;
+  - the spread from the latest book within 10 minutes;
+  - data gaps not yet repaired;
+  - today's signals on the real account, or demo before it existed, with the most common refusal.
+Consequences:
+- **Nothing reads it to trade.** No trade, size or limit uses the scorecard.
+- **First readings, 2026-11-14 at 14:42 UTC:**
+  - **1000PEPE:** 0 of 5 trades won, a mean of -1.00R. Its entries went a median 0.55R against in their first hour, and 3 of the 5 went 0.5R or more. All were the 15M rule or its loose copy.
+  - **BTC:** 3 of 3 won, with entries 0.07R against.
+  - **BNB:** one data gap was open, and all 8 of its signals that day were refused as DATA_INCOMPLETE.
+  - **BTC's 10 signals that day** were refused as QTY_BELOW_MIN, because the real account is too small for Binance's smallest BTC order.
+- **Live counts are small.** The page says a coin's live result is mostly luck until it has dozens of trades.
+Revisit conditions: the docs/42 study reports, and its results join the table; or Claude's shadow review needs a daily snapshot.
+
+### D067: A moved stop frees no room for more trades
+Date: 2026-11-14.
+Status: Done at the owner's request ("you can edit into a best way, if it could lose my money"), after the research report of 2026-11-14 warned about D066's risk count. **Amends D066**, under which a stop past the entry counted as no open risk.
+Context:
+- **D066 let a lock open room for more trades.** A locked trade counted as no open risk, so it freed room under the open-risk cap for more trades in the same direction, and crypto coins rise and fall together.
+- **Stops fill at market, and a gap can pass them.**
+  - On 2025-10-10, Binance's worst one-minute drops were 5.3% on ETH, 12.4% on SOL, 21.6% on XRP, 28.6% on DOGE and 34.1% on 1000PEPE.
+  - A +1R lock on a 1.4% stop, filled at the bottom of ETH's worst minute, would have lost about 2.8R.
+- **The real account held four shorts that day,** ETH, XRP, DOGE and SOL, worth 93% of equity.
+
+Decision:
+- **On both Binance accounts, a trade's open risk never drops below what it risked at its first stop.** That is the stop the risk engine approved. Otherwise it is what the trade could lose at the stop Binance holds.
+  - A stop moved toward or past the entry, by the profit lock or the daily trend's trail, protects that trade but frees no room for another.
+  - A stop the owner moves further away counts in full, as under D066.
+- The profit lock itself is unchanged, and so are every limit and the paper accounts.
+
+Consequences:
+- After a lock, the open-risk cap stays as full as before it, so the bot opens no more trades than it would have without the lock.
+- With the owner's 100% room, positions in one direction can still reach the whole equity. A cap on each direction is an option for the owner; it is not built.
+
+Revisit conditions: a portfolio test of how to count locked trades, with a 2025-10-10 stress test, as the research report proposes; or the owner asks for locked trades to free room again.
+
+### D066: The profit lock on Binance trades, and the owner's own stops kept
+Date: 2026-11-14.
+Status: Built and live at the owner's request ("if the coin passes the profit 3% then increase leverage and put the stop loss to 2% profit, so which is take out the fund right?"). From clarifying questions with numbers, the owner chose:
+- scaled to each trade's stop, not a fixed percentage;
+- fix the risk count and keep the limits;
+- build it on real now, with no backtest first;
+- when they move a bot stop in the Binance app, keep their stop.
+
+**Amends D060**, under which only the bot's own orders counted on the real account.
+Context:
+- **A fixed +3% means a different thing for each strategy,** from the 210 signals stored by 2026-11-14:
+  - 0.29R on the daily trend, whose median stop is 10.3% away;
+  - 0.73R on the 1H pattern breakout (4.1%);
+  - 1.9R to 2.4R on the 15M and news strategies (1.2% to 1.6%).
+- **The nearest rule tested was not adopted** (docs/37, D050). Breakeven at +1R changed results by -0.023R, -0.005R and -0.073R a trade.
+- **Leverage changes only the margin a trade holds.**
+  - The owner's two real shorts held 98.6% of equity against the 100% room the owner set, so the room stopped new trades, not margin.
+  - On isolated margin, Binance frees nothing when leverage rises. The margin must be removed in a separate call, and removing it moves liquidation nearer.
+- **On 2026-11-14 at 02:11 UTC the bot closed the real SOL short at market (+0.30 USDT).**
+  - The owner had changed its stop in the Binance app.
+  - Binance refused the bot's own stop beside it with -4130, because a whole-position stop already stood.
+  - The minute check then closed the position as unprotected.
+  - The owner closed the XRP short from the app at 04:17 UTC, at +2.0%.
+
+Decision:
+- **The profit lock (`risk_management/profit_lock.py`) on both Binance accounts, at each minute check.**
+  - Once the mark price is 1.5R beyond the entry fill, the bot's stop moves to 1R beyond the fill.
+  - R is the planned entry to the first stop. The new stop is rounded to the tick that keeps a little less profit, and a stop only ever tightens.
+  - On the real ETH short (fill 1902.98, R 38.24), that is a stop at 1864.74 once the mark reaches 1845.62.
+  - The move cancels the bot's stop and places the new one, as the daily trend's trail does. It is recorded, so the minute check and the risk count read the new stop.
+  - The mark price is read once a minute, so a spike past +1.5R that turns back within the minute is missed.
+  - The paper accounts keep the strategies' own exits, for comparison.
+- **A stop past the entry counts as no risk.** D067 changed this the same day: a moved stop now counts the risk at its first stop.
+  - A Binance trade's open risk is what it loses at its stop, and zero once that stop is past the entry, as on paper. Until now the distance counted either way, so a locked or trailed stop still used the open-risk budget.
+  - The stop counted is the one Binance holds, the bot's or the owner's, else the one recorded.
+  - The owner's own positions still count at their whole value.
+- **The owner's stop is kept.**
+  - On the real account, a bot trade the owner protects with a stop of their own, one that closes the whole position, stays open.
+  - The bot restores nothing and closes nothing. It never moves or cancels the owner's stop, the profit lock and the trail included.
+  - A stop Binance refuses with -4130 closes nothing either, on both accounts.
+- **Leverage, the room, the largest trade and every other limit are unchanged.**
+
+Consequences:
+- **No backtest backs the lock.** The research of 2026-11-14 (`data/research/`, not in Git) found no study showing that a profit lock adds expected return. Under a random walk a lock changes the spread of results, not the mean, and on trend strategies stops cost money.
+- **On the daily trend the lock sits about 15% from the entry,** beside its own 10-day trail, so it should rarely act there.
+- **The lock can cut short a winner that would have reached its target, but it cannot make a loss larger.** Stops fill at market, though, so a gap can still turn a locked trade into a loss. On 2025-10-10, Binance's one-minute drops reached 5.3% on ETH and 34.1% on 1000PEPE.
+- **New worker log events:** `exchange_profit_locked`, `exchange_profit_lock_refused`, `exchange_profit_lock_failed` and `exchange_stop_already_held`.
+
+Revisit conditions: a test of the lock on 2020 to 2025 with 1-minute data, or 30 locked trades on the real account; the owner changes its values or wants it on paper.
+
+### D065: The Signals page filters, and opens an entered trade on the chart
+Date: 2026-11-13.
+Status: Built at the owner's request ("make filters in the signals tab, if a trade entered so in the table there should be ability to navigate to the chart like binance app does").
+Decision:
+- **Filters, kept in the page's address,** so a reload and Back from the chart keep them:
+  - account: real, demo, or one of the three paper accounts;
+  - coin, strategy, side, and the risk engine's decision;
+  - result: entered, open, won, lost, waiting, or not entered;
+  - period: today, 7 days, 30 days or all.
+  - The API applies them (`GET /api/v1/signals`) to at most the newest 500 matches. The page opens on the account last chosen on the Bot page, else the real one.
+- **A table, one row per signal:**
+  - The row shows its time, coin, strategy, side, the planned entry beside the filled price, the stop, the targets, the net reward to risk, the planned risk, the decision with its codes, and the result.
+  - A row opens to everything the risk engine weighed.
+  - A line above it totals the trades shown: entered, won, lost, open, and the closed trades' net. It says whether that is real money, test funds or simulated.
+- **Results come from fills, never from the plan.** Each signal now carries its `trade`: state, entry and exit times and prices, and net after fees and funding.
+  - On Binance it is the trade the signal's entry order opened, rebuilt from Binance's own fills (D057).
+  - On paper it is the simulator's position.
+  - A limit entry counts as waiting only while it is its coin's newest entry and its good-till time has not passed.
+- **The Chart link:** an entered trade's Chart link opens the Bot page on its account, coin and timeframe. A 4H or daily signal opens on 1H.
+  - The chart loads older candles until the trade is in view, then scrolls to it.
+  - It marks the entry fill with its price and the exit with its result.
+  - A bar above the chart describes the trade, with Back to signals and Clear.
+  - The Results tab's completed trades have the same Chart button.
+- A paper signal's link keeps the Binance account chosen on the Bot page, so that account's own markers stay on the chart. The bar names the paper account.
+Consequences:
+- Read-only: nothing here can place, change or close a trade, and the list of write routes is unchanged.
+- Each read rebuilds the account's trades from every stored fill, as the orders and results routes do. That is quick at today's few hundred fills.
+- On 2026-11-15 the orders table took the same waiting rule. It had shown an older, expired limit entry as waiting whenever a newer one on its coin was resting.
+Revisit conditions: the owner wants other filters, or an account's signals often pass the 500 cap.
+
+### D064: Demo trading gets the same on/off switch, and is switched off
+Date: 2026-11-13.
+Status: Done at the owner's request ("stop the demo for now (put a switch)").
+Decision:
+- **Binance demo has the switch too.** It is in its account panel on the Bot page (`PUT /api/v1/exchange-demo/arming`), and both accounts' status now carries `armed`.
+  - Demo trading is on until first switched off, as before.
+  - Its switch needs only a confirm, no password and no check, since its funds are test funds.
+  - Off stops new demo trades; open trades keep their stops and targets, and closes from the dashboard still run.
+- **Switched off at 12:40 UTC on 2026-11-13** through the dashboard's API as the owner, audit-logged. No demo position was open. The real account stayed on.
+- The paper accounts keep running, and the money plan still decides every coin for them.
+Revisit conditions: the owner switches demo back on.
+
+### D063: A switch on the dashboard turns real trading on and off
+Date: 2026-11-13.
+Status: Built at the owner's request ("put a switch to on/off the real account"). **Amends D060**, where only the terminal could arm the real account.
+Decision:
+- **The switch** sits in the real account's panel on the Bot page and shows whether real trading is on. The status reads it from the database, so a change shows at once.
+- **Off** needs only a confirm. It stops new trades at once; open trades keep their stops and targets on Binance.
+- **On** needs a confirm and the owner's dashboard password, checked as at login with the same rate limit. The API refuses it unless:
+  - the bot saved the account within the last 5 minutes;
+  - its check of the key and the account has run and found no problem.
+- **Every attempt is in the audit log:** `exchange_live_armed`, `exchange_live_disarmed`, or `exchange_live_arm_refused` for a wrong password. The route takes requests from the dashboard's origin only (`PUT /api/v1/exchange-live/arming`).
+- The terminal commands `binance_live arm` and `disarm` still work.
+Consequences:
+- Anyone with the dashboard session and the password can turn real money on. The dashboard runs on this Mac, and the password is asked again on purpose.
+- On the day it was built, the owner connected the real futures wallet (40.84 USDT, 11:51 UTC). On the Settings tab they set 5% a trade (version 3), with 5% open risk, 100% room, a 60% largest trade, up to x5, 3% daily loss, a +3% daily stop and a 10% loss stop from the highest equity. They turned real trading on at 12:01 UTC. The 3% daily loss limit caps any one trade's loss at about 1.23 USDT there.
+Revisit conditions: the dashboard is reached from anywhere but this Mac, such as on Railway (D026).
+
+### D062: Claude's daily cost limit, $0.50, shown and set on the dashboard
+Date: 2026-11-13.
+Status: Accepted by the owner ("claude should have daily limit too"), who chose the recommended options after the numbers below.
+Context:
+- A daily limit already existed: $3 for every Claude call together (news labels and exit advice), checked before each call. It was written twice in code and shown nowhere.
+- Use so far: 215 calls in three days, $0.035 in all. At most $0.022 and about 153k tokens in a day (11 Nov), on Haiku 5.5. The limit was never reached.
+Options considered: what the limit covers (Claude's cost, or a cap on Claude's actions for when it may act), and $0.50, $1 or $3 a day.
+Decision:
+- **$0.50 a day** for every Claude call together, about 25 times the busiest day so far.
+- **One setting:** kept in `ai_budgets` (migration 0022), newest row in force, append-only. The news pipeline and the exit reviews read it before every call, so a change applies at once. At the limit, calls stop until 00:00 UTC (`skipped_budget`).
+- **On the dashboard:** the Claude tab shows today's spend, calls and tokens against the limit. The Settings tab changes it: from the dashboard's origin only, from $0 to a $3 ceiling (the old limit), each change written to the audit log. $0 stops every call.
+- A cap on Claude's actions was not chosen. Claude still acts on nothing (D051).
+Consequences:
+- A runaway loop or a flood of news can cost at most about $15 a month.
+- If later work asks Claude more, such as the full trade analyst (docs/28), the limit may need raising; that is the owner's change on the Settings tab.
+Revisit conditions: the limit is reached on an ordinary day, or Claude's work grows.
+
+### D061: Room for several trades at once on Binance demo: 300% for all positions, 100% for one
+Date: 2026-11-13.
+Status: Accepted by the owner, who asked why Python "cannot put leverage" and said that money in the account should start new trades instead of depending on one. They chose both recommended options. Binance demo only; the real account is unchanged.
+Context:
+- Every Binance demo trade had used x1, and Binance never refused a leverage setting. Under D048, Python uses the lowest leverage at which the margin fits. With all positions capped at 90% of equity, x1 always fitted.
+- Leverage never changes what a stop loses or a target makes, so the limit on trades was the 90% cap, not money.
+- At 5% a trade, one trade wants a position of about 44% of equity (daily trend, median stop 11.3%), 72% (1H pattern, 3.45%) or 177% (4H gap and 15M CHoCH, 1.41%). So one or two trades filled the cap.
+- Of 47 signals assessed on Binance demo, the cap shrank 42. 40 of those were then too small for Binance's minimum order and refused; 6 traded. The 10% open-risk limit was never the reason.
+- The real account, at 1% a trade, holds positions of about 9% to 36% of equity each, so several already fit. It is unchanged.
+Decision:
+- **Binance demo profile version 9**, saved through the Settings tab's API (audit-logged), with every other limit kept from version 8:
+  - all positions together up to 300% of equity;
+  - no single position above 100% of equity.
+  The rest: 5% a trade, 10% open risk, 10% daily loss, up to x5, a 20% daily profit stop, and a 20% loss stop from the highest equity.
+- **A largest-single-position limit** (`max_position_fraction`) in the risk profile, stored with the other plan settings. The risk engine refuses a larger trade as `EXPOSURE_EXCEEDED`. The Binance plan shrinks it to fit, as it does for the total cap (D058). The Settings tab has a "Largest single trade" field; blank means no limit.
+- **The leverage a trade starts at** is the cap on all positions, rounded down, at least x1 and at most the maximum. That is x3 with 300%: three positions of 100% then fit the margin, where at x1 the first would hold almost all of it. It still rises, up to x5, if the margin does not fit. With the cap at or below 100%, it is x1 as before (D048).
+Consequences:
+- About three or four trades can be open at once on demo. Their stops together still lose at most 10% of equity.
+- Leverage x3 to x5 holds less margin and brings liquidation closer. The risk engine still refuses a trade whose liquidation is not at least one ATR beyond its stop.
+- A gap through every stop at once loses more: a 10% move against 300% of equity in positions is about 30% of equity. On 10 October 2025, Binance futures fell 12.9% (BTC) to 67.6% (PEPE) within about 75 minutes.
+- Smaller, tighter-stop trades are no longer squeezed to below Binance's minimum by one large position. Some still are: BTC's smallest order is about 70 USDT.
+Revisit conditions: the loss stop is reached, or a week of demo results with several trades open at once.
+
+### D060: The owner's real Binance futures wallet, beside demo trading, with closes from the dashboard
+Date: 2026-11-13.
+Status: Accepted by the owner. After the trade-offs below, they chose the main account's futures wallet, a capital of "as I put in there", 1% a trade and keeping demo running. **Replaces D016's paper-only rule and rule 13 in `CLAUDE.md`**, as D048 and D053 required.
+Context: The owner asked to put their real account on the Bot page, to close trades from the system, and for closes made in the Binance app to show on the dashboard, so the USDT is free for the next trade. The bot must read only the futures balance, never the Overview, Spot or Funding.
+- Binance demo when asked: 1 completed trade, +1.11 USDT (+2.23R), and 4 open after three days. Equity was 101.99 on its 100 USDT budget, too few trades to show an edge.
+- Backtests from 100 USDT (six coins, 2020 to 2025): 1% a trade ended at 591 with a deepest fall of 37%; 2% at 2,161, fall 61%; 5% at 7,897, fall 93%.
+- Binance cannot limit a key to reading futures: a key with reading on reads every wallet. Self-generated Ed25519 keys may trade without an IP restriction; system-generated HMAC keys cannot.
+Options considered:
+- Account: the main account's futures wallet, guarded by code and key permissions; or a sub-account, where Binance itself hides every other wallet. The sub-account needs its own email, and the owner logs in to it to close a trade in the app.
+- Capital: a fixed amount (50, 100 or 200 USDT) plus the bot's own results; or what is in the futures wallet.
+- Limits: 1%, 2% (D053) or the demo's 5%.
+- Demo trading: keep it beside the real account, or stop it.
+Decision:
+- **The real account** is a new `exchange_live` account mode, `Binance real` (migration 0021).
+  - The whole futures wallet is the capital: what the owner put in is the equity first seen plus transfers since.
+  - Transfers are read from the futures wallet's own income history. Each one moves the day's starting equity by as much, so it is never a profit or a loss.
+  - The account is made by the quant worker when it first sees USDT in the wallet.
+- **The limits** are `EXCHANGE_LIVE_PROFILE`: the project's defaults with a 20% loss stop. That is 1% a trade, 3% across open trades, 3% daily loss, positions within 100%, up to x3, and the +3% daily stop. They change on the Settings tab, each save a logged version.
+- **Futures only:**
+  - The gateway for the real account reaches `https://fapi.binance.com` alone, and only the paths in `FUTURES_PATHS`. Any other request is refused before it is sent.
+  - The only other call is Binance's key-permission endpoint, in `execution/key_check.py`.
+  - The bot refuses a key that can withdraw, transfer, or trade spot, margin, options, portfolio margin or FIX. It requires futures. It checks hourly, with one-way mode and single-asset margin, and every 5 minutes while a problem stands. Any problem stops new trades.
+- **Arming:** no real trade opens until the owner runs `binance_live arm --yes` in the terminal after its check passes. Arming is append-only and records who did it and when. The dashboard shows "Real money: armed" on every page.
+- **Only the bot's own:**
+  - On the real account the bot touches only orders with its client ID prefix, and positions on coins of its open trades. A trade ends when the minute check sees its coin flat.
+  - The owner's own position is never given a stop, moved or closed. It still takes its coin, and counts at its whole value as open risk.
+  - The kill switch closes the bot's trades only. Demo trading keeps clearing its whole account.
+- **Closing:**
+  - The Bot page has a Close button on the bot's positions, and Cancel on a waiting entry, with a confirm step.
+  - The API stores the request, from the dashboard's origin only, for a trade of the bot's only, and writes it to the audit log.
+  - The quant worker, the only holder of the key, carries it out within seconds. It cancels a waiting entry, closes at market with a reduce-only order, then cancels the bot's stop and targets. A refused close leaves the stop and targets in place.
+  - It works for demo trading too.
+- **Closes in the Binance app:** the minute check sees the coin flat, records the trade's end and copies its fills at once. The dashboard shows it within a minute, and its margin is free at the next decision.
+- **Demo trading** keeps running beside it on the same signals. The Bot page switches between Real and Demo and remembers the choice.
+Consequences:
+- Real losses are possible. A stop can fill worse than planned, and a crash can skip it. Backtests are not proof of future profit.
+- The owner's own trades in the same wallet share its money with the bot. Their results change its equity and count toward its daily limits and loss stop. Their whole value counts as open risk, so a large position of the owner's can leave no room for the bot's trades.
+- The bot trades only while this Mac is on. Its stops and targets sit on Binance and protect open trades while it sleeps.
+- The real account's minute check adds to the request weight this IP spends on `fapi.binance.com`, which the market data shares. Its transfer read alone weighs 30 a minute. A 429 from Binance stops requests rather than retrying them (D048).
+- Claude still places no trade and closes none. Its exit advice stays in shadow mode (D051).
+Revisit conditions: the loss stop is reached; the hourly check finds a problem; a month of real results; or the owner wants a sub-account.
+
+### D059: More chances to trade: the daily trend tested all day, a loose 15M copy, HYPE and NEAR, and 5% a trade
+Date: 2026-11-12.
+Status: Accepted by the owner, who asked for trades "all the time if there are signals" and chose every option offered. Resolved by follow-up questions: keep the 15M rule and add a looser copy, and HYPE with NEAR. **Amends D033** (ten coins, not eight) and D058's 10% (5% a trade).
+Context: Python already decided every coin at every 15M close, 147 closes since Binance demo started. Only 5 closes had a setup, because the rules rarely fire:
+- The 15M rule found no break on the latest candle 966 times in 1,032.
+- The 1H pattern found no breakout 250 times in 254.
+- The daily trend decides only at 00:00 UTC.
+- At 10% a trade, the 10% open-risk limit allowed one full trade at a time.
+Decision:
+- **5% a trade,** saved through the Settings tab's API as version 6. It kept the owner's own changes made at 02:50 UTC: positions within 90%, a 20% daily profit stop, and a 5% loss stop measured from the highest equity.
+- **The daily trend checked all day** was pre-registered in [41-INTRADAY-TREND.md](41-INTRADAY-TREND.md) and run once. It made 416 trades at +0.325R, against 344 at +0.397R for the daily close. It failed its rule, so **the daily trend still decides at 00:00**.
+- **A loose copy of the 15M rule**, `trend_break_loose`, accepts a break of structure on any of the last 3 candles. The 15M rule itself is unchanged. The copy runs in the money plan, on Binance demo and the paper money plan, at the smallest share, untested. The 15M rule cannot be backtested before the holdout.
+- **HYPEUSDT and NEARUSDT** passed the D033 screen, at 526M and 550M a day (migration 0020). They are backfilled the same way as ZEC and PEPE, and trade untested. Free disk allowed two coins, not four.
+  - News links HYPE by "Hyperliquid" and NEAR by "NEAR Protocol" or the contract name only, because "hype" and "near" are everyday words.
+Consequences:
+- **The loss stop and 5% interact:** with the stop 5% below the highest equity and 5% a trade, little room is left for new trades, and one full loss can stop the bot until limits are saved again.
+- Ten coins and a looser 15M rule mean more signals. All of the new ones are untested.
+Revisit conditions: the loose copy's forward record in the Results tab, or free disk for more coins.
+
+### D058: Binance demo at 10% a trade, positions within 80%, and a settings page for its limits
+Date: 2026-11-12.
+Status: Accepted by the owner, who chose "Raise the ceiling to 10%" after three questions with the backtest numbers. **Amends D053's limits and the brief's 2% per-trade hard ceiling.** Test funds only; real money stays impossible.
+Context: The owner asked to use 80% of capital for trades, with risk around 10%, and for a settings page to adjust these.
+- **What the backtests showed:** the three tested strategies' 1,389 trades, from 100 USDT, compounding:
+  - 2% a trade ended at 2,161 with a deepest fall of 61%;
+  - 5% ended at 7,897 with a fall of 93%;
+  - 10% fell to almost nothing on the way and ended at 38.
+  - The growth-maximizing risk (Kelly) on those trades was 3.9%.
+- **Choices:**
+  - The owner first chose 10% per trade and also keeping the 2% ceiling.
+  - Asked to resolve the conflict, they chose to raise the ceiling.
+Decision:
+- **Ceilings:**
+  - The risk engine's per-trade ceiling rises from 2% to 10%, and its daily loss ceiling from 5% to 10%.
+  - A new ceiling caps all positions at 5× equity.
+  - Defaults are unchanged: 1% per trade, a 3% daily loss limit.
+- **Binance demo, profile version 3 (migration 0019, `EXCHANGE_DEMO_PROFILE`):**
+  - 10% per trade, 10% across open trades, and a 10% daily loss limit.
+  - All positions within 80% of equity.
+  - Leverage up to 3×, a 20% loss stop, and the +3% daily stop, all unchanged.
+- **Shrinking to the position cap:** on Binance demo, a trade that only the position cap refuses is shrunk to the room left, as the paper money plan already did, instead of refused. At 10%, a 15M trade with a 1.4% stop would need a 714 USDT position. Shrunk to 80 USDT, it risks about 1.1 USDT. A daily trend trade with an 11% stop risks up to about 8.8.
+- **The loss stop** can follow profits: with `loss_stop_from_high`, it is measured from the highest equity the bot's closed trades reached, not the starting budget.
+- **The Settings tab on the Bot page** shows these limits and their ceilings: risk per trade, risk across open trades, the position cap, leverage, the daily loss and profit stops, the loss stop and its mode.
+  - Saving goes through `PUT /api/v1/exchange-demo/limits` and becomes a new profile version, written to the audit log. The bot uses it from its next close.
+  - The request is refused unless it comes from the dashboard's own origin.
+  - Saving also restarts trading after the loss stop.
+Consequences:
+- A losing trade can cost up to 10 USDT on 100, and two in a row about 19%. With the 20% loss stop, about two full losses stop the bot until the owner saves limits again.
+- The open-risk limit at 10% means one full-risk trade at a time.
+- The +3% daily stop now ends a day after any good win. It can be changed on the Settings tab.
+Revisit conditions: the loss stop is reached, or the owner changes the limits.
+
+### D057: Binance demo results from Binance's own fills, in a Results tab
+Date: 2026-11-12.
+Status: Accepted by the owner, who asked for win rates, completed trades and profit per coin on the Bot page. They chose Binance demo only, every breakdown offered (by strategy, long and short, by day, a strategy by coin grid), every extra figure offered (average R and profit factor, fees and funding, drawdown and streaks, an equity curve), and a new Results tab.
+Context: The page showed orders and open positions, but no results. Binance closes trades at stops and targets itself, and nothing read those closes back. The 15M rule's PEPE trade, opened at 15:00 UTC on 2026-11-11, had closed overnight, and its result was not recorded.
+Decision:
+- **Copying:** the quant worker copies Binance demo's fills and funding every 5 minutes into append-only tables (migration 0018), because Binance keeps them only 3 months.
+- **Rebuilding:** `performance/results.py` rebuilds completed trades, from the opening fill to flat.
+  - A fill through flat is split: its profit goes to the closing part, and its fee by size.
+  - Funding goes to the trade open on its coin at the time.
+  - Fees in another asset are kept apart.
+- **The bot's trades only:** a trade is the bot's when Binance's order ID of its opening fill is one of the bot's entry orders. That match also gives its strategy and planned risk, and so its R. Other trades are left out and counted.
+- **The figures:** `GET /api/v1/exchange-demo/results?period=7d|30d|all` serves them, built in `performance/report.py`. The Bot page shows them in a Results tab: headline figures beside the chart, and the equity curve, breakdowns and trade list below it.
+- **Definitions:** a trade is won when Binance's booked profit, less fees, plus funding, is above zero. Profit factor is wins over losses. The deepest fall is measured on the equity curve after each closed trade, from the period's starting equity.
+Consequences:
+- **The orders table**, at the owner's next request, shows what each order means in USDT (`performance/orders.py`): its value, a stop's or target's result if it fills (before fees), the entry's profit now or its closed net, and its risk.
+- The API still never holds keys: it reads what the worker stored.
+- Open trades are not in the results. Closes still show on the chart only as lines disappearing.
+- Results are on test funds and few trades, so they are not evidence of an edge yet.
+Revisit conditions: Binance's user data stream is built, which would report fills as they happen.
 
 ### D056: The news move strategy: a strong 1H move confirmed by news, trading on Binance demo
 Date: 2026-11-11.

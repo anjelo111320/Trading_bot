@@ -173,6 +173,7 @@ describe("demo bot trades", () => {
   it("names each strategy and the plan's risk on a trade or signal", () => {
     expect(strategyLabel("daily_trend")).toBe("Daily trend");
     expect(strategyLabel("news_move")).toBe("News move");
+    expect(strategyLabel("trend_break_loose")).toBe("15M rule, loose");
     expect(strategyLabel("something_new")).toBe("something_new");
     expect(riskPercent("0.5")).toBe(0.5);
     expect(riskPercent(null)).toBeNull();

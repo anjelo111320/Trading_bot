@@ -45,7 +45,7 @@ Since 2026-11-09 (D045), a third paper account, `Portfolio`, starts with 1,000 U
 | 1H pattern breakout | Half: 0.5% | Positive on six coins pooled, but not clearly on the new four |
 | 15M rule baseline | Quarter: 0.25% | Not testable on history before the holdout. Enters at the live price, as in D044 |
 
-ZEC and PEPE trade at the same shares as the other coins, by the owner's choice, although the evidence above was measured on the first six coins only.
+ZEC and PEPE trade at the same shares as the other coins, by the owner's choice, although the evidence above was measured on the first six coins only. So do HYPE and NEAR since 2026-11-12 (D059), making ten coins. Since D059 a loose copy of the 15M rule, accepting a break of structure on any of the last 3 candles, trades beside it at the smallest share, untested.
 
 Signals at the same close share the account's room, the strongest evidence first (docs/08, Money Plan Limits). At most 3% of equity is at risk across open trades, the same as the daily loss limit, and new trades stop for the UTC day once the account is 3% up. Up to 10 positions, one per strategy and coin, and total size within equity, so no leverage. The risk engine decides every trade and stores each refusal with its reason. Shares weigh backtest evidence; they are not win probabilities.
 
@@ -77,13 +77,36 @@ The Binance demo account (D048) trades on Binance, not in this simulator. Since 
 - The budget, equity, profit and free margin.
 - The loss stop and how much is left above it, with a warning once it is reached.
 - A limit entry still waiting, as a dashed line with its stop and targets, and a note beside the chart.
+- A **Settings** tab (D058) with the account's limits and their ceilings: risk per trade, risk across open trades, the position cap, the largest single trade (D061), leverage, the daily loss and profit stops, and the loss stop. Saving makes a new logged version, used from the next close.
 - The coin's news signal now (D055): bullish, bearish or neutral, with the stories behind it, labelled untested. Beside each of Python's signals, whether the news agreed with it. Neither changes another strategy's trade. Since D056 the news move strategy uses the reading to confirm its moves.
 - Each open position, with the stop and targets Binance holds, drawn on the chart.
 - Entries Binance filled, as arrows.
-- Every order sent, with what Binance did with it.
+- Every order sent, with what Binance did with it. Since 2026-11-12 each order also shows:
+  - the strategy that sent it, and its value in USDT;
+  - for a stop or target, what it loses or makes if it fills, before fees, measured from the entry Binance actually filled;
+  - for the entry, the trade's profit now while open, or its net result marked won or lost once closed, and the USDT it risks.
 - Python's decisions for the account.
 
-A position Binance closes at its stop or a target is not reported back yet, so it shows as the position and its lines disappearing. A daily trend position on Binance trails its stop at each daily close, as on paper (docs/36).
+A position Binance closes at its stop or a target still shows on the chart as the position and its lines disappearing.
+
+Since D060 (2026-11-13) the Bot page switches between **Real**, the owner's real futures wallet, and **Demo**. The real account shows:
+- what the owner put in, equity, profit and free margin;
+- whether it is armed, with a switch to turn real trading on (with the dashboard password) or off (D063), and any problem the hourly check found with the key or the account;
+- the owner's own positions, marked and left alone.
+
+Each account has its own on/off switch for new trades (D063, D064). Demo trading was switched off on 2026-11-13. Both accounts have a **Close at market** button on each of the bot's positions, and **Cancel the entry** on a waiting limit entry. Each asks for a confirm, and the quant worker carries it out within seconds. A trade closed in the Binance app disappears within a minute, appears in the Results tab, and frees its margin. The main menu shows "Real money: armed" on every page while the real account may trade.
+
+Since 2026-11-12 (D057), the Bot page's **Results** tab shows Binance demo's completed trades. The quant worker copies Binance's own fills and funding every 5 minutes (migration 0018), and Python rebuilds each trade from the fill that opened it to the one that left it flat. Each trade is matched to the bot's entry order by Binance's order ID, which also gives its strategy and planned risk. The tab has a 7-day, 30-day and all-time switch:
+
+- **Beside the chart:**
+  - Completed trades, win rate, net profit, average R, average win and loss, profit factor, best and worst trade.
+  - Fees paid, funding, the deepest fall, the current, longest winning and longest losing runs, median time in trade, and trades still open.
+- **Below the chart:**
+  - The equity curve after each closed trade.
+  - Results by coin, by strategy, a strategy by coin grid, long and short, and by day.
+  - Every completed trade.
+
+A trade is won when Binance's booked profit, less fees, plus funding, is above zero. Trades not opened by the bot are left out and counted. Test funds. A daily trend position on Binance trails its stop at each daily close, as on paper (docs/36).
 
 ## Safety
 Paper trading is the default.

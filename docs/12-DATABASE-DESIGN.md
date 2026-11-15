@@ -80,7 +80,8 @@ These hold even if application code has a bug. Each one was tested.
 
 | Rule | Mechanism |
 |---|---|
-| No live account can exist | CHECK on `trading_accounts.mode` |
+| Only paper, demo trading and the owner's real futures account can exist (D060) | CHECK on `trading_accounts.mode`: `paper`, `exchange_demo` or `exchange_live` |
+| A close from the dashboard is finished once, and one waits per coin | A trigger rejects changing a finished request or deleting one; a partial unique index on waiting requests |
 | Candles are consistent | CHECK on OHLC, positive low, non-negative volume |
 | One row per candle | Composite primary key |
 | A trade has entry, stop and a dedupe key | `rec_trade_fields_present` |
@@ -98,7 +99,7 @@ These hold even if application code has a bug. Each one was tested.
 | The final holdout runs once per strategy version | Partial unique index on `backtest_runs` |
 | Roles are least privilege | The app role cannot write candles; read-only roles cannot read `users` |
 
-Immutable tables: `risk_profiles`, `market_candle_revisions`, `analysis_input_snapshots`, `ai_analyses`, `trade_recommendations`, `trade_targets`, `recommendation_revisions`, `risk_assessments`, `signal_events`, `paper_executions`, `trade_outcomes`, `audit_log`, `model_forecasts`, `model_forecast_outcomes`.
+Immutable tables: `risk_profiles`, `market_candle_revisions`, `analysis_input_snapshots`, `ai_analyses`, `trade_recommendations`, `trade_targets`, `recommendation_revisions`, `risk_assessments`, `signal_events`, `paper_executions`, `trade_outcomes`, `audit_log`, `model_forecasts`, `model_forecast_outcomes`. The exchange tables are append-only too: `exchange_orders`, `exchange_equity_days`, `exchange_fills`, `exchange_funding`, and from migration 0021 `exchange_trade_ends`, `exchange_arming` and `exchange_transfers` (D060). Claude's daily cost limit is kept the same way in `ai_budgets` (migration 0022, D062): the newest row is the limit in force.
 
 A forecast is stored before its outcome is known, and neither row can change afterwards, so a model's track record cannot be improved after the fact.
 

@@ -20,7 +20,12 @@ and evaluates performance through backtesting and paper trading.
 10. Distinguish confirmed candles from incomplete candles.
 11. Keep calculations deterministic wherever possible.
 12. Never allow Claude AI to bypass the risk engine.
-13. Paper trading only. No live order execution in the initial release.
+13. Live orders only on the owner's Binance USDⓈ-M futures wallet (D060):
+    through the risk engine, from the quant worker alone, only after the
+    owner arms it (`binance_live arm`, or the dashboard switch with their
+    password, D063), and never touching the owner's own positions.
+    Everything else is paper or demo trading. No other venue, wallet or
+    endpoint without a new owner decision.
 14. Never expose API keys in frontend code.
 15. Never commit secrets or .env files.
 

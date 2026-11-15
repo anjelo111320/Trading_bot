@@ -1,6 +1,7 @@
 /**
- * Binance demo trading on the Bot page (D048): what the quant worker last saved from Binance,
- * and the orders it sent. Test funds only. The page never talks to Binance itself.
+ * The bot's Binance accounts on the Bot page: demo trading's test funds (D048) and the owner's
+ * real futures wallet (D060). What the quant worker last saved from Binance, and the orders it
+ * sent. The page never talks to Binance itself.
  */
 
 import type { SeriesMarker, Time, UTCTimestamp } from "lightweight-charts";
@@ -23,15 +24,21 @@ export function isEntry(order: ExchangeOpenOrder): boolean {
   return order.type === "LIMIT";
 }
 
-/** The coin's limit entry still waiting on Binance, if any. */
+/** The coin's limit entry of the bot's still waiting on Binance, if any. */
 export function waitingEntry(status: ExchangeStatus | undefined, symbol: string): ExchangeOpenOrder | null {
-  return status?.orders.find((order) => order.symbol === symbol && isEntry(order)) ?? null;
+  return status?.orders.find((order) => order.symbol === symbol && isEntry(order) && order.bot !== false) ?? null;
 }
 
-/** The stop and the targets Binance holds for one coin, targets nearest first. */
+/**
+ * The stop and the targets Binance holds for one coin, targets nearest first: the bot's for its
+ * own trade, or the owner's for a position they opened themselves (D060).
+ */
 export function protection(status: ExchangeStatus, symbol: string) {
-  const mine = status.orders.filter((order) => order.symbol === symbol && !isEntry(order));
   const position = status.positions.find((item) => item.symbol === symbol);
+  const bot = position?.bot !== false;
+  const mine = status.orders.filter(
+    (order) => order.symbol === symbol && !isEntry(order) && (order.bot !== false) === bot,
+  );
   const stop = mine.find(isStop) ?? null;
   const entry = Number(position?.entry_price ?? waitingEntry(status, symbol)?.trigger ?? 0);
   const distance = (order: ExchangeOpenOrder) => Math.abs(Number(order.trigger) - entry);
@@ -102,9 +109,33 @@ export function heldOnBinance(positions: ExchangePosition[]): { value: number; m
   );
 }
 
-/** The bot's profit on its budget: equity above the capital it started with. */
+/** The bot's profit: equity above its budget, or above what the owner put in (D060). */
 export function budgetProfit(status: ExchangeStatus): number | null {
   return status.equity === null || status.equity === undefined ? null : Number(status.equity) - Number(status.capital);
+}
+
+const STATE_WORD: Record<string, string> = {
+  open: "open",
+  won: "won",
+  lost: "lost",
+  waiting: "waiting to fill",
+  "not filled": "not filled",
+};
+
+/** An entry's profit now, or its closed result, with the trade's state (D057). */
+export function nowText(order: ExchangeOrder): string {
+  const state = order.trade_state ? STATE_WORD[order.trade_state] : null;
+  if (order.now_usdt === null || order.now_usdt === undefined) return state ?? "–";
+  const value = Number(order.now_usdt);
+  const amount = `${value > 0 ? "+" : ""}${value.toFixed(Math.abs(value) < 0.005 && value !== 0 ? 4 : 2)}`;
+  return state ? `${amount} ${state}` : amount;
+}
+
+/** USDT with a sign, or a dash. */
+export function usdtOrDash(value: string | null | undefined, signed = false): string {
+  if (value === null || value === undefined) return "–";
+  const number = Number(value);
+  return `${signed && number > 0 ? "+" : ""}${number.toFixed(2)}`;
 }
 
 /** USDT the budget can still lose before its loss stop (D053), or null without one. */

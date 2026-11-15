@@ -9,7 +9,11 @@ from trading_intel.backtesting.benchmarks import RandomDailyEntries
 from trading_intel.backtesting.engine import BacktestEngine
 from trading_intel.domain.candles import ClosedCandle, Timeframe
 from trading_intel.domain.signals import Action, Side
-from trading_intel.trade_signals.trend_strategy import DailyTrendStrategy, TrendParameters
+from trading_intel.trade_signals.trend_strategy import (
+    DailyTrendStrategy,
+    IntradayTrendStrategy,
+    TrendParameters,
+)
 
 TICK = Decimal("0.01")
 # Flat for 25 days, a breakout, a steady climb to 115, then a fall.
@@ -111,3 +115,35 @@ def test_random_entries_keep_the_same_stops_and_are_seeded() -> None:
     assert len(trades) == 3
     assert [again.decide(day.close_time).action for day in DAYS] == [d.action for d in decisions]
     assert all(d.proposal is not None and d.proposal.invalidation_conditions for d in trades)
+
+
+HOURS = hourly(PATH)
+
+
+def test_version_2_buys_at_the_first_1h_close_beyond_the_range() -> None:
+    """docs/41: day 25 climbs from 100 to 101 in steps; the 20-day high is 100.5. The 13th
+    hour closes at 100.54, the first above it, half a day before version 1's daily close."""
+    strategy = IntradayTrendStrategy(HOURS, DAYS, TICK)
+    first = 25 * 24 + 12
+    assert strategy.decide(HOURS[first - 1].close_time).action is Action.NO_TRADE
+    decision = strategy.decide(HOURS[first].close_time)
+    assert decision.action is Action.BUY and decision.proposal is not None
+    assert decision.proposal.entry == Decimal("100.54")
+    assert decision.setup_atr == Decimal(str(float(DailyTrendStrategy(DAYS, TICK).atr[24])))
+    later = strategy.decide(HOURS[first + 1].close_time)
+    assert later.reasons == ("breakout already signalled today",)
+
+
+def test_version_2_ignores_quiet_days_and_needs_20_complete_days() -> None:
+    strategy = IntradayTrendStrategy(HOURS, DAYS, TICK)
+    assert strategy.decide(HOURS[24 * 24 + 5].close_time).action is Action.NO_TRADE
+    assert strategy.decide(HOURS[10 * 24].close_time).reasons == ("no 20-day breakout",)
+
+
+def test_version_2_trails_like_version_1_and_only_at_daily_closes() -> None:
+    strategy = IntradayTrendStrategy(HOURS, DAYS, TICK)
+    day = DAYS[45].close_time
+    assert strategy.trailing_stop(day, Side.LONG, Decimal(90)) == DailyTrendStrategy(
+        DAYS, TICK
+    ).trailing_stop(day, Side.LONG, Decimal(90))
+    assert strategy.trailing_stop(HOURS[45 * 24 + 3].close_time, Side.LONG, Decimal(90)) is None

@@ -24,6 +24,10 @@ class FakeGateway:
         self._positions = positions or []
         self._algo = algo or []
         self._entries = entries or []  # Orders resting in the book, such as limit entries.
+        self.fills: list[dict[str, Any]] = []  # Binance's account fills, as userTrades gives.
+        self.funding: list[dict[str, Any]] = []  # Funding income rows.
+        self.transfers: list[dict[str, Any]] = []  # Transfer income rows, into futures or out.
+        self.page = 1000  # Rows per call, oldest first, as Binance pages them.
         self._fails = fails or {}
         self._filled = filled
         self._equity = equity
@@ -60,7 +64,8 @@ class FakeGateway:
         self.calls.append(("market", symbol, side, quantity, reduce_only))
         self._maybe_fail("close" if reduce_only else "entry")
         filled = str(quantity) if reduce_only or self._filled is None else self._filled
-        return {"executedQty": filled, "avgPrice": "100.05"}
+        # Binance's order ID, which its fills carry, so a trade can be traced to its entry.
+        return {"orderId": 7000 + len(self.calls), "executedQty": filled, "avgPrice": "100.05"}
 
     async def limit_order(
         self,
@@ -73,7 +78,12 @@ class FakeGateway:
     ) -> dict[str, Any]:
         self.calls.append(("limit", symbol, side, quantity, price, good_till_ms))
         self._maybe_fail("limit")
-        return {"status": "NEW", "executedQty": "0", "avgPrice": "0"}
+        return {
+            "orderId": 7000 + len(self.calls),
+            "status": "NEW",
+            "executedQty": "0",
+            "avgPrice": "0",
+        }
 
     async def open_entry_orders(self, symbol: str | None = None) -> list[dict[str, Any]]:
         return [order for order in self._entries if symbol is None or order["symbol"] == symbol]
@@ -83,6 +93,28 @@ class FakeGateway:
         self._maybe_fail("cancel entry")
         self._entries = [o for o in self._entries if o.get("clientOrderId") != client_id]
         return {"status": "CANCELED"}
+
+    async def user_trades(
+        self,
+        symbol: str,
+        *,
+        from_id: int | None = None,
+        start_ms: int | None = None,
+        end_ms: int | None = None,
+    ) -> list[dict[str, Any]]:
+        self.calls.append(("fills", symbol, from_id, start_ms, end_ms))
+        rows = [r for r in self.fills if r["symbol"] == symbol]
+        if from_id is not None:
+            return [r for r in rows if int(r["id"]) >= from_id][: self.page]
+        return [r for r in rows if start_ms <= int(r["time"]) <= end_ms][: self.page]
+
+    async def funding_income(self, start_ms: int, end_ms: int) -> list[dict[str, Any]]:
+        self.calls.append(("funding", start_ms, end_ms))
+        return [r for r in self.funding if start_ms <= int(r["time"]) <= end_ms][: self.page]
+
+    async def transfer_income(self, start_ms: int, end_ms: int) -> list[dict[str, Any]]:
+        self.calls.append(("transfers", start_ms, end_ms))
+        return [r for r in self.transfers if start_ms <= int(r["time"]) <= end_ms][: self.page]
 
     async def algo_order(
         self,

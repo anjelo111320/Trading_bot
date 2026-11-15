@@ -33,7 +33,24 @@ Status: Updated 2026-11-02. Requirements: [brief section 17](21-PROJECT-BRIEF.md
 | Licensed provider data | Redistribution could breach terms |
 | User credentials and sessions | Control of the platform |
 
-No real money is reachable from the platform. This is the most important security property, so it must stay true. Since D048 the only exchange credentials are Binance **demo trading** keys, which hold test funds, and the code that uses them can only reach `https://demo-fapi.binance.com`.
+Real money is reachable only through one narrow path. This is the most important security property, so it must stay true.
+- Since D048, Binance **demo trading** keys hold test funds, and the code that uses them can only reach `https://demo-fapi.binance.com`.
+- Since D060 (2026-11-13), the owner's real Binance key reaches their **USDⓈ-M futures wallet**, and nothing else. The controls are in the next section.
+
+### The Real Account (D060)
+
+Binance cannot limit a key to reading futures: any key can read every wallet. So the guard is layered:
+
+| Layer | What it does | Verified by |
+|---|---|---|
+| Endpoint allowlist | The real-account gateway can reach only `https://fapi.binance.com`, and only a fixed list of futures paths (`FUTURES_PATHS`). Any other request, such as Spot balances, the Funding wallet, the Overview or a wallet transfer, is refused before it is sent. The position-mode switch and the cancel-every-order call are demo-only | Gateway tests call every method and check every path; a test sends Spot, Funding, Overview and transfer paths and sees nothing leave |
+| One read outside futures | Only `execution/key_check.py` calls `api.binance.com`, and only `GET /sapi/v1/account/apiRestrictions`, which reports the key's permissions and reads no balance | A source scan: no other trading module mentions `/sapi/` or that host |
+| Key permissions | The bot refuses a key that can withdraw, transfer between wallets or accounts, or trade spot, margin, options, portfolio margin or FIX. A permission Binance adds later is refused until it is known. Futures must be on. Checked hourly, and every 5 minutes while a problem stands; any problem stops new trades | Unit tests for every refused permission |
+| Where the key lives | `.env` and a private key file outside the project, readable only by the owner. Only the quant worker and the `binance_live` command read it. The API and the browser never do | A test lists the modules that mention the key settings |
+| Arming | No real trade opens until the owner arms the account: `binance_live arm --yes` in the terminal, or the dashboard switch (D063), which needs the owner's password, a bot that ran within 5 minutes and a check with no problem, from the dashboard's origin only. Arming is append-only, with who and when, and every attempt is in the audit log. Off needs no password and stops new trades | Integration and API tests: unarmed and refused accounts send nothing; a wrong password, a problem or a stopped bot keeps it off |
+| The owner's own trades | The bot touches only orders with its own client ID prefix and positions on coins of its own open trades. It never gives the owner's position a stop, moves it or closes it | Unit and integration tests |
+| Closes from the dashboard | The API stores a close request, from the dashboard's origin only, for a trade of the bot's only, written to the audit log. The quant worker carries it out with a reduce-only order | API tests: other origins, the owner's positions and bad symbols are refused |
+| IP restriction | Recommended, not required: the check reports it, and the dashboard says when it is off | Shown by `binance_live check` |
 
 ### Trust Boundaries
 
@@ -53,7 +70,7 @@ No real money is reachable from the platform. This is the most important securit
 | Secret committed | `.gitignore`, gitleaks in CI and pre-commit | Fake key fails the check | 0 |
 | Secret in logs | Redacting settings type, log filter | Test asserts absence | 0 |
 | Secret in browser | Backend holds all keys. Only public API URL in frontend config | Bundle scan | 0 |
-| Hidden live trading path | Only demo trading keys, a gateway fixed to the demo host, `TradingMode` has one value, a GET-only allow-list for market data, a database CHECK allowing only `paper` and `exchange_demo` accounts, and import contracts keeping Claude, news, forecasts and the API away from `execution` | Tests fail on any other host, any other credential setting, or a `live` account | 0, 1 |
+| Hidden live trading path | Demo keys and one real futures key (D060), each gateway fixed to its host with a futures-only path list, the real account trading only after the owner arms it, `TradingMode` with one value for the paper accounts, a GET-only allow-list for market data, a database CHECK allowing only `paper`, `exchange_demo` and `exchange_live` accounts, and import contracts keeping Claude, news, forecasts and the API away from `execution` | Tests fail on any other host, path, credential setting or account mode | 0, 1, D060 |
 | Stolen session | HttpOnly, Secure, SameSite cookies, short expiry, login rate limit | Auth tests | 1 |
 | Cross-site WebSocket hijack | Origin check plus short-lived ticket, since browsers cannot set auth headers | WebSocket tests | 1 |
 | SQL injection | Parameterised queries only, no dynamic SQL | Injection tests, lint rule | 1 |
@@ -65,7 +82,7 @@ No real money is reachable from the platform. This is the most important securit
 | AI output causing an action | AI output reaches only a validator. It never runs code, SQL or shell | Import rules, tests | Analyst phase |
 | Stored XSS from news | React escaping, no raw HTML rendering, strict content security policy, `http` and `https` link schemes only | Component tests | News phase |
 | Server-side request forgery | Workers never fetch article URLs. Outbound hosts are allow-listed | Test on allow-list | News phase |
-| Cost abuse | Daily AI budget, trigger debounce, authenticated endpoints only | Budget tests | Analyst phase |
+| Cost abuse | Daily AI budget for every Claude call together ($0.50, D062), checked before each call, changed only from the dashboard's origin up to a $3 ceiling, each change logged; trigger debounce; authenticated endpoints only | Budget tests, API tests | Analyst phase, D062 |
 | Forged webhook | No inbound webhooks at first. Any later one needs signature verification and replay protection | Tests when added | Later |
 | Dependency compromise | Lockfiles, pinned images, `pip-audit`, `pnpm audit`, reviewed updates | CI | 0 |
 | Licence breach | Private repository, no data files in Git, provider terms recorded, retention flags | Repository scan | 0 |

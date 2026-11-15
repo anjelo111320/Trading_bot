@@ -1,7 +1,7 @@
 # Binance Futures Execution
 
 Date: 2026-11-10
-Status: Research for the owner's request to trade Binance USDⓈ-M futures with isolated margin, 1% risk and profit targets. **Accepted on 2026-11-10 as D048**, for demo trading with test funds only. See "Owner Decisions" below.
+Status: Research for the owner's request to trade Binance USDⓈ-M futures with isolated margin, 1% risk and profit targets. **Accepted on 2026-11-10 as D048**, for demo trading with test funds only. See "Owner Decisions" below. **Real money accepted on 2026-11-13 as D060**: the owner's real futures wallet, beside demo trading. See "The Real Account (D060)".
 
 ## What the System Does Today
 
@@ -88,6 +88,81 @@ Two fixes on 2026-11-11, both found on the first daily trend trade, a SOL short:
 
 Leverage still never changes what a stop loses. It lets a tight-stop trade hold a position larger than the budget. Every open stop together is kept above 80 USDT, but a stop that fills badly in a crash can take the account lower. The Bot page shows the stop and how much is left above it.
 
+## Owner Decisions, 2026-11-12 (D058)
+
+| Question | Chosen |
+|---|---|
+| Risk per trade | 10% of equity, after raising the risk engine's ceiling from 2% |
+| Open risk and daily loss | 10% each |
+| Positions | All together within 80% of equity. A trade too big is shrunk to fit |
+| Loss stop | 20%, measured from the starting budget, or from the highest equity if chosen |
+| Changing them | The Bot page's Settings tab. Each save is a new, logged version |
+
+## The Real Account (D060), 2026-11-13
+
+The owner asked to put their real account on the Bot page, to close trades from the system, and to see closes made in the Binance app so their USDT is free for the next trade. They asked that the bot read only the futures balance, never the Overview, Spot or Funding.
+
+| Question | Chosen |
+|---|---|
+| Account | The main account's USDⓈ-M futures wallet, not a sub-account |
+| Capital | Whatever the owner puts in the futures wallet. Transfers in or out change the capital and are never a profit or a loss |
+| Limits | The project defaults, with a 20% loss stop: 1% a trade, 3% open risk, 3% daily loss, positions within 100%, up to x3, the +3% daily stop |
+| Demo trading | Keeps running beside it, on the same signals. The Bot page switches between Real and Demo |
+
+### What the Bot Reads
+
+Binance has no read-only-futures setting: a key that can read, reads every wallet. So the bot's own code is the limit:
+- The real-account gateway reaches `https://fapi.binance.com` only, and only the paths in `FUTURES_PATHS`: the futures account, positions, orders, fills and the futures wallet's own income. Anything else is refused before it is sent.
+- Transfers into and out of futures are read from the futures wallet's own income history (`incomeType=TRANSFER`), so no other wallet is ever read.
+- One request goes elsewhere: `GET /sapi/v1/account/apiRestrictions` on `api.binance.com`, which reports what the key may do and reads no balance.
+- The key itself must not be able to withdraw, transfer or trade anything but futures, so even if it were stolen with its private key, Spot and Funding could not be touched.
+
+### How It Trades
+
+- **Arming:** nothing trades until the owner arms the account: `binance_live arm --yes` in the terminal after its check passes, or the switch on the Bot page with their password (D063). Off stops new trades; open trades keep their stops and targets.
+- **The hourly check:** the key's permissions, one-way position mode and single-asset (USDT) margin. Any problem stops new trades and shows on the Bot page, and is checked again every 5 minutes until it is fixed. The bot never changes these settings for the owner.
+- **Capital:** the futures wallet's equity is the bot's equity. What the owner put in is the equity first seen plus transfers since. A transfer moves the day's starting equity by as much, so it never trips the daily loss limit or the +3% daily stop. The 20% loss stop sits at 80% of what was put in.
+- **The owner's own trades:** the bot touches only its own orders (client IDs starting `ati-`) and the positions of its own open trades. A position the owner opened is never given a stop, moved or closed. It still takes its coin, and its whole value counts as open risk, because the bot knows no stop for it. Since D066, a stop the owner sets in the app on one of the bot's trades protects that trade, and the bot keeps it.
+- **Trades ending:** the minute check records each of the bot's trades whose coin is flat on Binance, whether a stop or target filled or the owner closed it in the app. Its fills are copied at once, so the Results tab shows it, and its margin is free for the next trade.
+- **Closing from the dashboard:** the Close button stores a request; the quant worker carries it out within seconds. It cancels a waiting entry first, closes the position at market with a reduce-only order, and only then cancels the bot's stop and targets on the coin. If the close is refused, the stop and targets stay.
+
+### Setting Up the Real Account
+
+1. `cd backend && uv run python -m trading_intel.entrypoints.binance_live keygen` writes `~/.config/trading-intel/binance-live-ed25519.pem`, readable only by this user, and prints the public key.
+2. On binance.com: API Management, Create API, **Self-generated**. Paste the public key. Tick **Enable Futures** only; Enable Reading is always on. Leave withdrawals, internal and universal transfers, spot and margin, and options off. If the internet connection has a fixed IP, restrict the key to it.
+3. Put the API key Binance shows in `.env` as `BINANCE_LIVE_API_KEY`, then `scripts/autostart.sh restart quant-worker`. The log shows `exchange_enabled ... account=Binance real`.
+4. Move the USDT the bot may trade into the USDⓈ-M futures wallet. The bot sees it within a minute and makes the account from it (`exchange_account_created`).
+5. `binance_live check` shows the futures wallet, the key's permissions and any problem. `binance_live arm` shows the limits; `binance_live arm --yes` arms it.
+6. `binance_live status` lists positions, the bot's and the owner's. `binance_live flatten --yes` closes the bot's trades only.
+
+## The Profit Lock and the Owner's Own Stops, 2026-11-14 (D066)
+
+The owner asked to move the stop into profit once a trade is up, and to raise leverage so the trade's money could start new trades.
+
+| Question | Chosen |
+|---|---|
+| Trigger | Scaled to each trade's stop: at 1.5R beyond the entry fill, the stop moves to 1R beyond it |
+| Money it frees | Its risk only: a stop past the entry counts as no open risk. Leverage and the room stay as set |
+| Testing | Built on real now, with no backtest first |
+| A stop the owner moves in the app | Kept, and the trade stays open |
+
+How it runs:
+- **Every minute, on both Binance accounts,** the worker reads each bot position's mark price. At 1.5R beyond the fill it moves the bot's stop to 1R beyond the fill by cancel and replace, as the daily trend's trail does.
+  - Binance cannot modify a waiting stop, so this is the only way to move one.
+  - The new stop is recorded, so the minute check restores that one if it goes missing.
+- **Leverage is left alone.** On isolated margin, raising leverage releases no margin by itself. The margin must be removed in a separate call, and every USDT removed brings liquidation nearer to the stop. The room the owner sets is what limits new trades.
+- **Open risk is counted at the stop Binance holds,** the bot's or the owner's, and never below what the trade risked at its first stop (D067). A lock protects its trade but frees no room for another. Under D066 a stop past the entry counted as no risk, until the research report warned that this let same-direction trades stack.
+- **A stop the owner sets keeps the trade open.** If it closes the whole position, the bot leaves it and the trade alone. If Binance refuses the bot's stop because one already stands (-4130), nothing is closed.
+  - On 2026-11-14 at 02:11 UTC that refusal made the bot close the real SOL short at market. The owner had changed its stop in the app minutes before.
+
+## Results From Binance's Fills, 2026-11-12 (D057)
+
+Binance reports fills, not trades, and keeps them for 3 months. Every 5 minutes the quant worker copies the account's fills (`GET /fapi/v1/userTrades`, per coin the bot has traded) and funding payments (`GET /fapi/v1/income`, `FUNDING_FEE`) into append-only tables (migration 0018).
+- **First copy:** 7-day windows from a minute before the bot's first entry on each coin, the longest window Binance allows.
+- **Later copies:** onward from the last stored fill ID.
+
+Python rebuilds each completed trade from them. A fill that takes a position through flat is split: its profit goes to the trade it closes, and its fee is split by size. The Bot page's Results tab shows the figures. Binance's IDs keep each fill once, so a repeated copy changes nothing.
+
 ## Limit Entries, 2026-11-11 (D054)
 
 The 4H gap and 15M CHoCH strategy enters with a limit order, so it was refused here until the owner asked for every strategy to trade on Binance demo. Binance demo was tested first, with orders far from the price that were all cancelled at once:
@@ -119,6 +194,7 @@ These are simulated results. A profitable backtest is not proof of future profit
 - 15M rule baseline: untested before the holdout, and it showed no edge in its one short test.
 - 4H gap and 15M CHoCH: registered, not run yet (docs/35).
 - Live paper so far: the money plan has 1 loss and 3 open trades, -0.90 USDT on 1,000.
+- Binance demo when the owner chose real money (2026-11-13): 1 completed trade, +1.11 USDT (+2.23R), and 4 open, with equity at 101.99 on its 100 USDT budget after three days. Too few trades to show an edge.
 
 ## Sources
 

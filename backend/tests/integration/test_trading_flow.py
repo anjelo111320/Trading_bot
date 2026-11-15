@@ -4,7 +4,9 @@ import json
 from collections.abc import AsyncIterator
 from datetime import UTC, datetime, timedelta
 from decimal import Decimal as D
+from types import SimpleNamespace
 from typing import Any
+from uuid import UUID, uuid7
 
 import asyncpg
 import pytest
@@ -13,11 +15,14 @@ from sqlalchemy import text
 from tests.conftest import make_settings
 from tests.integration.support import SUPERUSER_URL
 from tests.quant_data import candle
-from trading_intel.api.routers.trading import _signal, _trade
+from trading_intel.api.routers.trading import _signal, _trade, signal, signals
+from trading_intel.api.schemas.trading import SignalTradeView
 from trading_intel.core.clock import FixedClock
+from trading_intel.core.errors import NotFoundError
 from trading_intel.database.engine import create_engine
 from trading_intel.database.repositories.accounts import UserRepository
 from trading_intel.database.repositories.candles import CandleRepository
+from trading_intel.database.repositories.exchange import ExchangeRepository
 from trading_intel.database.repositories.operations import (
     GapRepository,
     MarketRepository,
@@ -30,6 +35,9 @@ from trading_intel.database.repositories.reference import ReferenceRepository
 from trading_intel.database.repositories.signals import (
     DEMO_ACCOUNT,
     DEMO_BALANCE,
+    EXCHANGE_DEMO_ACCOUNT,
+    EXCHANGE_DEMO_BUDGET,
+    EXCHANGE_DEMO_MODE,
     PORTFOLIO_ACCOUNT,
     PORTFOLIO_BALANCE,
     Account,
@@ -41,10 +49,11 @@ from trading_intel.domain.events import plain
 from trading_intel.domain.instruments import Instrument, InstrumentRules
 from trading_intel.domain.market import FundingRate
 from trading_intel.domain.signals import Action, EntryType, Side
+from trading_intel.execution.trader import OrderRecord
 from trading_intel.paper_trading.service import PaperService
 from trading_intel.risk_management.models import TradeProposal
 from trading_intel.trade_signals.baseline import BaselineDecision
-from trading_intel.trade_signals.portfolio import PLAN_PROFILE
+from trading_intel.trade_signals.portfolio import EXCHANGE_DEMO_PROFILE, PLAN_PROFILE
 from trading_intel.trade_signals.service import Setup, SignalService, StrategyIdentity
 
 pytestmark = pytest.mark.integration
@@ -276,6 +285,45 @@ async def test_a_stop_loses_and_updates_equity(world: World) -> None:
     assert state.equity == D(10000) + outcome["net_pnl"]
     assert state.equity < D(10000)
     assert state.open_positions == 0
+
+
+class Quotes:
+    """The ingestor's live quote, as Redis would give it (D071). Test data, not market data."""
+
+    def __init__(self, at: datetime | None, fails: bool = False) -> None:
+        self._at = at
+        self._fails = fails
+
+    async def quote(self, instrument_id: int) -> tuple[datetime, D, D] | None:
+        if self._fails:
+            raise ConnectionError("redis is down")
+        return None if self._at is None else (self._at, D("99.99"), D("100.01"))
+
+
+async def stale_codes(world: World) -> list[str]:
+    await approve(world)
+    [row] = await rows(
+        "SELECT rejection_codes FROM risk_assessments ORDER BY created_at DESC, id DESC LIMIT 1"
+    )
+    return list(row["rejection_codes"] or [])
+
+
+async def test_a_fresh_live_quote_keeps_a_late_book_row_from_making_a_signal_stale(
+    world: World,
+) -> None:
+    """Regression, 2026-11-15: the ingestor saves a minute's book only after the minute ends,
+    up to 26 seconds late at busy closes. Signals decided 12 to 38 seconds into a minute were
+    refused as DATA_STALE, with live data at hand. The live quote counts when fresher (D071)."""
+    await rows(
+        "UPDATE market_snapshots SET minute_start = minute_start - interval '3 minutes'"
+    )  # The saved row now ended two minutes ago, well past the 30-second limit.
+    assert "DATA_STALE" in await stale_codes(world)
+    world.signals._quotes = Quotes(NOW - timedelta(seconds=2))
+    assert "DATA_STALE" not in await stale_codes(world)
+    world.signals._quotes = Quotes(NOW - timedelta(seconds=45))
+    assert "DATA_STALE" in await stale_codes(world), "an old quote is stale too"
+    world.signals._quotes = Quotes(None, fails=True)
+    assert "DATA_STALE" in await stale_codes(world), "a failing reader leaves the saved rows"
 
 
 async def test_an_open_loss_counts_against_equity(world: World) -> None:
@@ -763,3 +811,117 @@ async def test_a_score_without_enough_history_is_stored_as_unknown(world: World)
     assert score["weak"] is None and score["against"] == 0
     assert score["bitcoin_applies"] is True, "no Bitcoin was given, so its trend is unknown"
     assert {score[k] for k in ("long_term_trend", "bitcoin_trend", "volume", "funding")} == {None}
+
+
+def routes(world: World) -> tuple[Any, Any]:
+    """The owner and the services the signals routes read, without the HTTP layer."""
+    services = SimpleNamespace(
+        signals=world.records,
+        paper=world.paper_repository,
+        exchange=ExchangeRepository(world.records._engine),
+        clock=world.clock,
+    )
+    return SimpleNamespace(email=EMAIL), services
+
+
+async def test_the_signals_route_filters_and_gives_each_signal_its_paper_trade(
+    world: World,
+) -> None:
+    """D065: the Signals page's filters, and what each signal's trade became."""
+    assert (await approve(world)).approved
+    assert not (await approve(world)).approved, "refused while the first is active"
+    await world.candles.insert(
+        [
+            bar(world, 1, "100", "100.5", "99.5", "100.2"),
+            bar(world, 2, "100.2", "104.5", "100", "104"),
+            bar(world, 3, "104", "108.5", "103.9", "108"),
+        ]
+    )
+    world.clock.advance(300)
+    await world.paper.sync(world.provider_id, world.instrument.id)
+    owner, services = routes(world)
+    shown = {view.decision: view for view in await signals(owner, services)}
+    assert shown["REJECTED"].trade is None
+    [position] = await rows(
+        "SELECT opened_at, closed_at, average_entry, realized_pnl FROM paper_positions"
+    )
+    won = shown["APPROVED"]
+    assert won.trade is not None and won.trade.state == "won"
+    assert won.trade.opened_at == position["opened_at"]
+    assert won.trade.closed_at == position["closed_at"]
+    # Prices keep 8 places and results 4, as on the Bot page.
+    assert D(won.trade.entry_price or "0") == position["average_entry"].quantize(D("1E-8"))
+    assert D(won.trade.net or "0") == position["realized_pnl"].quantize(D("0.0001"))
+    assert D("104") < D(won.trade.exit_price or "0") < D("108"), "averaged over the 3 targets"
+
+    async def ids(**filters: Any) -> list[str]:
+        return [view.id for view in await signals(owner, services, **filters)]
+
+    assert await ids(result="won") == [won.id]
+    assert await ids(result="not_entered") == [shown["REJECTED"].id]
+    assert await ids(result="entered", decision="REJECTED") == []
+    assert await ids(decision="REJECTED") == [shown["REJECTED"].id]
+    assert await ids(action="SELL") == [] and len(await ids(action="BUY")) == 2
+    assert len(await ids(instrument_id=world.instrument.id)) == 2
+    assert await ids(instrument_id=world.instrument.id + 1000) == []
+    assert len(await ids(strategy=won.strategy)) == 2 and await ids(strategy="daily_trend") == []
+    assert len(await ids(limit=1)) == 1 and len(await ids(period="today")) == 2
+    world.clock.advance(8 * 86400)
+    assert await ids(period="7d") == [] and len(await ids(period="all")) == 2
+
+    found = await signal(owner, services, UUID(won.id))
+    assert found.trade == won.trade
+    with pytest.raises(NotFoundError):
+        await signal(owner, services, uuid7())
+    with pytest.raises(NotFoundError):
+        await signal(owner, services, UUID(won.id), account="demo")  # Another account.
+
+
+async def test_a_binance_signals_trade_comes_from_its_entry_and_binances_fills(
+    world: World,
+) -> None:
+    """D065: on a Binance account the trade is the one its entry opened, from Binance's fills."""
+    binance = await world.records.ensure_account(
+        EMAIL, EXCHANGE_DEMO_ACCOUNT, EXCHANGE_DEMO_BUDGET, EXCHANGE_DEMO_PROFILE,
+        mode=EXCHANGE_DEMO_MODE,
+    )  # fmt: skip
+    assert binance is not None
+    world.account = binance
+    # A wide stop keeps the trade within the 100 USDT budget's 80% exposure limit.
+    wide = {"stop": D("80.00"), "targets": (D("145.00"), D("150.00"), D("155.00")),
+            "invalidation_conditions": ("close below 80.00",)}  # fmt: skip
+    outcome = await approve(world, **wide)
+    assert outcome.approved, outcome.reasons
+    [row] = await world.records.recent(binance.id)
+    owner, services = routes(world)
+    [unsent] = await signals(owner, services, account="binance")
+    assert unsent.trade is None, "no entry was sent yet"
+    symbol = world.instrument.symbol
+    entry = OrderRecord(
+        symbol, "entry", "ati-k-entry", {"side": "BUY", "type": "MARKET", "quantity": "1"},
+        {"orderId": 41, "executedQty": "1", "avgPrice": "100.01"},
+    )  # fmt: skip
+    await services.exchange.record(binance.id, row["id"], entry, trade_key="k", stop_price=D(98))
+    opened, closed = NOW + timedelta(seconds=2), NOW + timedelta(hours=2)
+
+    def fill(trade: int, order: int, side: str, price: str, pnl: str, at: datetime) -> Any:
+        return {
+            "symbol": symbol, "id": trade, "orderId": order, "side": side, "price": price,
+            "qty": "1", "realizedPnl": pnl, "commission": "0.04", "commissionAsset": "USDT",
+            "maker": False, "time": int(at.timestamp() * 1000),
+        }  # fmt: skip
+
+    await services.exchange.store_fills(
+        binance.id,
+        [fill(1, 41, "BUY", "100.01", "0", opened), fill(2, 77, "SELL", "104", "3.99", closed)],
+    )
+    [view] = await signals(owner, services, account="binance", result="won")
+    assert view.trade == SignalTradeView(
+        state="won", opened_at=opened, closed_at=closed, entry_price="100.01",
+        exit_price="104", net="3.91",
+    )  # fmt: skip
+    assert await signals(owner, services, account="binance", result="open") == []
+    linked = await signal(owner, services, UUID(view.id), account="binance")
+    assert linked.trade == view.trade
+    with pytest.raises(NotFoundError):
+        await signal(owner, services, UUID(view.id))  # Not in the paper account.

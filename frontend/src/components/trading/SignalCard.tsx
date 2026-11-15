@@ -23,7 +23,6 @@ const ACTION_LABEL: Record<string, string> = {
 
 /** Quality, news, data and probability stay separate. None of them is a win chance. */
 export function SignalCard({ signal }: { signal: Signal }) {
-  const rejected = signal.decision === "REJECTED";
   const tone = signal.action === "BUY" ? "text-up" : "text-down";
   return (
     <article className="rounded border border-line bg-panel p-4">
@@ -35,7 +34,16 @@ export function SignalCard({ signal }: { signal: Signal }) {
         </h2>
         <span className="rounded border border-line px-2 py-0.5 text-xs">{signal.state}</span>
       </header>
+      <SignalDetails signal={signal} />
+    </article>
+  );
+}
 
+/** Everything the risk engine weighed for a signal, and why. Also the Signals table's details. */
+export function SignalDetails({ signal }: { signal: Signal }) {
+  const rejected = signal.decision === "REJECTED";
+  return (
+    <>
       {rejected ? (
         <p role="status" className="mt-2 text-sm text-warn">
           Rejected by the risk engine: {signal.rejection_codes.join(", ")}
@@ -79,6 +87,6 @@ export function SignalCard({ signal }: { signal: Signal }) {
       <p className="mt-2 text-xs text-muted">
         Created {formatUtc(signal.created_at)}. Expires {formatUtc(signal.expires_at)}.
       </p>
-    </article>
+    </>
   );
 }

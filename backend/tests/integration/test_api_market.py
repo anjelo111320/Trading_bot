@@ -332,6 +332,22 @@ def test_no_route_can_place_a_trade(api: TestClient) -> None:
         "/api/v1/auth/ws-ticket",
         # Runs a Kronos forecast and stores it. Forecasts cannot reach orders (D040).
         "/api/v1/forecasts/analyse",
+        # Saves new Binance limits as a profile version (D058), for demo trading and the real
+        # account (D060). It places nothing: the API holds no exchange keys and cannot import
+        # the exchange code (D048).
+        "/api/v1/exchange-demo/limits",
+        "/api/v1/exchange-live/limits",
+        # Stores the owner's close of one of the bot's trades (D060). Only the quant worker
+        # carries it out, with a reduce-only order: no route can open or add to a position.
+        "/api/v1/exchange-demo/positions/{symbol}/close",
+        "/api/v1/exchange-live/positions/{symbol}/close",
+        # Saves Claude's daily cost limit (D062). It can only stop Claude's calls sooner.
+        "/api/v1/ai/budget",
+        # Turns real trading on or off (D063). On needs the password and a clean check; it
+        # places nothing itself: the quant worker trades through the risk engine.
+        "/api/v1/exchange-live/arming",
+        # Turns demo trading's new trades on or off (D064).
+        "/api/v1/exchange-demo/arming",
     }
 
 

@@ -35,6 +35,11 @@ type Props = {
   primitive?: ISeriesPrimitive<Time> | null;
   /** Empty bars kept on the right, for drawings that reach past the last candle. */
   rightOffset?: number;
+  /**
+   * A span to scroll to once, in UTC seconds, such as a trade opened from a table (D065). A new
+   * key scrolls again; after that the owner scrolls freely.
+   */
+  focus?: { key: string; from: number; to: number } | null;
 };
 
 const NO_MARKERS: SeriesMarker<Time>[] = [];
@@ -51,8 +56,11 @@ export function CandleChart({
   levels = NO_LEVELS,
   primitive = null,
   rightOffset = 0,
+  focus = null,
 }: Props) {
   const container = useRef<HTMLDivElement>(null);
+  const focused = useRef<string | null>(null);
+  const times = useRef<number[]>([]);
   const chartRef = useRef<IChartApi | null>(null);
   const seriesRef = useRef<ISeriesApi<"Candlestick"> | null>(null);
   const markersRef = useRef<ISeriesMarkersPluginApi<Time> | null>(null);
@@ -120,9 +128,20 @@ export function CandleChart({
     return () => seriesRef.current?.detachPrimitive(primitive);
   }, [primitive]);
 
+  // Setting the room on the right scrolls to the newest bar, so it waits while a trade is in
+  // view. Once the trade is cleared, the chart returns to the newest bars at the usual zoom.
+  const focusKey = focus?.key ?? null;
   useEffect(() => {
-    chartRef.current?.applyOptions({ timeScale: { rightOffset } });
-  }, [rightOffset]);
+    const chart = chartRef.current;
+    if (!chart || focusKey !== null) {
+      return;
+    }
+    chart.applyOptions({ timeScale: { rightOffset } });
+    if (focused.current !== null) {
+      focused.current = null;
+      chart.timeScale().resetTimeScale();
+    }
+  }, [rightOffset, focusKey]);
 
   useEffect(() => {
     markersRef.current?.setMarkers(markers);
@@ -150,7 +169,26 @@ export function CandleChart({
     const bars = candles.map(closedBar);
     seriesRef.current?.setData(bars);
     newestDrawn.current = bars[bars.length - 1]?.time ?? 0;
+    times.current = bars.map((bar) => bar.time);
   }, [candles]);
+
+  // After the data, so the span is measured on the bars just drawn. A span that reaches the
+  // newest bar keeps the room on the right, so the labels there never cover the trade; a new
+  // room moves the view back to the trade.
+  useEffect(() => {
+    const chart = chartRef.current;
+    const drawn = times.current;
+    const applied = focus ? `${focus.key}:${rightOffset}` : null;
+    if (!chart || !focus || drawn.length === 0 || focused.current === applied) {
+      return;
+    }
+    focused.current = applied;
+    const last = drawn.length - 1;
+    const first = drawn.findIndex((time) => time >= focus.from);
+    const from = first === -1 ? last : first;
+    const to = focus.to >= drawn[last]! ? last + rightOffset : drawn.findLastIndex((time) => time <= focus.to);
+    chart.timeScale().setVisibleLogicalRange({ from, to: Math.max(to, from + 1) });
+  }, [focus, candles, rightOffset]);
 
   useEffect(() => {
     const series = seriesRef.current;

@@ -63,11 +63,11 @@ Limits are stored per account in `risk_profiles`, so each change is a new audite
 
 | Parameter | Default | Hard ceiling | Source |
 |---|---|---|---|
-| `max_risk_fraction` | 0.01 | 0.02 | Brief |
+| `max_risk_fraction` | 0.01 | 0.10, raised from the brief's 0.02 by the owner (D058) | Brief, D058 |
 | `min_reward_risk` | 2.0 | Floor of 1.0 | Brief |
-| `max_daily_loss_fraction` | 0.03 | 0.05 | Brief |
+| `max_daily_loss_fraction` | 0.03 | 0.10, raised from 0.05 (D058) | Brief, D058 |
 | `max_open_positions` | 3 | Configurable | Proposed |
-| `max_total_exposure_fraction` | 1.0 | Configurable | Proposed |
+| `max_total_exposure_fraction` | 1.0 | 5 (D058) | Proposed |
 | `max_leverage` | 3 | 5 | Proposed |
 | `countertrend_extra_rr` | 0.5 | Configurable | Proposed |
 | `max_spread_bps` | 5 | Configurable | Proposed |
@@ -76,10 +76,15 @@ Limits are stored per account in `risk_profiles`, so each change is a new audite
 | `max_open_risk_fraction` | None. The money plan uses 0.03 | From `max_risk_fraction` to 0.1 | D045 |
 | `daily_profit_stop_fraction` | None. The money plan uses 0.03 | Above 0 | D045 |
 | `max_total_loss_fraction` | None. Binance demo uses 0.2 | Above 0 and below 1 | D053 |
+| `loss_stop_from_high` | False: the loss stop is measured from the starting balance | True or false | D058 |
+| `max_position_fraction` | None: only all positions together are limited. Binance demo uses 1.0 | Above 0, at most `max_total_exposure_fraction` | D061 |
+| `max_side_exposure_fraction` | None: no limit on one direction. The real account uses 0.6 since 2026-11-15 | Above 0, at most `max_total_exposure_fraction` | D072 |
 
-The proposed defaults are starting points to be reviewed, not validated settings. The D045 and D053 limits are kept in the profile's `settings`, and an account without them behaves as before.
+The proposed defaults are starting points to be reviewed, not validated settings. The D045, D053 and D061 limits are kept in the profile's `settings`, and an account without them behaves as before.
 
-Since D053 the Binance demo account has its own profile: 2% risk per trade, `max_total_exposure_fraction` 3 at up to ×3 leverage, and a loss stop 20% below its 100 USDT budget. Its other limits are the money plan's. The paper accounts are unchanged.
+Since D061 a single position larger than `max_position_fraction` of equity is refused as `EXPOSURE_EXCEEDED`, and the Binance plan shrinks it to fit. Since D072 a trade that would take all longs together, or all shorts together, past `max_side_exposure_fraction` of equity is refused as `DIRECTION_EXPOSURE_EXCEEDED`, waiting entries included, and the Binance plan shrinks it to the room left on its side. The coins move together, so a jump through the stops hits a whole side at once. A Binance trade starts at the leverage given by `max_total_exposure_fraction` rounded down, at least x1 and at most `max_leverage`, and rises only if the margin still does not fit. So with room for 300% of equity, trades open at x3, and the room can be used by several trades instead of the first one holding all the margin. With the cap at or below 100% this is x1, the lowest that fits (D048).
+
+Since D058 the Binance demo account's limits are the owner's, changed on the Bot page's Settings tab: each save is a new profile version, logged in the audit log, and bounded by the ceilings above. The owner set 10% risk per trade, 10% open risk, a 10% daily loss limit, all positions within 80% of equity at up to ×3, and a loss stop 20% below the 100 USDT budget. On Binance demo a trade too big for the position cap is shrunk to fit rather than refused, the same as the paper money plan does. The paper accounts are unchanged at 1%.
 
 ### Inputs and Outputs
 
@@ -202,7 +207,7 @@ A stop can still gap past its level, so the daily limit is a control, not a guar
 
 For accounts that set them (D045):
 
-- **Open risk.** What all open and pending trades would lose at their current stops stays at or below `max_open_risk_fraction` of equity. A trade is shrunk to the room left, and refused as `OPEN_RISK_FULL` when none is left. Per trade it is the engine's own `U × Q`, until a stop move makes it the distance to the new stop.
+- **Open risk.** What all open and pending trades would lose at their current stops stays at or below `max_open_risk_fraction` of equity. A trade is shrunk to the room left, and refused as `OPEN_RISK_FULL` when none is left. Per trade it is the engine's own `U × Q`, until a stop move makes it the distance to the new stop. On paper that is zero once the stop is past the entry. On Binance it is the distance from the entry fill to the stop Binance holds, the bot's or one the owner set in the app, else the stop recorded (D066). It is never less than the distance to the trade's first stop, so a moved stop frees no room for another trade (D067).
 - **Daily profit stop.** Once equity is `daily_profit_stop_fraction` above the day's starting equity, new entries are refused as `DAILY_PROFIT_REACHED` until the next UTC day. Open trades keep their stops and targets. It is a ceiling, not a goal: nothing trades more to reach it.
 - **Loss stop (D053).** A trade is shrunk to the room above the stop, and refused as `LOSS_STOP_REACHED` when none is left. Once equity is at or below the stop, the signal service records it against the profile version, and the account takes no new trade until the owner sets a new version. Open trades keep their stops and targets. A stop that fills worse than planned can still take equity below the line.
 - **Signals that arrive together** are split before the engine sees them (`risk_management/allocation.py`). Each asks for its strategy's evidence share of the 1% risk. The highest share is served first, and signals with the same share split what is left in proportion, within the open-risk room, the remaining daily loss budget, the exposure room and the free position slots. The engine then checks each one, counting the trades approved before it at the same close.
@@ -234,7 +239,7 @@ A new trade is rejected if it would exceed `max_open_positions` or `max_total_ex
 | `INSTRUMENT_RULES_MISSING` | No rule snapshot in force |
 | `FEE_SCHEDULE_MISSING` | No dated fee rate |
 | `MARKET_NOT_TRADING` | Instrument status is not trading |
-| `DATA_STALE` | Data exceeds the maximum age |
+| `DATA_STALE` | Data exceeds the maximum age. The age is that of the newest quote: the ingestor's live quote when fresher than the saved minute row (D071) |
 | `DATA_INCOMPLETE` | Open gap on a required timeframe |
 | `SPREAD_TOO_WIDE` | Spread above the limit |
 | `INVALID_DIRECTION` | Direction and levels disagree |
@@ -255,6 +260,7 @@ A new trade is rejected if it would exceed `max_open_positions` or `max_total_ex
 | `LOSS_STOP_REACHED` | No room left above the account's loss stop once every open stop is counted (D053) |
 | `MAX_OPEN_POSITIONS` | Too many positions |
 | `EXPOSURE_EXCEEDED` | Exposure limit exceeded |
+| `DIRECTION_EXPOSURE_EXCEEDED` | All longs or all shorts together would pass their limit (D072) |
 | `LEVERAGE_EXCEEDED` | Leverage above the limit |
 | `LIQUIDATION_INSIDE_STOP` | Liquidation is reachable before the stop |
 | `DUPLICATE_ACTIVE_SIGNAL` | Matching signal already active |

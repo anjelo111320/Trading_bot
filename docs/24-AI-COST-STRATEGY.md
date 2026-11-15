@@ -217,8 +217,8 @@ These cap the damage when something goes wrong, such as a bug that loops.
 
 | Control | Default | Effect |
 |---|---|---|
-| Daily soft limit | 80% of $3.00 | Only `decision` calls run. Alert |
-| Daily hard limit | $3.00 | New analyses stop. Alert |
+| Daily soft limit | 80% of the daily limit | Only `decision` calls run. Alert. Not built yet |
+| Daily hard limit | $0.50, the owner's choice on 2026-11-13 (D062); was $3.00 | Every Claude call together, news labels and exit advice, is checked against it before it is made, and stops until 00:00 UTC. Built. Set on the Bot page's Settings tab, at most $3, each change logged |
 | Monthly hard limit | $40 | New analyses stop until the month resets or the owner raises it |
 | Provider spend limit | $50 a month | Set in the Claude Console, independent of the app |
 | Dedicated workspace and key | One for this project | Costs stay attributable. The default workspace cannot hold a spend limit |
@@ -267,6 +267,8 @@ Measured on 2026-11-11 for the planned exit manager (docs/37). On 2020 to 2025 t
 ## 12. Measurement
 
 Spend is judged per completed decision, not per token.
+
+Since D062 the Bot page shows today's Claude spend, calls and tokens against the daily limit on its Claude tab, and the limit is changed on its Settings tab (`GET` and `PUT /api/v1/ai/budget`). The fuller `/costs` dashboard planned below is not built yet.
 
 The `/costs` dashboard shows:
 

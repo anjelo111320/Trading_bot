@@ -14,6 +14,12 @@ export type Ticket = Schemas["TicketView"];
 export type Timeframe = Schemas["Timeframe"];
 export type Signal = Schemas["SignalView"];
 export type SignalScore = Schemas["SignalScoreView"];
+export type SignalTrade = Schemas["SignalTradeView"];
+export type Scorecard = Schemas["ScorecardView"];
+export type CoinCard = Schemas["CoinCardView"];
+export type StrategyCell = Schemas["StrategyCellView"];
+export type LiveResult = Schemas["LiveResultView"];
+export type EntryQuality = Schemas["EntryQualityView"];
 export type Position = Schemas["PositionView"];
 export type PaperSummary = Schemas["PaperSummary"];
 export type Trade = Schemas["TradeView"];
@@ -36,6 +42,16 @@ export type ExchangeStatus = Schemas["ExchangeStatusView"];
 export type ExchangePosition = Schemas["ExchangePositionView"];
 export type ExchangeOpenOrder = Schemas["ExchangeOpenOrderView"];
 export type ExchangeOrder = Schemas["ExchangeOrderView"];
+export type Results = Schemas["ResultsView"];
+export type Limits = Schemas["LimitsView"];
+export type LimitsUpdate = Schemas["LimitsUpdate"];
+export type LiveState = Schemas["LiveStateView"];
+export type CloseRequest = Schemas["CloseRequestView"];
+export type AiBudget = Schemas["AiBudgetView"];
+export type Arming = Schemas["ArmingView"];
+export type ResultStats = Schemas["StatsView"];
+export type ResultGroup = Schemas["GroupView"];
+export type ClosedTrade = Schemas["ClosedTradeView"];
 export type ExitReviews = Schemas["ExitReviewsView"];
 export type ExitReview = Schemas["ExitReviewView"];
 export type NewsSignal = Schemas["NewsSignalView"];
@@ -66,6 +82,14 @@ async function send<T>(path: string, init?: RequestInit): Promise<T> {
 
 export function apiGet<T>(path: string): Promise<T> {
   return send<T>(path);
+}
+
+export function apiPut<T>(path: string, body: unknown): Promise<T> {
+  return send<T>(path, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
 }
 
 export function apiPost<T>(path: string, body?: unknown): Promise<T> {

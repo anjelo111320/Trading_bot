@@ -47,7 +47,6 @@ from trading_intel.paper_trading.simulator import OrderStatus, TradeSimulator, s
 
 log = structlog.get_logger(__name__)
 
-DAILY_LIMIT_USD: Final = Decimal(3)  # Shared by every Claude call (docs/24).
 QUARTERS_SHOWN: Final = 8
 HOURS_SHOWN: Final = 6
 PURPOSE: Final = "exit_review"
@@ -130,8 +129,10 @@ class ExitReviewService:
         usage: NewsRepository,
         clock: Clock,
         reviewer: ExitReviewer | None = None,
-        daily_limit: Decimal = DAILY_LIMIT_USD,
+        daily_limit: Decimal | None = None,
     ) -> None:
+        """`daily_limit` fixes Claude's daily cost limit, for tests. None reads the owner's
+        limit, shared by every Claude call, before each call (D062)."""
         self._candles = candles
         self._market = market
         self._paper = paper
@@ -265,7 +266,10 @@ class ExitReviewService:
         if self._reviewer is None:
             return base
         day_start = Timeframe.D1.floor(self._clock.now())
-        if await self._usage.spent_since(day_start) >= self._daily_limit:
+        limit = self._daily_limit
+        if limit is None:
+            limit, _ = await self._usage.daily_limit()
+        if await self._usage.spent_since(day_start) >= limit:
             return replace(base, status="skipped_budget")
         prices = await self._usage.model_prices(MODEL, self._clock.now())
         if prices is None:

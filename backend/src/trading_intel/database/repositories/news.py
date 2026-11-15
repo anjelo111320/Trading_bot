@@ -1,16 +1,33 @@
-"""News, classifications, API usage and the news signal's readings."""
+"""News, classifications, API usage, Claude's daily cost limit and the news signal's readings."""
 
 import json
 from dataclasses import dataclass
 from datetime import datetime
 from decimal import Decimal
-from typing import Any
+from typing import Any, Final
 from uuid import UUID, uuid7
 
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncEngine
 
 from trading_intel.news_intelligence.reading import RULE_VERSION, LabelledStory, NewsReading
+
+# Claude's daily cost limit, for every call together (D062). The owner sets it on the
+# dashboard; this holds only for a database where no limit was ever saved.
+AI_DAILY_LIMIT_DEFAULT: Final = Decimal("0.50")
+# No setting can pass the limit that was in code before D062.
+AI_DAILY_LIMIT_CEILING: Final = Decimal(3)
+
+
+@dataclass(frozen=True)
+class UsageToday:
+    """What Claude cost for one purpose since a moment, from the recorded calls."""
+
+    purpose: str
+    calls: int
+    input_tokens: int
+    output_tokens: int
+    cost_usd: Decimal
 
 
 @dataclass(frozen=True)
@@ -181,6 +198,51 @@ class NewsRepository:
                     "cost": cost,
                 },
             )
+
+    async def daily_limit(self) -> tuple[Decimal, datetime | None]:
+        """Claude's daily cost limit in force, for every call together, and when it was set
+        (D062). Read before every call, so a change applies at once."""
+        async with self._engine.connect() as connection:
+            row = (
+                await connection.execute(
+                    text(
+                        "SELECT daily_limit_usd, created_at FROM ai_budgets "
+                        "ORDER BY created_at DESC LIMIT 1"
+                    )
+                )
+            ).one_or_none()
+        if row is None:
+            return AI_DAILY_LIMIT_DEFAULT, None
+        return Decimal(row.daily_limit_usd), row.created_at
+
+    async def set_daily_limit(self, limit: Decimal, changed_by: str) -> None:
+        """A new limit, kept beside the earlier ones."""
+        async with self._engine.begin() as connection:
+            await connection.execute(
+                text("INSERT INTO ai_budgets (daily_limit_usd, changed_by) VALUES (:limit, :by)"),
+                {"limit": limit, "by": changed_by},
+            )
+
+    async def usage_since(self, moment: datetime) -> list[UsageToday]:
+        """Calls, tokens and cost by purpose since a moment, such as the start of the UTC day."""
+        async with self._engine.connect() as connection:
+            rows = (
+                await connection.execute(
+                    text(
+                        """SELECT purpose, count(*) AS calls,
+                                  COALESCE(sum(input_tokens), 0) AS input,
+                                  COALESCE(sum(output_tokens), 0) AS output,
+                                  COALESCE(sum(cost_usd), 0) AS cost
+                           FROM api_usage WHERE occurred_at >= :moment
+                           GROUP BY purpose ORDER BY purpose"""
+                    ),
+                    {"moment": moment},
+                )
+            ).all()
+        return [
+            UsageToday(row.purpose, int(row.calls), int(row.input), int(row.output), row.cost)
+            for row in rows
+        ]
 
     async def spent_since(self, moment: datetime) -> Decimal:
         async with self._engine.connect() as connection:

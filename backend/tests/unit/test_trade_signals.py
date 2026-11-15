@@ -223,3 +223,39 @@ def test_duplicate_key_groups_entries_within_half_an_atr() -> None:
 
 def test_time_helper_is_utc() -> None:
     assert (START + timedelta(hours=1)).tzinfo is not None
+
+
+def paused(series: CandleSeries, closes: tuple[float, ...]) -> CandleSeries:
+    """The series, then a few quieter candles after its break."""
+    rows = [
+        candle(i, float(series.open[i]), float(series.high[i]), float(series.low[i]),
+               float(series.close[i]), float(series.volume[i]), Timeframe.M15)
+        for i in range(len(series))
+    ]  # fmt: skip
+    previous = float(series.close[-1])
+    for offset, close in enumerate(closes, start=len(rows)):
+        rows.append(
+            candle(offset, previous, max(previous, close) + 0.1, min(previous, close) - 0.1, close,
+                   timeframe=Timeframe.M15)
+        )  # fmt: skip
+        previous = close
+    return CandleSeries.of(rows)
+
+
+def test_the_loose_copy_takes_a_break_from_the_last_3_candles() -> None:
+    """D059: the 15M rule needs the break on the latest candle; its loose copy, on any of the
+    last 3. Two quieter candles after the break: only the copy still buys."""
+    broke = trending(Timeframe.M15, 12)
+    last = float(broke.close[-1])
+    later = paused(broke, (last - 1.0, last - 0.5))
+    middle, higher = trending(Timeframe.H1, 12), trending(Timeframe.H4, 12)
+    params = BaselineParameters(min_adx=0, min_target_r=1.0)
+    strict = evaluate(later, middle, higher, TICK, params)
+    assert strict.reasons == ("no break of structure on the latest candle",)
+    loose = evaluate(later, middle, higher, TICK, params, break_window=3)
+    assert loose.action is Action.BUY, loose.reasons
+    assert loose.proposal is not None and loose.proposal.entry == to_tick(last - 0.5, TICK)
+    older = paused(broke, (last - 1.0, last - 0.5, last - 0.8))
+    assert evaluate(older, middle, higher, TICK, params, break_window=3).reasons == (
+        "no break of structure on the last 3 candles",
+    )

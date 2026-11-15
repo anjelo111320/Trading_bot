@@ -3,10 +3,11 @@
  * the trade closes, but never acted on. The page only reads what the quant worker stored.
  */
 
-import type { ExitReview, ExitReviews } from "@/lib/api/client";
+import type { AiBudget, ExitReview, ExitReviews } from "@/lib/api/client";
 import { formatUtc } from "@/lib/format";
 
 import { Stat, tone } from "./BotPanels";
+import { spendLine } from "./ClaudeBudgetPanel";
 
 const ACTION_LABEL: Record<string, string> = {
   hold: "Hold",
@@ -67,7 +68,15 @@ function Review({ review, current }: { review: ExitReview; current: boolean }) {
   );
 }
 
-export function ClaudeAdvice({ data, symbol }: { data: ExitReviews | undefined; symbol: string }) {
+export function ClaudeAdvice({
+  data,
+  symbol,
+  budget,
+}: {
+  data: ExitReviews | undefined;
+  symbol: string;
+  budget?: AiBudget;
+}) {
   const statuses = data?.statuses ?? {};
   const checks = Object.values(statuses).reduce((sum, count) => sum + count, 0);
   const asked = ASKED.reduce((sum, status) => sum + (statuses[status] ?? 0), 0);
@@ -99,6 +108,15 @@ export function ClaudeAdvice({ data, symbol }: { data: ExitReviews | undefined; 
         />
         <Stat label="Model" value={data?.model ?? "–"} />
       </dl>
+      {budget ? (
+        <p
+          role={budget.reached ? "alert" : undefined}
+          className={`mt-2 text-xs ${budget.reached ? "font-semibold text-warn" : "text-muted"}`}
+        >
+          Claude&apos;s daily limit: {spendLine(budget)}
+          {budget.reached ? ". Reached: not asked again until 00:00 UTC." : "."} Change it on the Settings tab.
+        </p>
+      ) : null}
       <p className="mt-2 text-xs text-muted">
         Python asks only when a check fires: a stall past +1R, a rejection near a target, or a volatility jump. Hold is
         the default, and a fixed rule that took profit early lost R in backtests (docs/37). A score is not a win

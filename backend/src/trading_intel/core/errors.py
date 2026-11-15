@@ -26,6 +26,13 @@ class AuthenticationError(AppError):
     status_code = 401
 
 
+class ForbiddenError(AppError):
+    """Signed in, but this request is not allowed, such as one from another site."""
+
+    code = "forbidden"
+    status_code = 403
+
+
 class RateLimitedError(AppError):
     code = "rate_limited"
     status_code = 429

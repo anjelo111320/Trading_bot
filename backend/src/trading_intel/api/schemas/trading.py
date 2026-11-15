@@ -28,6 +28,20 @@ class SignalScoreView(BaseModel):
     funding: bool | None
 
 
+class SignalTradeView(BaseModel):
+    """What became of an approved signal's trade (D065), from Binance's own fills on a Binance
+    account, or the simulator's fills on paper. `opened_at` is set once it entered."""
+
+    state: Literal["waiting", "open", "won", "lost", "even", "not filled", "refused"]
+    opened_at: UtcDatetime | None
+    closed_at: UtcDatetime | None
+    entry_price: str | None
+    exit_price: str | None
+    # USDT. Closed: the net result after fees and funding. Open on Binance: Binance's open
+    # profit now, before exit fees. None while a paper trade is open.
+    net: str | None
+
+
 class SignalView(BaseModel):
     id: str
     provider: str
@@ -65,6 +79,8 @@ class SignalView(BaseModel):
     created_at: UtcDatetime
     expires_at: UtcDatetime
     data_as_of: UtcDatetime
+    # None when the risk engine rejected it, or no entry was sent for it.
+    trade: SignalTradeView | None = None
 
 
 class PositionView(BaseModel):
@@ -192,3 +208,73 @@ class NewsView(BaseModel):
     possibly_misleading: bool | None
     ai_summary: str | None
     classified: bool
+
+
+class EvidenceView(BaseModel):
+    """A strategy's backtest on one coin at normal costs, as its study published it (D068).
+    Expectancy in R, with the seeded bootstrap 95% interval."""
+
+    trades: int
+    mean_r: str
+    low: str
+    high: str
+    source: str
+
+
+class LiveResultView(BaseModel):
+    """Trades signals opened, on every paper account and Binance, each setup counted once.
+    `mean_r` is over the closed ones: the net result over the planned risk."""
+
+    entered: int
+    closed: int
+    won: int
+    mean_r: str | None
+
+
+class EntryQualityView(BaseModel):
+    """Entries with a full first hour of 1-minute candles, in R. `slippage_r` is the median of
+    how much worse than planned the entry filled; `first_hour_r` the median of how far the
+    price then went against it in the hour; `went_against` how many went half the risk."""
+
+    trades: int
+    slippage_r: str | None
+    first_hour_r: str | None
+    went_against: int
+
+
+class StrategyCellView(BaseModel):
+    strategy: str
+    evidence: EvidenceView | None
+    untested: str | None  # Why there is no backtest.
+    left_out: bool  # Lost on this coin with 95% confidence, so it does not trade it.
+    live: LiveResultView
+    entries: EntryQualityView
+
+
+class CoinConditionsView(BaseModel):
+    """The coin now. `atr_percent` is the 1H ATR(14) over the last close; the spread comes
+    from the latest book within 10 minutes; gaps are missing candles not yet repaired."""
+
+    atr_percent: str | None
+    spread_bps: str | None
+    open_gaps: int
+    signals_today: int  # On the scorecard's account, since 00:00 UTC.
+    approved_today: int
+    top_refusal: str | None
+
+
+class CoinCardView(BaseModel):
+    symbol: str
+    instrument_id: int
+    live: LiveResultView
+    entries: EntryQualityView
+    conditions: CoinConditionsView
+    strategies: list[StrategyCellView]
+
+
+class ScorecardView(BaseModel):
+    """Each coin's scorecard (D068): Python's numbers only, read-only."""
+
+    as_of: UtcDatetime
+    account: Literal["binance_live", "binance"]  # Where today's signals are counted.
+    coins: list[CoinCardView]

@@ -354,13 +354,14 @@ def test_a_loss_stop_must_leave_something_and_stop_somewhere(fraction: D) -> Non
 
 
 def test_the_binance_demo_limits_are_the_owners_choice_and_paper_is_unchanged() -> None:
-    """D053: 2% a trade, open risk still 3%, positions up to 3x at up to 3x leverage, and a
-    loss stop 20% below the start. The paper money plan keeps 1% and no leverage."""
+    """D058: 10% a trade, 10% across open trades and in a day, all positions within 80% of
+    equity at up to 3x leverage, and a loss stop 20% below the start. The paper money plan
+    keeps 1% and no leverage."""
     demo = EXCHANGE_DEMO_PROFILE
-    assert demo.max_risk_fraction == D("0.02") and demo.max_open_risk_fraction == D("0.03")
-    assert demo.max_total_exposure_fraction == D(3) and demo.max_leverage == D(3)
-    assert demo.max_total_loss_fraction == D("0.2")
-    assert demo.max_daily_loss_fraction == D("0.03")
+    assert demo.max_risk_fraction == D("0.10") and demo.max_open_risk_fraction == D("0.10")
+    assert demo.max_total_exposure_fraction == D("0.8") and demo.max_leverage == D(3)
+    assert demo.max_total_loss_fraction == D("0.2") and not demo.loss_stop_from_high
+    assert demo.max_daily_loss_fraction == D("0.10")
     assert demo.daily_profit_stop_fraction == D("0.03")
     assert PLAN_PROFILE.max_risk_fraction == D("0.01")
     assert PLAN_PROFILE.max_total_exposure_fraction == D(1)
@@ -531,9 +532,10 @@ def test_fewer_targets_rescale_their_allocation() -> None:
 @pytest.mark.parametrize(
     "bad",
     [
-        {"max_risk_fraction": D("0.03")},
+        {"max_risk_fraction": D("0.11")},
         {"min_reward_risk": D("0.5")},
-        {"max_daily_loss_fraction": D("0.06")},
+        {"max_daily_loss_fraction": D("0.11")},
+        {"max_total_exposure_fraction": D("5.1")},
         {"max_leverage": D(6)},
         {"target_allocation": (D("0.5"), D("0.4"))},
     ],
@@ -652,3 +654,58 @@ def test_an_exchange_account_refuses_margin_it_does_not_have() -> None:
     assert at_one.sizing is not None and at_two.sizing is not None
     assert at_two.sizing.max_account_risk == at_one.sizing.max_account_risk
     assert assess(example_b("1")).approved  # Paper accounts give no margin and are unchanged.
+
+
+def test_one_trade_past_the_largest_single_position_is_named_for_the_plan_to_shrink() -> None:
+    """D061: no single position above this share of equity, so one trade leaves room for others.
+    The engine names it as exposure; the Binance plan then shrinks the trade to fit."""
+
+    def with_largest(largest: str) -> RiskAssessment:
+        base = example_b("1")
+        profile = base.profile.model_copy(update={"max_position_fraction": D(largest)})
+        return assess(base.model_copy(update={"profile": profile}))
+
+    large = with_largest("0.25")
+    assert codes(large) == {Code.EXPOSURE_EXCEEDED}
+    assert large.sizing is not None and large.sizing.notional > D(2500)
+    assert with_largest("0.6").approved
+    assert assess(example_b("1")).approved, "without the setting nothing changes"
+
+
+def test_one_direction_past_its_cap_is_named_for_the_plan_to_shrink() -> None:
+    """D072: shorts together, or longs together, at most this share of equity, because the
+    coins move together. Example B is a short worth about 5,000 on 10,000 of equity."""
+
+    def short_beside(shorts: str, longs: str = "0", cap: str = "0.6") -> RiskAssessment:
+        base = example_b("1")
+        profile = base.profile.model_copy(update={"max_side_exposure_fraction": D(cap)})
+        state = base.account.model_copy(
+            update={
+                "short_exposure": D(shorts),
+                "long_exposure": D(longs),
+                "gross_exposure": D(shorts) + D(longs),
+            }
+        )
+        return assess(base.model_copy(update={"profile": profile, "account": state}))
+
+    assert short_beside("0").approved
+    crowded = short_beside("2000")
+    assert codes(crowded) == {Code.DIRECTION_EXPOSURE_EXCEEDED}
+    assert crowded.sizing is not None and crowded.sizing.notional > D(4000)
+    assert short_beside("0", longs="5000", cap="0.6").approved, "longs leave the shorts' room"
+    assert assess(example_b("1")).approved, "without the setting nothing changes"
+
+
+@pytest.mark.parametrize("cap", [D(0), D("-0.1"), D("1.1")])
+def test_one_direction_sits_inside_the_room_for_all(cap: D) -> None:
+    with pytest.raises(ValidationError):
+        RiskProfile(max_side_exposure_fraction=cap)  # All positions together: 100% by default.
+    assert RiskProfile(max_side_exposure_fraction=D("0.6")).max_side_exposure_fraction == D("0.6")
+
+
+@pytest.mark.parametrize("largest", [D(0), D("-0.1"), D("1.1")])
+def test_the_largest_single_position_sits_inside_the_room_for_all(largest: D) -> None:
+    with pytest.raises(ValidationError):
+        RiskProfile(max_position_fraction=largest)  # All positions together: 100% by default.
+    room = RiskProfile(max_total_exposure_fraction=D(3), max_position_fraction=D(1))
+    assert room.max_position_fraction == D(1)

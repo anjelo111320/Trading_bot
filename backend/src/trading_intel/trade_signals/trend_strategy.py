@@ -6,6 +6,7 @@ for 2 ATR stops and costs. The rules are the Turtle traders' System 1, unchanged
 an idea to test, not a claim that it works.
 """
 
+from bisect import bisect_left
 from collections.abc import Sequence
 from dataclasses import asdict, dataclass
 from datetime import datetime
@@ -44,6 +45,46 @@ class TrendParameters:
 def _round_away(value: Decimal, tick: Decimal, side: Side) -> Decimal:
     rounding = ROUND_FLOOR if side is Side.LONG else ROUND_CEILING
     return (value / tick).to_integral_value(rounding=rounding) * tick
+
+
+def _proposal(
+    close: float,
+    unit: float,
+    side: Side,
+    moment: datetime,
+    reason: str,
+    params: TrendParameters,
+    tick: Decimal,
+) -> BaselineDecision:
+    """A market entry at `close`, its stop 2 ATR away and the far profit cap. Both versions."""
+    if unit != unit or unit <= 0:
+        return BaselineDecision(Action.NO_TRADE, moment, ("volatility is still warming up",))
+    entry = to_tick(close, tick)
+    stop = _round_away(entry - side.sign * Decimal(str(params.stop_atr * unit)), tick, side)
+    risk = side.sign * (entry - stop)
+    if risk <= 0 or stop <= 0:
+        return BaselineDecision(Action.NO_TRADE, moment, ("stop is out of range",))
+    cap = to_tick(entry + side.sign * Decimal(str(params.profit_cap_r)) * risk, tick)
+    # A short's 10R can reach past zero on a cheap, volatile coin. Price cannot, so the cap
+    # stops at the lowest price instead. It is far away either way, and exits still come
+    # from the trailing stop (found on DOGE-like prices on 2026-11-07).
+    cap = max(cap, tick)
+    return BaselineDecision(
+        action=Action.BUY if side is Side.LONG else Action.SELL,
+        as_of=moment,
+        reasons=(reason,),
+        proposal=TradeProposal(
+            side=side,
+            entry_type=EntryType.MARKET,
+            entry=entry,
+            stop=stop,
+            targets=(cap,),
+            leverage=Decimal(params.leverage),
+            expiry_candles=params.expiry_candles,
+            invalidation_conditions=(f"{params.exit_days}-day trailing exit",),
+        ),
+        setup_atr=Decimal(str(unit)),
+    )
 
 
 class DailyTrendStrategy:
@@ -85,35 +126,9 @@ class DailyTrendStrategy:
         )
 
     def propose(self, index: int, moment: datetime, side: Side, reason: str) -> BaselineDecision:
-        params, tick = self.parameters, self.tick
-        unit = float(self.atr[index])
-        if unit != unit or unit <= 0:
-            return BaselineDecision(Action.NO_TRADE, moment, ("volatility is still warming up",))
-        entry = to_tick(float(self.series.close[index]), tick)
-        stop = _round_away(entry - side.sign * Decimal(str(params.stop_atr * unit)), tick, side)
-        risk = side.sign * (entry - stop)
-        if risk <= 0 or stop <= 0:
-            return BaselineDecision(Action.NO_TRADE, moment, ("stop is out of range",))
-        cap = to_tick(entry + side.sign * Decimal(str(params.profit_cap_r)) * risk, tick)
-        # A short's 10R can reach past zero on a cheap, volatile coin. Price cannot, so the cap
-        # stops at the lowest price instead. It is far away either way, and exits still come
-        # from the trailing stop (found on DOGE-like prices on 2026-11-07).
-        cap = max(cap, tick)
-        return BaselineDecision(
-            action=Action.BUY if side is Side.LONG else Action.SELL,
-            as_of=moment,
-            reasons=(reason,),
-            proposal=TradeProposal(
-                side=side,
-                entry_type=EntryType.MARKET,
-                entry=entry,
-                stop=stop,
-                targets=(cap,),
-                leverage=Decimal(params.leverage),
-                expiry_candles=params.expiry_candles,
-                invalidation_conditions=(f"{params.exit_days}-day trailing exit",),
-            ),
-            setup_atr=Decimal(str(unit)),
+        close = float(self.series.close[index])
+        return _proposal(
+            close, float(self.atr[index]), side, moment, reason, self.parameters, self.tick
         )
 
     def trailing_stop(self, moment: datetime, side: Side, stop: Decimal) -> Decimal | None:
@@ -127,3 +142,69 @@ class DailyTrendStrategy:
         )
         level = to_tick(float(extreme), self.tick)
         return level if side.sign * (level - stop) > 0 else None
+
+
+INTRADAY_VERSION: Final = 2
+
+
+class IntradayTrendStrategy:
+    """Version 2 (docs/41): the same 20-day breakout, checked at each 1H close.
+
+    The range is the 20 complete days before the current UTC day, so the day's own candle never
+    counts. Only the first 1H close of the day beyond the range signals, so a breakout stopped
+    out the same day does not re-enter. Stop, cap and the trailing exit are version 1's.
+    """
+
+    timeframe: Final = Timeframe.H1
+
+    def __init__(
+        self,
+        hours: Sequence[ClosedCandle],
+        days: Sequence[ClosedCandle],
+        tick: Decimal,
+        parameters: TrendParameters | None = None,
+    ) -> None:
+        self.daily = DailyTrendStrategy(days, tick, parameters)
+        self.parameters = self.daily.parameters
+        self.hours = CandleSeries.of(hours)
+        self.tick = tick
+        self.hour_index = {moment: i for i, moment in enumerate(self.hours.close_time)}
+        self.day_closes = list(self.daily.series.close_time)
+
+    def _range(self, moment: datetime) -> tuple[int, float, float] | None:
+        """The last complete day's index, and the high and low of the 20 days ending there."""
+        last = bisect_left(self.day_closes, Timeframe.D1.floor(moment)) - 1
+        days = self.parameters.entry_days
+        if last < days - 1:
+            return None
+        window = slice(last - days + 1, last + 1)
+        series = self.daily.series
+        return last, float(series.high[window].max()), float(series.low[window].min())
+
+    def decide(self, moment: datetime) -> BaselineDecision:
+        index = self.hour_index.get(moment)
+        found = None if index is None else self._range(moment)
+        if index is None or found is None:
+            return BaselineDecision(Action.NO_TRADE, moment, ("no 20-day breakout",))
+        last, high, low = found
+        close = float(self.hours.close[index])
+        side = Side.LONG if close > high else Side.SHORT if close < low else None
+        if side is None:
+            return BaselineDecision(Action.NO_TRADE, moment, ("no 20-day breakout",))
+        day_start = Timeframe.D1.floor(moment)
+        earlier = index - 1
+        while earlier >= 0 and self.hours.close_time[earlier] > day_start:
+            before = float(self.hours.close[earlier])
+            if (before > high) if side is Side.LONG else (before < low):
+                return BaselineDecision(
+                    Action.NO_TRADE, moment, ("breakout already signalled today",)
+                )
+            earlier -= 1
+        reason = f"1H close beyond the {self.parameters.entry_days}-day range"
+        return _proposal(
+            close, float(self.daily.atr[last]), side, moment, reason, self.parameters, self.tick
+        )
+
+    def trailing_stop(self, moment: datetime, side: Side, stop: Decimal) -> Decimal | None:
+        """Version 1's 10-day trail, at daily closes only."""
+        return self.daily.trailing_stop(moment, side, stop)

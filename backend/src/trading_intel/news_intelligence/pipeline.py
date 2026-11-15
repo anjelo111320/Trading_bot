@@ -28,7 +28,6 @@ from trading_intel.news_intelligence.relevance import assess_relevance
 
 log = structlog.get_logger(__name__)
 
-DAILY_LIMIT_USD: Final = Decimal(3)
 BATCH_LIMIT: Final = 10
 
 
@@ -47,8 +46,10 @@ class NewsPipeline:
         instruments: Sequence[Instrument],
         clock: Clock,
         classifier: Classifier | None = None,
-        daily_limit: Decimal = DAILY_LIMIT_USD,
+        daily_limit: Decimal | None = None,
     ) -> None:
+        """`daily_limit` fixes Claude's daily cost limit, for tests. None reads the owner's
+        limit, shared by every Claude call, before each call (D062)."""
         self._news = news
         self._instruments = instruments
         self._clock = clock
@@ -102,8 +103,11 @@ class NewsPipeline:
             return 0, 0, 0
         classified = skipped = invalid = 0
         day_start = Timeframe.D1.floor(self._clock.now())
+        limit = self._daily_limit
+        if limit is None:
+            limit, _ = await self._news.daily_limit()
         for article in await self._news.awaiting_classification(BATCH_LIMIT):
-            if await self._news.spent_since(day_start) >= self._daily_limit:
+            if await self._news.spent_since(day_start) >= limit:
                 skipped += 1
                 continue
             result = await self._classifier.classify(article.headline, article.snippet)

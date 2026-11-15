@@ -15,6 +15,7 @@ from trading_intel.backtesting.exits import (
     Breakeven,
     CheckCounts,
     OpenTrade,
+    ProfitLock,
     StallExit,
     SwingTrail,
     TradeChecks,
@@ -154,6 +155,48 @@ def test_a_rule_acts_from_the_next_fill_candle() -> None:
     decided = min(t for t in closes if t > again.result.entry_time)
     exit_candle = next(c for c in minutes if c.open_time > decided)
     assert again.result.exit_time == exit_candle.close_time
+
+
+def test_the_profit_lock_locks_one_r_once_the_best_price_is_one_and_a_half_r_up() -> None:
+    """docs/43: the live rule (D066). Filled at 100 with 2 of risk, it waits for 103, then
+    moves the stop to 102, and only ever tightens."""
+    lock = ProfitLock(D("0.01"))
+    assert lock.decide(trade(best=D("102.99"))) is None
+    assert lock.decide(trade(best=D(103))) == D("102.00")
+    assert lock.decide(trade(best=D(110), stop=D("102.50"))) is None, "already tighter"
+    assert lock.decide(trade(best=None)) is None
+    short = trade(side=Side.SHORT, stop=D(102), best=D(97))
+    assert lock.decide(short) == D("98.00")
+
+
+def test_a_rule_can_decide_at_every_fill_close_while_the_trail_keeps_the_setup_closes() -> None:
+    """The lock decides at every fill close (docs/43). With no rule, the replay is unchanged."""
+    minutes = candles(Timeframe.M1, 6000)
+    setup = candles(Timeframe.M15, 400, 15)
+    stub = TrailingEverySetupCandle(setup)
+    first = (
+        engine(minutes, setup, strategy=stub, skip_signals_in_trade=True)
+        .run(START, FAR_END)
+        .trades[0]
+    )
+    closes = {c.close_time: c.close for c in setup}
+    every = {c.close_time: c.close for c in minutes}
+    opens = [c.open_time for c in minutes]
+    trail = stub.trailing_stop
+    plain = replay(
+        first.order, first.signal_time, minutes, opens, closes, (), FAR_END, trail=trail,
+        rule_closes=every,
+    )  # fmt: skip
+    assert plain.result == first.result, "no rule: the extra closes change nothing"
+    again = replay(
+        first.order, first.signal_time, minutes, opens, closes, (), FAR_END, trail=trail,
+        rule=ExitAtOnce(), rule_closes=every,
+    )  # fmt: skip
+    assert again.acted and again.result.entry_time is not None
+    assert again.result.exit_time is not None
+    decided = min(t for t in every if t > again.result.entry_time)
+    exit_candle = next(c for c in minutes if c.open_time > decided)
+    assert again.result.exit_time == exit_candle.close_time, "the first minute close, not 15M"
 
 
 def test_prior_median_ranges_use_only_earlier_candles() -> None:

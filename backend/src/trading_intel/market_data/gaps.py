@@ -1,6 +1,6 @@
 """Find missing candles and repair them from the provider. Nothing is ever filled in."""
 
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from datetime import datetime
 
@@ -135,6 +135,42 @@ class GapRepairService:
                     self._clock.now(),
                 )
         return RepairResult(len(ranges), repaired, provider_missing, recovered)
+
+    async def recheck_open(self, instruments: Mapping[int, Instrument]) -> int:
+        """Look again at every gap still open. One whose candles are all stored now is closed,
+        and one still missing candles is repaired again. Returns how many were closed.
+
+        A repair cut off between "repairing" and its result left the gap open with nothing to
+        look at it again, because a later repair sees only candles still missing. One did on
+        2026-11-13: the ingestor restarted 8 seconds into repairing BNB's minutes after the
+        disk filled, and every BNB signal was refused as DATA_INCOMPLETE for over a day.
+        """
+        closed = 0
+        for gap in await self._gaps.list(
+            provider_id=self._provider_id, states=("detected", "repairing")
+        ):
+            instrument = instruments.get(gap.instrument_id)
+            if instrument is None:
+                continue
+            timeframe = Timeframe(gap.timeframe)
+            start, end = gap.gap_start, gap.gap_end
+            if await self._missing(instrument, timeframe, start, end):
+                await self.repair(instrument, timeframe, start, end, gap.cause or "ingest_failure")
+            if await self._missing(instrument, timeframe, start, end):
+                continue
+            await self._gaps.set_state(
+                self._provider_id, instrument.id, timeframe, start, "repaired", self._clock.now()
+            )
+            closed += 1
+            log.info(
+                "gap_closed_on_recheck",
+                instrument=instrument.symbol,
+                timeframe=timeframe.value,
+                start=start.isoformat(),
+                end=end.isoformat(),
+                was=gap.state,
+            )
+        return closed
 
     async def _missing(
         self, instrument: Instrument, timeframe: Timeframe, start: datetime, end: datetime

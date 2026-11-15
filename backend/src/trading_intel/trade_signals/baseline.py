@@ -68,22 +68,34 @@ def _stop_below_swing(series_low: Decimal, buffer: Decimal, tick: Decimal, side:
     return (raw / tick).to_integral_value(rounding=rounding) * tick
 
 
+# The loose copy of the 15M rule (D059): a break in any of the last 3 candles counts. Untested.
+LOOSE_NAME: Final = "trend_break_loose"
+LOOSE_VERSION: Final = 1
+LOOSE_WINDOW: Final = 3
+
+
 def evaluate(
     setup: CandleSeries,
     middle: CandleSeries,
     higher: CandleSeries,
     tick: Decimal,
     parameters: BaselineParameters | None = None,
+    break_window: int = 1,
 ) -> BaselineDecision:
-    """Decide using only the candles supplied, all of which must already be closed."""
+    """Decide using only the candles supplied, all of which must already be closed.
+
+    A break of structure counts on the latest candle, or with `break_window` above 1, on any
+    of that many latest candles. The rule baseline uses 1; its loose copy uses 3 (D059).
+    """
     params = parameters or BaselineParameters()
     as_of = setup.close_time[-1]
     swings = find_swings(setup)
     structure = analyse_structure(setup, swings)
     last = len(setup) - 1
-    breaks = [e for e in structure.events if e.index == last]
+    breaks = [e for e in structure.events if last - break_window < e.index <= last]
     if not breaks:
-        return _no_trade(as_of, "no break of structure on the latest candle")
+        where = "the latest candle" if break_window == 1 else f"the last {break_window} candles"
+        return _no_trade(as_of, f"no break of structure on {where}")
     event = breaks[-1]
     side = Side.LONG if event.direction is Direction.BULLISH else Side.SHORT
     wanted: Trend = "up" if side is Side.LONG else "down"

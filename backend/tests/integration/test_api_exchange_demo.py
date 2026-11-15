@@ -5,13 +5,15 @@ from collections.abc import Iterator
 from datetime import UTC, datetime
 from decimal import Decimal as D
 from pathlib import Path
-from uuid import UUID
+from typing import Any
+from uuid import UUID, uuid7
 
 import pytest
 from fastapi.testclient import TestClient
+from sqlalchemy import text
 
 from tests.conftest import make_settings
-from tests.integration.test_api_forecasts import EMAIL, logged_in
+from tests.integration.test_api_forecasts import EMAIL, ORIGIN, logged_in
 from trading_intel.database.engine import create_engine
 from trading_intel.database.repositories.exchange import ExchangeRepository
 from trading_intel.database.repositories.signals import (
@@ -153,3 +155,126 @@ def test_signals_can_be_read_for_the_binance_demo_account(api: TestClient) -> No
     response = api.get("/api/v1/signals?account=binance")
     assert response.status_code == 200 and response.json() == []
     assert api.get("/api/v1/signals?account=live").status_code == 422
+
+
+def test_the_signals_pages_filters_are_checked_before_any_query(api: TestClient) -> None:
+    """D065: every filter of the Signals page, and the chart link's single signal."""
+    every = (
+        "account=binance&instrument_id=1&strategy=trend_break_baseline&action=BUY"
+        "&decision=APPROVED&result=entered&period=7d&limit=500"
+    )
+    assert api.get(f"/api/v1/signals?{every}").json() == []
+    for bad in (
+        "action=HOLD", "decision=MAYBE", "result=lucky", "period=1y", "limit=501",
+        "instrument_id=0", "strategy=DROP%20TABLE",
+    ):  # fmt: skip
+        assert api.get(f"/api/v1/signals?{bad}").status_code == 422, bad
+    for account in ("binance", "binance_live"):
+        missing = api.get(f"/api/v1/signals/{uuid7()}?account={account}")
+        assert missing.status_code == 404, account
+        assert missing.json()["error"]["code"] == "not_found"
+    assert api.get("/api/v1/signals/not-a-signal").status_code == 422
+
+
+def test_results_before_any_completed_trade_start_at_the_budget(api: TestClient) -> None:
+    """D057: with no completed trade the results are empty, and the curve is the budget."""
+    for period in ("7d", "30d", "all"):
+        response = api.get("/api/v1/exchange-demo/results", params={"period": period})
+        assert response.status_code == 200, response.text
+        body = response.json()
+        assert body["test_funds"] is True and body["period"] == period
+        assert body["summary"]["trades"] == 0 and body["summary"]["win_rate"] is None
+        assert body["summary"]["profit_factor"] is None and body["trades"] == []
+        assert body["start_equity"] == "100" and [p["equity"] for p in body["equity"]] == ["100"]
+        assert body["by_coin"] == [] and body["grid"] == [] and body["open_trades"] == 0
+    assert api.get("/api/v1/exchange-demo/results", params={"period": "1y"}).status_code == 422
+
+
+LIMITS = "/api/v1/exchange-demo/limits"
+NEW_LIMITS = {
+    "risk_per_trade": "0.05",
+    "open_risk": "0.08",
+    "exposure": "0.8",
+    "max_leverage": "2",
+    "daily_loss": "0.06",
+    "daily_profit_stop": None,
+    "loss_stop": "0.25",
+    "loss_stop_from_high": True,
+}
+
+
+def test_the_limits_and_their_ceilings_are_shown(api: TestClient) -> None:
+    body = api.get(LIMITS).json()
+    assert body["risk_per_trade"] == "0.1" and body["open_risk"] == "0.1"
+    assert body["exposure"] == "0.8" and body["daily_loss"] == "0.1"
+    assert body["loss_stop"] == "0.2" and body["loss_stop_from_high"] is False
+    assert body["ceilings"] == {
+        "risk_per_trade": "0.1", "open_risk": "0.1", "daily_loss": "0.1",
+        "leverage": "5", "exposure": "5",
+    }  # fmt: skip
+
+
+def test_saved_limits_become_a_new_logged_version(api: TestClient) -> None:
+    before = api.get(LIMITS).json()
+    response = api.put(LIMITS, json=NEW_LIMITS, headers={"Origin": ORIGIN})
+    assert response.status_code == 200, response.text
+    after = response.json()
+    assert after["version"] == before["version"] + 1
+    assert after["risk_per_trade"] == "0.05" and after["max_leverage"] == "2"
+    assert after["daily_profit_stop"] is None and after["loss_stop_from_high"] is True
+    [audit] = asyncio.run(audit_rows())
+    assert audit["action"] == "exchange_demo_limits_changed"
+    assert audit["after"]["risk_per_trade"] == "0.05"
+
+
+def test_limits_change_only_from_the_dashboard_and_within_the_ceilings(api: TestClient) -> None:
+    api.get(LIMITS)
+    assert api.put(LIMITS, json=NEW_LIMITS).status_code == 403
+    elsewhere = {"Origin": "https://example.invalid"}
+    assert api.put(LIMITS, json=NEW_LIMITS, headers=elsewhere).status_code == 403
+    for bad in ({"risk_per_trade": "0.11"}, {"open_risk": "0.04"}, {"max_leverage": "6"}):
+        response = api.put(LIMITS, json={**NEW_LIMITS, **bad}, headers={"Origin": ORIGIN})
+        assert response.status_code == 400, bad
+        assert "not allowed" in response.json()["error"]["message"]
+    assert api.get(LIMITS).json()["risk_per_trade"] == "0.1", "nothing was saved"
+
+
+async def audit_rows() -> list[Any]:
+    engine = create_engine(make_settings().database_url)
+    async with engine.connect() as connection:
+        result = await connection.execute(
+            text("SELECT action, after FROM audit_log WHERE object_type = 'risk_profile'")
+        )
+        found = [dict(row._mapping) for row in result]
+    await engine.dispose()
+    return found
+
+
+def test_one_trade_can_be_limited_to_a_share_of_equity(api: TestClient) -> None:
+    """D061: room for 300% of equity, and no single position above 100%."""
+    room = {**NEW_LIMITS, "exposure": "3", "largest_trade": "1", "max_leverage": "5"}
+    response = api.put(LIMITS, json=room, headers={"Origin": ORIGIN})
+    assert response.status_code == 200, response.text
+    saved = response.json()
+    assert saved["exposure"] == "3" and saved["largest_trade"] == "1"
+    assert api.get(LIMITS).json()["largest_trade"] == "1"
+    past = api.put(LIMITS, json={**room, "largest_trade": "4"}, headers={"Origin": ORIGIN})
+    assert past.status_code == 400, "one trade can never pass all positions together"
+    cleared = api.put(LIMITS, json={**room, "largest_trade": None}, headers={"Origin": ORIGIN})
+    assert cleared.json()["largest_trade"] is None
+
+
+def test_one_direction_can_be_limited_to_a_share_of_equity(api: TestClient) -> None:
+    """D072: longs together, or shorts together, at most this share of equity."""
+    response = api.put(
+        LIMITS, json={**NEW_LIMITS, "one_direction": "0.6"}, headers={"Origin": ORIGIN}
+    )
+    assert response.status_code == 200, response.text
+    assert response.json()["one_direction"] == "0.6"
+    assert api.get(LIMITS).json()["one_direction"] == "0.6"
+    past = api.put(LIMITS, json={**NEW_LIMITS, "one_direction": "4"}, headers={"Origin": ORIGIN})
+    assert past.status_code == 400, "one direction can never pass all positions together"
+    cleared = api.put(
+        LIMITS, json={**NEW_LIMITS, "one_direction": None}, headers={"Origin": ORIGIN}
+    )
+    assert cleared.json()["one_direction"] is None

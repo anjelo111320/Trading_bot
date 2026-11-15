@@ -65,9 +65,10 @@ def test_settings_have_no_trading_mode_field() -> None:
     assert not any("trading_mode" in name for name in Settings.model_fields)
 
 
-def test_the_only_exchange_credentials_are_for_demo_trading_and_reading_news() -> None:
-    """D016, amended by D048 and D032: keys exist for Binance demo trading, whose host is fixed,
-    and one read-only key for Binance's announcement stream, added by the owner on 2026-11-11."""
+def test_the_only_exchange_credentials_are_for_demo_trading_reading_news_and_real_futures() -> None:
+    """D016, amended by D048, D032 and D060: keys exist for Binance demo trading, one read-only
+    key for Binance's announcement stream, and, since the owner approved real money on
+    2026-11-13, one key for their real USDⓈ-M futures wallet. Every order host is fixed."""
     secret = ("key", "secret")
     exchange = [
         name
@@ -80,10 +81,29 @@ def test_the_only_exchange_credentials_are_for_demo_trading_and_reading_news() -
         "binance_demo_api_key",
         "binance_demo_api_secret",
         "binance_demo_private_key_file",
+        "binance_live_api_key",
+        "binance_live_api_secret",
+        "binance_live_private_key_file",
     ]
-    assert not any("demo" in name and "url" in name for name in Settings.model_fields), (
-        "the demo order host must not be configurable"
+    for venue in ("demo", "live"):
+        assert not any(venue in name and "url" in name for name in Settings.model_fields), (
+            f"the {venue} order host must not be configurable"
+        )
+
+
+def test_the_real_account_key_reaches_only_the_quant_worker_and_its_terminal_command() -> None:
+    """D060: the API and the dashboard never hold the real key; they only store a close."""
+    package = Path(trading_intel.__file__).parent
+    users = sorted(
+        str(path.relative_to(package))
+        for path in package.rglob("*.py")
+        if "binance_live_api" in path.read_text()
     )
+    assert users == [
+        "core/settings.py",
+        "entrypoints/binance_live.py",
+        "entrypoints/quant_worker.py",
+    ]
 
 
 def test_the_read_only_key_reaches_only_the_announcement_stream() -> None:

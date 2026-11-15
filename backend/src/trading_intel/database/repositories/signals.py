@@ -34,13 +34,32 @@ EXCHANGE_DEMO_ACCOUNT: Final = "Binance demo"
 EXCHANGE_DEMO_MODE: Final = "exchange_demo"
 # The owner trades it as if it held only this much, whatever test funds Binance gives (D048).
 EXCHANGE_DEMO_BUDGET: Final = Decimal(100)
+# The money plan on the owner's real Binance USDⓈ-M futures wallet (D060). Its capital is what
+# the owner puts in the wallet, so its starting balance is the equity the bot first saw there.
+EXCHANGE_LIVE_ACCOUNT: Final = "Binance real"
+EXCHANGE_LIVE_MODE: Final = "exchange_live"
 # Limits newer than the profile's columns, kept in its settings.
 PLAN_SETTINGS: Final = (
     "max_open_risk_fraction",
     "daily_profit_stop_fraction",
     "max_total_loss_fraction",
+    "loss_stop_from_high",
+    "max_position_fraction",
+    "max_side_exposure_fraction",
 )
 ACTIVE_STATES: Final = ("CANDIDATE", "VALIDATED", "ACTIVE", "ENTRY_TRIGGERED", "TP1_HIT", "TP2_HIT")
+
+
+@dataclass(frozen=True)
+class SignalFilter:
+    """The Signals page's filters (D065). A field left None filters nothing."""
+
+    instrument_id: int | None = None
+    strategy: str | None = None
+    action: str | None = None  # BUY or SELL.
+    decision: str | None = None  # APPROVED or REJECTED.
+    since: datetime | None = None
+    signal_id: UUID | None = None
 
 
 @dataclass(frozen=True)
@@ -92,8 +111,8 @@ class SignalRepository:
     ) -> Account | None:
         """A named account, created on first use with these limits or the defaults.
 
-        `mode` is "paper", or "exchange_demo" for Binance demo trading. The database allows no
-        other value, so a real-money account cannot be created (D016, D048).
+        `mode` is "paper", "exchange_demo" for Binance demo trading, or "exchange_live" for the
+        owner's real futures wallet (D060). The database allows no other value.
         """
         async with self._engine.begin() as connection:
             user = (
@@ -141,8 +160,74 @@ class SignalRepository:
             )
         return Account(row.id, row.starting_balance, profile["id"], _profile_of(profile))
 
+    async def find_account(self, email: str, name: str) -> Account | None:
+        """A named account if it exists. Unlike `ensure_account`, never creates one: the real
+        account is created only by the quant worker, from the equity it first sees (D060)."""
+        async with self._engine.connect() as connection:
+            row = (
+                await connection.execute(
+                    text(
+                        """SELECT a.id, a.starting_balance FROM trading_accounts a
+                           JOIN users u ON u.id = a.user_id
+                           WHERE lower(u.email) = lower(:email) AND a.name = :name"""
+                    ),
+                    {"email": email, "name": name},
+                )
+            ).one_or_none()
+            if row is None:
+                return None
+            profile = (
+                (
+                    await connection.execute(
+                        text(
+                            """SELECT * FROM risk_profiles WHERE account_id = :account
+                           ORDER BY version DESC LIMIT 1"""
+                        ),
+                        {"account": row.id},
+                    )
+                )
+                .mappings()
+                .one()
+            )
+        return Account(row.id, row.starting_balance, profile["id"], _profile_of(profile))
+
+    async def add_profile_version(
+        self, account_id: UUID, user_id: UUID, limits: RiskProfile
+    ) -> int:
+        """A new version of the account's limits, the owner's decision (D058).
+
+        Earlier versions stay, and every risk assessment keeps the version it used.
+        """
+        async with self._engine.begin() as connection:
+            version = (
+                await connection.execute(
+                    text(
+                        "SELECT coalesce(max(version), 0) + 1 FROM risk_profiles "
+                        "WHERE account_id = :account"
+                    ),
+                    {"account": account_id},
+                )
+            ).scalar_one()
+            await self._create_profile(connection, account_id, user_id, limits, int(version))
+        return int(version)
+
+    async def profile_version(self, risk_profile_id: UUID) -> tuple[int, datetime]:
+        async with self._engine.connect() as connection:
+            row = (
+                await connection.execute(
+                    text("SELECT version, created_at FROM risk_profiles WHERE id = :id"),
+                    {"id": risk_profile_id},
+                )
+            ).one()
+        return int(row.version), row.created_at
+
     async def _create_profile(
-        self, connection: AsyncConnection, account: UUID, user: UUID, defaults: RiskProfile
+        self,
+        connection: AsyncConnection,
+        account: UUID,
+        user: UUID,
+        defaults: RiskProfile,
+        version: int = 1,
     ) -> None:
         settings = {
             name: str(value)
@@ -155,11 +240,12 @@ class SignalRepository:
                      min_reward_risk, countertrend_extra_rr, max_daily_loss_fraction,
                      max_open_positions, max_total_exposure_fraction, max_leverage,
                      max_spread_bps, max_data_age_seconds, settings, created_by)
-                   VALUES (:account, 1, :risk, :rr, :extra, :daily, :positions, :exposure,
-                     :leverage, :spread, :age, CAST(:settings AS jsonb), :user)"""
+                   VALUES (:account, :version, :risk, :rr, :extra, :daily, :positions,
+                     :exposure, :leverage, :spread, :age, CAST(:settings AS jsonb), :user)"""
             ),
             {
                 "account": account,
+                "version": version,
                 "risk": defaults.max_risk_fraction,
                 "rr": defaults.min_reward_risk,
                 "extra": defaults.countertrend_extra_rr,
@@ -416,7 +502,11 @@ class SignalRepository:
             },
         )
 
-    async def recent(self, account_id: UUID, limit: int = 50) -> list[dict[str, Any]]:
+    async def recent(
+        self, account_id: UUID, limit: int | None = 50, filters: SignalFilter | None = None
+    ) -> list[dict[str, Any]]:
+        """The account's signals, newest first. A limit of None returns every match."""
+        chosen = filters or SignalFilter()
         query = text(
             """SELECT r.id, r.instrument_id, p.code AS provider, c.name AS strategy,
                       r.timeframe::text AS timeframe,
@@ -439,9 +529,24 @@ class SignalRepository:
                JOIN risk_assessments a ON a.recommendation_id = r.id
                LEFT JOIN signal_current_state s ON s.recommendation_id = r.id
                WHERE r.account_id = :account
+                 AND (CAST(:instrument AS integer) IS NULL OR r.instrument_id = :instrument)
+                 AND (CAST(:strategy AS text) IS NULL OR c.name = :strategy)
+                 AND (CAST(:action AS text) IS NULL OR r.action::text = :action)
+                 AND (CAST(:decision AS text) IS NULL OR a.decision = :decision)
+                 AND (CAST(:since AS timestamptz) IS NULL OR r.created_at >= :since)
+                 AND (CAST(:signal AS uuid) IS NULL OR r.id = :signal)
                ORDER BY r.created_at DESC LIMIT :limit"""
         )
-        params = {"account": account_id, "limit": limit}
+        params = {
+            "account": account_id,
+            "limit": limit,
+            "instrument": chosen.instrument_id,
+            "strategy": chosen.strategy,
+            "action": chosen.action,
+            "decision": chosen.decision,
+            "since": chosen.since,
+            "signal": chosen.signal_id,
+        }
         async with self._engine.connect() as connection:
             rows = (await connection.execute(query, params)).mappings().all()
         return [dict(row) for row in rows]
@@ -451,12 +556,15 @@ def _profile_of(row: Any) -> RiskProfile:
     settings = row["settings"] or {}
 
     def setting(name: str) -> Decimal | None:
-        return Decimal(settings[name]) if name in settings else None
+        return Decimal(settings[name]) if settings.get(name) is not None else None
 
     return RiskProfile(
         max_open_risk_fraction=setting("max_open_risk_fraction"),
         daily_profit_stop_fraction=setting("daily_profit_stop_fraction"),
         max_total_loss_fraction=setting("max_total_loss_fraction"),
+        loss_stop_from_high=str(settings.get("loss_stop_from_high", "")).lower() == "true",
+        max_position_fraction=setting("max_position_fraction"),
+        max_side_exposure_fraction=setting("max_side_exposure_fraction"),
         max_risk_fraction=row["max_risk_fraction"],
         min_reward_risk=row["min_reward_risk"],
         max_daily_loss_fraction=row["max_daily_loss_fraction"],

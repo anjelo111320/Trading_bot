@@ -98,7 +98,7 @@ Forecast values are floats because they are model samples. Market prices stay st
 - **Reach shares** are measured from the latest close: `baseline` from the projection, and `model` only while `forecast_current` is true, otherwise null.
 - **A manual plan's `python_at_close`** lists Python's decisions at the plan's close, read from the context saved beside it. It is null when none was saved.
 
-`POST /forecasts/analyse` takes `provider` and `instrument_id`, and is the only write route besides authentication. It runs a forecast and stores it. Forecasts cannot reach orders (D040), and a regression test keeps the list of write routes fixed.
+`POST /forecasts/analyse` takes `provider` and `instrument_id`. It runs a forecast and stores it. Forecasts cannot reach orders (D040). The other write routes are the Binance accounts' limits (D058) and closes (D060), and Claude's daily cost limit (D062), below. A regression test keeps the list of write routes fixed.
 
 ## Signals and Paper Trading Endpoints
 
@@ -106,7 +106,9 @@ All are read-only. Nothing here can place or change a trade.
 
 | Method and path | Purpose | Limits |
 |---|---|---|
-| `GET /api/v1/signals` | Recent recommendations with their risk decision and strategy | `limit` 1 to 200 |
+| `GET /api/v1/signals` | Recent recommendations with their risk decision, strategy and trade, newest first, filtered (D065) | `limit` 1 to 500 |
+| `GET /api/v1/signals/{signal_id}` | One of the account's signals with its trade, for the Bot page's chart link (D065) | 404 when the account has no such signal |
+| `GET /api/v1/coins/scorecard` | Each coin's scorecard (D068): every strategy's published backtest or why it is untested, live trades of every account counted once per setup, entry quality in R, and the coin now | Read-only, owner only |
 | `GET /api/v1/paper-trading/summary` | Starting balance, equity with open trades at the latest price, and resolved results | |
 | `GET /api/v1/paper-trading/positions` | Recent simulated positions | `limit` 1 to 200 |
 | `GET /api/v1/paper-trading/trades` | Each simulated trade with its plan, current stop, targets and every fill, newest first | `limit` 1 to 500 |
@@ -117,7 +119,37 @@ The summary also gives `day_start_equity`, `open_risk` (what open trades would l
 
 Signals also carry `signal_score`, the conditions of the signal score at the signal's close (docs/34): `long_term_trend`, `bitcoin_trend`, `volume` and `funding`, each true for the trade, false against it or null when unknown, with `against`, `weak` (null while any condition is unknown) and `bitcoin_applies` (false on Bitcoin's own signals). The score failed its test (D046), so it is information only and sets no size. It is null on signals from before 2026-11-10.
 
+`GET /api/v1/signals` filters for the Signals page (D065). Every filter is optional:
+- `instrument_id`, `strategy`, `action` (`BUY` or `SELL`) and `decision` (`APPROVED` or `REJECTED`).
+- `result`, by the signal's trade: `entered` (open or closed), `open`, `won`, `lost`, `waiting`, or `not_entered` (rejected, never sent, not filled or refused).
+- `period`: `today` from 00:00 UTC, `7d`, `30d`, or `all`, the default.
+
+Each signal carries `trade`, null when it was rejected or no entry was sent for it:
+- `state`: `waiting`, `open`, `won`, `lost`, `even`, `not filled` or `refused` (by Binance).
+- `opened_at` and `closed_at`, and `entry_price` and `exit_price` averaged over the fills.
+- `net` in USDT: after fees and funding once closed; Binance's open profit while a Binance trade is open; null while a paper trade is open.
+
+On a Binance account the trade is the one the signal's entry order opened, rebuilt from Binance's fills (D057). A limit entry is `waiting` only while it is its coin's newest entry and its good-till time has not passed. On a paper account the trade is the simulator's position. Prices keep 8 places and `net` keeps 4.
+
 A trade's fills have a `kind` (`entry`, `tp1` to `tp3`, `stop`, `expiry`, `invalidation` or `funding`), a UTC time, a price, quantity, fee, funding and whether the fill was `reconstructed` from repaired candles. Every trade and summary carries `simulated: true`.
+
+## Binance Account Endpoints
+
+The same routes exist for demo trading's test funds under `/api/v1/exchange-demo` (D048), and for the owner's real futures wallet under `/api/v1/exchange-live` (D060). They read what the quant worker saved. The API holds no exchange key and cannot import the exchange code, so no route can send an order.
+
+| Method and path | Purpose | Limits |
+|---|---|---|
+| `GET …/status` | The account as last saved: `capital` (demo's budget, or what the owner put in), equity, free margin, positions and orders, each marked `bot` (false for the owner's own on the real account), the loss stop, and `closing`, the coins with a close still being carried out. On the real account, `live` gives `armed`, `armed_at`, `checked_at`, `problems` and `ip_restricted`. `test_funds` is false on the real account | `connected: false` until the worker has saved one. The real account is never made by reading |
+| `GET …/results` | Completed trades rebuilt from Binance's fills (D057) | `period` `7d`, `30d` or `all` |
+| `GET …/limits`, `PUT …/limits` | The account's limits and their ceilings; saving makes a new logged version (D058) | `PUT` only from the dashboard's origin. 404 on the real account until it is connected |
+| `GET …/orders` | Every request sent to Binance, with what each means in USDT | `limit` 1 to 200 |
+| `POST …/positions/{symbol}/close` | Ask for the bot's trade on a coin to be closed now (D060). Stores a request and writes it to the audit log; the quant worker cancels a waiting entry, closes the position at market with a reduce-only order, then cancels its stop and targets | 202. 403 from another origin. 404 when the bot has no open trade on the coin, including the owner's own positions. One waiting close per coin |
+| `GET …/closes` | The latest closes asked, with `outcome`: `closed`, `nothing_open`, `not_the_bots` or `failed`, and its `detail` | `limit` 1 to 50 |
+| `PUT …/arming` | The account's trading on or off (D063, D064). `armed: false` needs nothing more. On the real account, `armed: true` needs `password`, the owner's dashboard password; on demo it needs nothing more | On the real account: 403 from another origin or for a wrong password (rate-limited as login). 409 while the bot's last save is over 5 minutes old or its check found a problem. Every attempt is logged |
+
+`GET /api/v1/signals` also takes `account=binance` for demo trading and `account=binance_live` for the real account, which gives an empty list until the account exists. `GET /api/v1/signals/{signal_id}` takes the same `account`, and gives 404 for a signal of any other account.
+
+`GET /api/v1/ai/budget` gives Claude's daily cost limit for every call together (D062), its `ceiling_usd`, when it was `changed_at`, and today's spend since 00:00 UTC: `spent_today_usd`, `calls_today`, input and output tokens, `reached`, and the same `by_purpose`. `PUT /api/v1/ai/budget` takes `daily_limit_usd`, from $0 to the $3 ceiling, only from the dashboard's own origin, and writes the change to the audit log. Zero stops every Claude call.
 
 `GET /api/v1/ai/exit-reviews` gives Claude's exit advice on open paper trades (D051), newest first, with `limit` 1 to 200. It reads only what the quant worker stored, and never calls Claude, so viewing it costs nothing.
 - It carries `shadow: true`, the `model`, and `asking`: false until an Anthropic key is set.

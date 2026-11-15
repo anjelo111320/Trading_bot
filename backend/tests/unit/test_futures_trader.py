@@ -326,3 +326,36 @@ async def test_the_view_counts_a_waiting_entry_and_the_margin_it_holds() -> None
     assert view.order_margin == D("41.6")
     budget = Budget.of(view, capital=D(100), baseline=D(5000), day_start=D(5000))
     assert budget.available == D("58.4"), "margin held for a waiting entry is not free"
+
+
+def binance_fill(trade_id: int, at_ms: int, symbol: str = "SOLUSDT") -> dict[str, Any]:
+    return {"symbol": symbol, "id": trade_id, "time": at_ms}
+
+
+async def test_fills_are_read_by_week_at_first_then_after_the_last_stored(monkeypatch: Any) -> None:
+    """D057: Binance gives at most 7 days per call without an ID, and pages of 1,000."""
+    day = 24 * 3600 * 1000
+    exchange = FakeGateway()
+    exchange.fills = [binance_fill(n, n * day) for n in range(1, 16)]
+    trader = FuturesTrader(exchange)
+    found = await trader.fills("SOLUSDT", None, 0, 15 * day)
+    assert [row["id"] for row in found] == list(range(1, 16))
+    windows = [(call[3], call[4]) for call in exchange.calls if call[0] == "fills"]
+    assert windows == [(0, 7 * day - 1), (7 * day, 14 * day - 1), (14 * day, 15 * day)]
+
+    monkeypatch.setattr("trading_intel.execution.trader.HISTORY_PAGE", 4)
+    exchange.page = 4
+    exchange.calls.clear()
+    later = await trader.fills("SOLUSDT", 9, 0, 15 * day)
+    assert [row["id"] for row in later] == list(range(10, 16))
+    assert [call[2] for call in exchange.calls] == [10, 14], "the next page after the last ID"
+
+
+async def test_funding_is_read_in_pages(monkeypatch: Any) -> None:
+    monkeypatch.setattr("trading_intel.execution.trader.HISTORY_PAGE", 2)
+    exchange = FakeGateway()
+    exchange.page = 2
+    exchange.funding = [{"time": t, "tranId": t} for t in (10, 20, 30)]
+    found = await FuturesTrader(exchange).funding(0, 100)
+    assert [row["tranId"] for row in found] == [10, 20, 30]
+    assert [call[1] for call in exchange.calls] == [0, 21]

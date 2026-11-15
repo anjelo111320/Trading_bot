@@ -26,6 +26,7 @@ from trading_intel.paper_trading.simulator import (
     TradeSimulator,
     summarise,
 )
+from trading_intel.risk_management.profit_lock import TRIGGER_R, lock_level
 from trading_intel.trade_signals.catalogue import to_tick
 
 EXIT: Final = "exit"
@@ -108,6 +109,22 @@ class SwingTrail:
         swings, times = (self._lows, self._low_times) if long else (self._highs, self._high_times)
         known = bisect_right(times, trade.moment)
         return to_tick(swings[known - 1].price, self._tick) if known else None
+
+
+class ProfitLock:
+    """The live profit lock (D066): once the best price is 1.5R beyond the entry fill, the stop
+    locks 1R beyond it, rounded to the tick that keeps a little less."""
+
+    name: Final = "profit_lock"
+
+    def __init__(self, tick: Decimal) -> None:
+        self._tick = tick
+
+    def decide(self, trade: OpenTrade) -> Action:
+        if trade.best is None or trade.progress(trade.best) < TRIGGER_R:
+            return None
+        level = lock_level(trade.side, trade.entry, trade.risk, self._tick)
+        return level if trade.side.sign * (level - trade.stop) > 0 else None
 
 
 def breakeven_stop(order: SimulatedOrder, entry: Decimal) -> Decimal:
@@ -216,10 +233,13 @@ def replay(
     trail: TrailingStop | None = None,
     rule: ExitRule | None = None,
     checks: TradeChecks | None = None,
+    rule_closes: Mapping[datetime, Decimal] | None = None,
 ) -> Replayed:
     """One trade, as `BacktestEngine._simulate` runs it, with an optional rule added.
 
-    `open_times` are the fill candles' open times, for finding where the trade starts.
+    `open_times` are the fill candles' open times, for finding where the trade starts. The
+    rule decides at `rule_closes`, every fill close for the profit lock (docs/43), or else at
+    the setup closes, where the strategy's own trail always moves.
     """
     simulator = TradeSimulator(order)
     sign = order.side.sign
@@ -246,18 +266,18 @@ def replay(
                 best, improved = extreme, True
             if checks is not None and best is not None:
                 checks.on_close(simulator, candle, best, better)
-        close = setup_closes.get(candle.close_time)
-        if close is None:
-            continue
-        if improved:
-            stale, improved = 0, False
-        elif best is not None:
-            stale += 1
-        if trail is not None:
-            level = trail(candle.close_time, order.side, simulator.stop)
-            if level is not None:
-                simulator.move_stop(level)  # Effective from the next candle.
-        if rule is None or simulator.status is not OrderStatus.OPEN:
+        at_setup = setup_closes.get(candle.close_time)
+        if at_setup is not None:
+            if improved:
+                stale, improved = 0, False
+            elif best is not None:
+                stale += 1
+            if trail is not None:
+                level = trail(candle.close_time, order.side, simulator.stop)
+                if level is not None:
+                    simulator.move_stop(level)  # Effective from the next candle.
+        close = at_setup if rule_closes is None else rule_closes.get(candle.close_time)
+        if close is None or rule is None or simulator.status is not OrderStatus.OPEN:
             continue
         assert simulator.entry_fill is not None
         action = rule.decide(

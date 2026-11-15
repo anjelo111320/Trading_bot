@@ -64,6 +64,7 @@ FORMING_PUBLISH_SECONDS = 1.0
 SKEW_SECONDS = 60
 OPEN_INTEREST_SECONDS = 60
 FUNDING_SECONDS = 600
+RECHECK_SECONDS = 3600  # Open gaps are looked at again hourly, so none stays open by mistake.
 SETTLE_SECONDS = 10  # A candle that has just closed may still be in flight, or not yet final.
 FIRST_RUN_LOOKBACK = 10
 HOLE_LOOKBACK = timedelta(days=3)  # How far back a repair looks for holes behind the newest candle.
@@ -329,6 +330,7 @@ class Ingestor:
                 },
             )
         await self.repair_to_now()
+        await self._recheck_open_gaps()
         await self._repair_derivatives()
         await self._refresh_open_gaps()
         self.health.end_recovery()
@@ -384,6 +386,11 @@ class Ingestor:
             async for item in provider.get_open_interest_history(instrument, start)
         ]
         await self._snapshots.upsert_many(rows)
+
+    async def _recheck_open_gaps(self) -> None:
+        """Close gaps an interrupted repair left open, so a coin is never refused as
+        DATA_INCOMPLETE for candles that are all stored."""
+        await self._repair.recheck_open({i.id: i for i in self._plan.instruments})
 
     async def _refresh_open_gaps(self) -> None:
         unresolved = await self._gaps.list(
@@ -501,6 +508,7 @@ class Ingestor:
             await every("replay", 30, self._replay_missed)
             await every("sweep", SWEEP_SECONDS, self._sweep)
             await every("skew", SKEW_SECONDS, self._update_skew)
+            await every("recheck", RECHECK_SECONDS, self._recheck_open_gaps)
             await every("gaps", SKEW_SECONDS, self._refresh_open_gaps)
             await every(
                 "rules", REFRESH_SECONDS, lambda: self._rules.refresh(self._plan.instruments)
